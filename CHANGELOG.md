@@ -3,7 +3,7 @@
 All notable changes to ADCode. Dates are the date the version was prepared; a version is
 only public once its installers are attached to a GitHub release.
 
-## 2.3.0 — 2026-10-10 (prepared)
+## 2.3.0 — 2026-10-12
 
 - Free AI includes 1,000,000 tokens per account per day and unlimited request counts. The usage view separates the daily balance from local history, and explains repeated input context and estimated counts. Allowance reservations and context checks now use the same token estimate, then settle against provider-reported usage.
 - Chats and agent runs wait for recoverable free AI limits and resume automatically at the reset time while ADCode stays open. Stop cancels the wait; completed tool operations are not replayed.
