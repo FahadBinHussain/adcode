@@ -14,6 +14,7 @@ app.whenReady().then(async () => {
     const result = await window.webContents.executeJavaScript(`(async () => {
       const editing = (() => { const exports = {}; ${compile('inlineEdit.ts')} return exports; })();
       const tree = (() => { const exports = {}; ${compile('treeRefresh.ts')} return exports; })();
+      const popup = (() => { const exports = {}; ${compile('popupShell.ts')} return exports; })();
       const box = document.createElement('div'); document.body.append(box);
       const existing = document.createElement('div'); existing.className = 'tree-wrapper'; box.append(existing);
       const commits = [];
@@ -28,7 +29,25 @@ app.whenReady().then(async () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
       await new Promise(resolve => setTimeout(resolve, 20));
       const submittedOnce = commits.length === 1 && commits[0] === 'smoke-style.css' && !editor.isConnected;
-      return { preserved, submittedOnce, retainedRow: box.firstElementChild === existing, staleRowRemoved: !added.isConnected };
+      const retainedRow = box.firstElementChild === existing, staleRowRemoved = !added.isConnected;
+      const background = document.createElement('textarea'); document.body.append(background);
+      let swallowed = 0; background.addEventListener('keydown', event => { event.preventDefault(); event.stopPropagation(); swallowed++; });
+      let closeCount = 0;
+      const content = document.createElement('div'); const inner = document.createElement('input'); content.append(inner);
+      const shell = popup.createPopupShell({ id: 'structure', title: 'Structure', size: 'anchored', modal: false, host: document.body, content, onRequestClose() {} });
+      const intercept = event => popup.handleOutsidePopupEscape(event, shell, undefined, () => { closeCount++; shell.close({ immediate: true }); });
+      document.addEventListener('keydown', intercept, true);
+      shell.open(); background.focus();
+      background.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      const outsideEscape = !shell.isOpen() && closeCount === 1 && swallowed === 0;
+      shell.open(); inner.focus(); inner.addEventListener('keydown', event => { event.preventDefault(); event.stopPropagation(); });
+      inner.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      const innerEscape = shell.isOpen() && closeCount === 1;
+      const other = document.createElement('dialog'); document.body.append(other); other.showModal();
+      background.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      const modalEscape = shell.isOpen() && closeCount === 1;
+      other.close(); shell.close({ immediate: true }); document.removeEventListener('keydown', intercept, true);
+      return { preserved, submittedOnce, retainedRow, staleRowRemoved, outsideEscape, innerEscape, modalEscape };
     })()`);
     console.log('treeRefreshEvidence:' + JSON.stringify(result));
   } catch (error) { console.error(error); process.exitCode = 1; }

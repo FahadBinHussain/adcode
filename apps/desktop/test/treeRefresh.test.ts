@@ -10,5 +10,5 @@ it("keeps a file name focused through watcher refreshes and submits the full nam
   expect(run.status, run.stderr || String(run.error)).toBe(0);
   const evidence = /^treeRefreshEvidence:(.+)$/m.exec(run.stdout);
   expect(evidence, run.stdout).not.toBeNull();
-  expect(JSON.parse(evidence![1]!)).toEqual({ preserved: true, submittedOnce: true, retainedRow: true, staleRowRemoved: true });
+  expect(JSON.parse(evidence![1]!)).toEqual({ preserved: true, submittedOnce: true, retainedRow: true, staleRowRemoved: true, outsideEscape: true, innerEscape: true, modalEscape: true });
 }, 30_000);

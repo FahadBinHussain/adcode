@@ -101,7 +101,7 @@ import {
   reducePopupLayer,
   type PopupId,
 } from "./workbench/popupLayer.ts";
-import { createPopupShell, type PopupShell } from "./workbench/popupShell.ts";
+import { createPopupShell, handleOutsidePopupEscape, type PopupShell } from "./workbench/popupShell.ts";
 import { createQuickOpen, createSearchPanel } from "./panels/searchPanel.ts";
 import { createProblemsPanel } from "./panels/problemsPanel.ts";
 import { createBottomPanel, type PanelTabId } from "./panels/bottomPanel.ts";
@@ -2452,6 +2452,17 @@ document.addEventListener(
   },
   true,
 );
+
+document.addEventListener("keydown", (event) => {
+  if (popupLayerState.primary === null) return;
+  const primary = primaryPopups.get(popupLayerState.primary);
+  if (primary === undefined) return;
+  const dependent = popupLayerState.dependent === null ? undefined : dependentPopups.get(popupLayerState.dependent);
+  handleOutsidePopupEscape(event, primary.shell, dependent?.shell, () => {
+    if (popupLayerState.dependent !== null) closeDependentPopup(popupLayerState.dependent);
+    else if (popupLayerState.primary !== null) closePrimaryPopup(popupLayerState.primary);
+  });
+}, true);
 
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented || popupLayerState.primary === null)
