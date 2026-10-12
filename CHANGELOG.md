@@ -5,6 +5,9 @@ only public once its installers are attached to a GitHub release.
 
 ## 2.3.0 — 2026-10-12
 
+- Agent activity now scrolls inside the conversation instead of occupying a fixed panel above messages. Solo runs use a compact status card with the same Stop controls.
+- Edited files appear in a themed summary with per-file added and removed lines, expandable file rows, recorded diffs and conflict-aware Undo. Malformed tool arguments recover literal JSON line breaks safely; incomplete calls retry as smaller edits without writing partial files.
+
 - Free AI includes 1,000,000 tokens per account per day and unlimited request counts. The usage view separates the daily balance from local history, and explains repeated input context and estimated counts. Allowance reservations and context checks now use the same token estimate, then settle against provider-reported usage.
 - Chats and agent runs wait for recoverable free AI limits and resume automatically at the reset time while ADCode stays open. Stop cancels the wait; completed tool operations are not replayed.
 - Switching models carries the conversation, compacted summary and completed tool results to the new model. Selecting another model during a limit wait continues the pending task.

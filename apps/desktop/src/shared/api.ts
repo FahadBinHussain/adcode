@@ -1209,7 +1209,15 @@ export interface AiCheckpointView {
   readonly id: string;
   readonly createdAt: number;
   /** `deleted`: the turn deleted the file, or moved it away from this path. */
-  readonly files: ReadonlyArray<{ readonly path: string; readonly created: boolean; readonly deleted?: boolean }>;
+  readonly files: ReadonlyArray<{
+    readonly path: string;
+    readonly created: boolean;
+    readonly deleted?: boolean;
+    readonly added?: number;
+    readonly removed?: number;
+    /** Recorded before/after changes, not a diff against later user edits. Absent for binary files. */
+    readonly hunks?: readonly DiffHunkView[];
+  }>;
 }
 
 export interface AiUndoResultView {

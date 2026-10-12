@@ -55,7 +55,9 @@ export const CONTINUE_PROMPT = "Continue from where you stopped and finish the r
 export const RECOVER_EDIT_PROMPT = "Continue the original request. The previous edit could not match the file. First re-read the affected file using read_file with line_numbers: false and the recovery offset from the tool error. Use the current exact file text to correct old_string, then make the smallest necessary edit and verify it. Do not repeat the failed replacement or rewrite the entire file to bypass the mismatch.";
 
 export function retryAfterFailure(failure: AiFailure, request: string): string {
-  return failure.kind === "edit-mismatch" ? RECOVER_EDIT_PROMPT : request;
+  if (failure.kind === "edit-mismatch") return RECOVER_EDIT_PROMPT;
+  if (failure.kind === "tool-format" && /invalid (?:JSON )?tool arguments|cut off the tool arguments/i.test(failure.detail)) return "Continue the original request from the work already done. The last tool call had invalid arguments and did not run. Read the affected file first. Send one complete JSON tool call at a time with escaped newlines and quotes. Create a minimal complete new file (at most 40 lines), then extend it with small edit_file replacements. Do not repeat the failed full-file call. Verify the finished work.";
+  return request;
 }
 
 /** "Groq returned HTTP 429: ..." -> "Groq". Falls back to a neutral noun. */
@@ -98,6 +100,9 @@ export function describeAiFailure(raw: string): AiFailure {
     return make("rate-limit", upstream ? "This free model is temporarily busy" : "Too many AI requests in a minute", upstream
       ? "The model provider has reached a temporary rate limit. Your daily allowance may still have tokens left. Try again shortly, or choose a different model."
       : "Your account reached its per-minute request limit. Your daily allowance may still have tokens left. Wait about a minute, then try again. Chats and agents on all your devices share this limit.", ["retry", "usage", "models"]);
+  }
+  if (/invalid JSON tool arguments|invalid tool arguments|cut off the tool arguments/i.test(detail)) {
+    return make("tool-format", "The model could not finish an edit", "The failed call did not change your files. Earlier edits are still available below. Try again to continue with smaller edits, or switch model.", ["retry", "models", "report"]);
   }
   if (/old_string was not found|old_string matches \d+ places|identical failed calls to edit_file/i.test(detail)) {
     return make("edit-mismatch", "The model could not match the file text", "The failed edit left the file unchanged. Try again to re-read the current text and make a corrected edit.", ["retry", "models", "report"]);

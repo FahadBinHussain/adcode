@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CONTINUE_PROMPT, RECOVER_EDIT_PROMPT, describeAiFailure, OUTPUT_LIMIT_AGAIN, providerFrom, resumeAfterModelSwitch, retryAfterFailure } from "../src/renderer/ai/aiFailure.ts";
 
+it("explains invalid file arguments and retries the remaining work in smaller edits", () => {
+  const failure = describeAiFailure("Stopped after three identical failed calls to propose_edit. Tool not run: the provider returned invalid JSON tool arguments.");
+  expect(failure).toMatchObject({ kind: "tool-format", title: "The model could not finish an edit", actions: ["retry", "models", "report"] });
+  expect(retryAfterFailure(failure, "original prompt")).toMatch(/at most 40 lines/);
+  expect(failure.explanation).toMatch(/Earlier edits/);
+});
+
 describe("assistant failure explanations", () => {
   it("separates a daily allowance from a temporary limit and offers its usage display", () => {
     const daily = describeAiFailure("Included AI returned HTTP 429: Your daily included AI allowance cannot cover this request. (code daily-limit)");

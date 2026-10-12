@@ -15,6 +15,7 @@
  */
 import { CONTINUE_PROMPT, describeAiFailure, OUTPUT_LIMIT_AGAIN, resumeAfterModelSwitch, retryAfterFailure, type AiFailure } from "./aiFailure.ts";
 import { createChatQueue, type QueuedMessage } from "./chatQueue.ts";
+import { createEditSummary } from "./editSummary.ts";
 import { chipLabel, modelChoices, rememberModel, switchedFrom, type ModelChoice, type ModelInUse } from "./modelSwitch.ts";
 import { askThemed } from "../dialogs/confirmDialog.ts";
 import { createChatPreview } from "./chatPreview.ts";
@@ -799,9 +800,14 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   /* ── Transcript ───────────────────────────────────────────────────────── */
 
   const transcript = document.createElement("div");
-  // Agents at work: the room of background agents above the transcript, and the
-  // assistant's own live window inside it.
+  // Every agent's ongoing work lives in the transcript, beside the turn that started it.
   const live = createChatLiveRoom({
+    onActivity: (element, newRun) => {
+      if (newRun || element.parentElement !== transcript) {
+        transcript.append(element);
+        scrollToEnd();
+      }
+    },
     stopChat: () => stopTurn(),
     runCommand: (command, arg) => deps.runCommand?.(command, arg),
   });
@@ -2237,7 +2243,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     input.focus({ preventScroll: true });
   });
   transcript.addEventListener("scroll", () => updateScrollButton(), { passive: true });
-  conversation.append(memory, connectBanner, folderBanner, welcome, live.element, transcript, scrollButton, composer, quickActions);
+  conversation.append(memory, connectBanner, folderBanner, welcome, transcript, scrollButton, composer, quickActions);
   refreshWelcome();
   /*
    * The "is writing" row: what the assistant is doing, for how long, and the way to stop it
@@ -4286,83 +4292,12 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    * edits the user made afterwards until they say so.
    */
   window.adcode.ai.onCheckpoint((checkpoint) => {
-    const card = document.createElement("section");
-    card.className = "chat-checkpoint";
-    card.dataset["checkpointId"] = checkpoint.id;
-    const icon = document.createElement("span");
-    icon.className = "chat-checkpoint-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = "✓";
-    const body = document.createElement("div");
-    body.className = "chat-checkpoint-body";
-    const heading = document.createElement("strong");
-    heading.className = "chat-checkpoint-title";
-    const count = checkpoint.files.length;
-    heading.textContent = count === 1 ? `Changed ${checkpoint.files[0]?.path ?? "1 file"}` : `Changed ${count} files`;
-    const list = document.createElement("div");
-    list.className = "chat-checkpoint-files";
-    for (const file of checkpoint.files.slice(0, 8)) {
-      const open = document.createElement("button");
-      open.type = "button";
-      open.className = "chat-checkpoint-file";
-      if (file.deleted === true) {
-        // Gone, so there is nothing to open - but Undo brings it back.
-        open.textContent = `− ${file.path}`;
-        open.title = `Deleted ${file.path} - Undo puts it back`;
-        open.disabled = true;
-        open.dataset["deleted"] = "true";
-      } else {
-        open.textContent = `${file.created ? "+ " : ""}${file.path}`;
-        open.title = `${file.created ? "Created" : "Changed"} ${file.path} - open it`;
-        open.addEventListener("click", () => deps.openExternalPath(file.path));
-      }
-      list.append(open);
-    }
-    if (count > 8) {
-      const more = document.createElement("span");
-      more.className = "chat-checkpoint-more";
-      more.textContent = `+${count - 8} more`;
-      list.append(more);
-    }
-    const status = document.createElement("p");
-    status.className = "chat-checkpoint-status";
-    status.setAttribute("role", "status");
-    status.hidden = true;
-    const undo = document.createElement("button");
-    undo.type = "button";
-    undo.className = "chat-checkpoint-undo";
-    undo.textContent = "Undo";
-    undo.title = "Put these files back as they were before this turn";
-    let force = false;
-    undo.addEventListener("click", () => {
-      undo.disabled = true;
-      void window.adcode.ai.undoCheckpoint(checkpoint.id, force).then((result) => {
-        status.hidden = false;
-        status.textContent = result.message;
-        if (result.ok) {
-          card.dataset["state"] = "undone";
-          undo.hidden = true;
-          heading.textContent = count === 1 ? `Undid the change to ${checkpoint.files[0]?.path ?? "1 file"}` : `Undid changes to ${count} files`;
-          return;
-        }
-        if (result.conflicts.length > 0) {
-          force = true;
-          undo.textContent = "Undo anyway";
-          undo.title = `Overwrite your later edits to ${result.conflicts.join(", ")}`;
-        }
-        undo.disabled = false;
-      }, () => {
-        status.hidden = false;
-        status.textContent = "Could not undo this turn. Try again.";
-        undo.disabled = false;
-      });
-    });
-    body.append(heading, list, status);
-    card.append(icon, body, undo);
-    transcript.append(card);
+    transcript.append(createEditSummary(checkpoint, {
+      openFile: path => deps.openExternalPath(path),
+      undo: (id, force) => window.adcode.ai.undoCheckpoint(id, force),
+    }));
     scrollToEnd();
   });
-
   /* ── Sending ──────────────────────────────────────────────────────────── */
 
   /**

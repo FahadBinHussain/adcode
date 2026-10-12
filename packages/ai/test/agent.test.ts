@@ -55,6 +55,45 @@ const call = (id: string, name = "echo"): ToolCallBlock => ({
   input: { value: "x" },
 });
 
+it("recovers invalid arguments with explicit smaller calls and never runs a malformed write", async () => {
+  const systems: string[] = [];
+  let round = 0;
+  const provider: Provider = {
+    id: "anthropic", displayName: "Scripted", models: ["test-model"],
+    async *stream(request) {
+      if (round >= 2) { yield { kind: "stop", reason: "end-turn" }; return; }
+      systems.push(request.system);
+      yield { kind: "tool-call", call: round++ === 0
+        ? { ...call("bad"), input: {}, inputError: "Tool not run: invalid JSON tool arguments" }
+        : call("good") };
+      yield { kind: "stop", reason: "tool-use" };
+    },
+  };
+  const run = runner();
+  const agent = createAgent({ provider, model: "test-model", tools: [echoTool], runner: run });
+  const events = [];
+  for await (const event of agent.send("Finish my file")) events.push(event);
+  expect(run.calls).toHaveLength(1);
+  expect(run.calls[0]?.id).toBe("good");
+  expect(systems[1]).toMatch(/exactly one tool call/);
+  expect(systems[1]).toMatch(/at most 40 lines/);
+  expect(events.at(-1)).toMatchObject({ kind: "turn-end" });
+});
+
+it("stops repeated invalid arguments without ever executing them", async () => {
+  const bad = { ...call("bad"), input: {}, inputError: "Tool not run: invalid JSON tool arguments" };
+  const provider = scriptedProvider(Array.from({ length: 3 }, () => [
+    { kind: "tool-call", call: bad }, { kind: "stop", reason: "tool-use" },
+  ]));
+  const run = runner();
+  const agent = createAgent({ provider, model: "test-model", tools: [echoTool], runner: run });
+  const events = [];
+  for await (const event of agent.send("Finish my file")) events.push(event);
+  expect(run.calls).toEqual([]);
+  expect(provider.requests).toBe(3);
+  expect(events.at(-1)).toMatchObject({ kind: "error", detail: expect.stringContaining("even after retrying with smaller edits") });
+});
+
 async function collect(stream: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
   for await (const event of stream) events.push(event);

@@ -3703,9 +3703,6 @@ function registerProfileCommands(): void {
 const sourceControl = createSourceControlPanel({
   onStatus: paintGitBadge,
   onRequestClose: () => closePrimaryPopup("source-control"),
-  onClosed: () => {
-    if (sourceControlRestoreFocus === "editor" && popupLayerState.primary === null) editorHost.focus();
-  },
   openFile: (path) => void openFile(absolutePath(path)),
   workspaceRoot: () => workspaceRoot,
   notify: (text) => setStatus(text, 4000),
@@ -3734,6 +3731,9 @@ const sourceControlShell = createPopupShell({
   initialFocus: () =>
     sourceControl.element.querySelector<HTMLElement>(".scm-message"),
   onRequestClose: () => closePrimaryPopup("source-control"),
+  onClosed: () => {
+    if (sourceControlRestoreFocus === "editor" && popupLayerState.primary === null) editorHost.focus();
+  },
 });
 
 registerPrimaryPopup("source-control", sourceControlShell, {

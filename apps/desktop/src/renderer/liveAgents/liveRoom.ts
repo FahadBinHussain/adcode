@@ -1,5 +1,5 @@
 /**
- * The live room: every background agent at once, docked at the top of the chat.
+ * The live room: background agents grouped inside the scrolling conversation.
  *
  * A strip of mascots - the team, side by side - over a grid of live windows, one per agent.
  * When one agent messages another, hands its work on, or runs into a teammate's file, the

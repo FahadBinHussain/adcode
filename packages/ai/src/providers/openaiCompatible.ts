@@ -20,6 +20,7 @@
 import { effortFor } from "../effort.ts";
 import { allowedOutputSize } from "../outputSize.ts";
 import { localToolCalls } from "./localToolCalls.ts";
+import { parseToolArguments } from "./toolArguments.ts";
 import type {
   Provider,
   ProviderEvent,
@@ -492,16 +493,12 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
       for (const accumulator of pending.values()) {
         let input: Record<string, unknown> = {};
         let inputError: string | undefined;
-        try {
-          const parsed: unknown = accumulator.args.trim().length === 0
-            ? {}
-            : JSON.parse(accumulator.args);
-          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-            throw new Error("Tool arguments must be an object");
-          }
-          input = parsed as Record<string, unknown>;
-        } catch {
-          inputError = "Tool not run: the provider returned invalid JSON tool arguments. Retry with one smaller call and valid JSON matching the tool schema. For file edits, include path and contents; escape newlines and quotes inside strings. This is not a workspace permission error.";
+        const parsed = parseToolArguments(accumulator.args);
+        if (parsed !== null) {
+          input = parsed.input;
+          if (parsed.normalized && finish !== "length") yield { kind: "status", text: "Recovered the model's tool argument formatting" };
+        } else {
+          inputError = "Tool not run: the provider returned invalid JSON tool arguments. No file was changed by this call. Retry with one smaller call: a short, complete JSON object matching the tool schema. Use JSON escapes for newlines and quotes. For a new file, create a minimal complete version (at most 40 lines) with propose_edit, then extend it with small edit_file calls. Read existing files before editing them. Do not resend the same full file. This is not a workspace permission error.";
         }
         if (finish === "length") {
           // Even valid JSON may contain a file the model had not finished writing.

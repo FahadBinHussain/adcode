@@ -88,7 +88,7 @@ export const SEARCH: ToolDefinition = {
 export const PROPOSE_EDIT: ToolDefinition = {
   name: "propose_edit",
   description:
-    "Write a complete file: create a new one or rewrite a short one. Send the whole new contents, not a patch; parent directories are created as needed. To change part of an existing file, use edit_file instead.",
+    "Write a complete file: create a new one or rewrite a short one. Send the whole new contents as a JSON string with escaped newlines and quotes, not a patch; parent directories are created as needed. Keep new files small and complete, then extend them with edit_file in small steps. To change part of an existing file, use edit_file instead. Never repeat a malformed or truncated full-file call.",
   inputSchema: {
     type: "object",
     properties: {

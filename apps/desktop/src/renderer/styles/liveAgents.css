@@ -1,5 +1,5 @@
 /*
- * Agents at work: the live room above the chat and each agent's live window.
+ * Agents at work: conversation items in the scrolling chat and each agent's live window.
  *
  * A window is drawn like the floating Preview - three dots, a title bar - because it is the
  * same idea, a view into something running. Colour is spent on meaning only: green for a
@@ -24,6 +24,19 @@
   flex: none;
 }
 .live-room[hidden] { display: none; }
+
+/* The chat owns scrolling. Ongoing agents occupy an ordinary place in its history. */
+.chat-transcript > .live-room {
+  position: static;
+  width: 100%;
+  margin: 0;
+  max-height: none;
+  overflow: visible;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+.chat-transcript > .live-room[data-windows="1"] .live-room-strip { display: none; }
+.chat-transcript > .live-room .live-room-log:empty { display: none; }
 
 .live-room-head {
   display: flex;

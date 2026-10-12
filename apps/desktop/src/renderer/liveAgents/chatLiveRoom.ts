@@ -6,8 +6,8 @@
  * - the assistant's own inline window;
  * - the setting that turns both off, and the agent profiles that give each mascot its look.
  *
- * The chat widget mounts `element` above its transcript and hands every assistant event to
- * `chatWindow`; nothing else in the widget changes.
+ * Background work mounts at its place in the transcript; the assistant's own window
+ * already belongs to its turn. Neither display takes space above the scrolling chat.
  */
 import { AGENT_PROFILES_SETTING, parseAgentProfiles, type AgentProfile } from "../ai/agentProfiles.ts";
 import { chatAppearanceFrom, type ChatAppearance } from "../ai/chatAppearance.ts";
@@ -30,6 +30,8 @@ export interface ChatLiveRoom {
 }
 
 export interface ChatLiveRoomDeps {
+  /** Mount ongoing work as a conversation item, also after the transcript was cleared. */
+  readonly onActivity?: (element: HTMLElement, newRun: boolean) => void;
   /** Stop the chat's own turn - the same as its stop button. */
   readonly stopChat?: () => void;
   /** Run a workbench command, such as opening the Agents board. */
@@ -173,6 +175,7 @@ export function createChatLiveRoom(deps: ChatLiveRoomDeps = {}): ChatLiveRoom {
 
   window.adcode.aiLive.onEvent(({ source, event }) => {
     kinds.set(source.teamId, source.kind);
+    if (enabled && event.kind !== "end") deps.onActivity?.(room.element, event.kind === "start");
     room.apply(identityForSource(source), event);
   });
 
@@ -206,6 +209,7 @@ export function createChatLiveRoom(deps: ChatLiveRoomDeps = {}): ChatLiveRoom {
     };
 
     if (team.kind === "team" && (team.state === "running" || team.state === "preparing")) {
+      if (enabled) deps.onActivity?.(room.element, firstLook);
       for (const node of team.nodes) {
         if (node.state !== "pending") continue;
         const identity = nodeIdentity(node.id);
@@ -229,6 +233,7 @@ export function createChatLiveRoom(deps: ChatLiveRoomDeps = {}): ChatLiveRoom {
   });
 
   subscribeLive((message) => {
+    if (enabled && (message.kind === "waiting" || (message.kind === "event" && message.event.kind !== "end"))) deps.onActivity?.(room.element, message.kind === "event" && message.event.kind === "start");
     if (message.kind === "event") room.apply(message.identity, message.event);
     else if (message.kind === "waiting") room.waiting(message.identity, message.step);
     else if (message.kind === "settle") room.settle(message.group);

@@ -104,6 +104,7 @@ import { createKeychainStore } from "./keychain.ts";
 import { createAiToolRunner } from "./aiTools.ts";
 import { resolveSandboxPath } from "./aiSandbox.ts";
 import { createCheckpointStore, type UndoResult } from "./aiCheckpoints.ts";
+import { checkpointView } from "./aiCheckpointView.ts";
 import { ASSISTANT_EXTENSION_TOOLS, withAssistantExtensions } from "./assistantControls.ts";
 import { memoryForWorkspace } from "./memory.ts";
 import { currentSettings, writeSetting } from "./settings.ts";
@@ -1529,11 +1530,7 @@ export async function aiSend(
     }
     const checkpoint = await checkpoints.finish().catch(() => null);
     if (checkpoint !== null) {
-      broadcast(CHANNELS.aiCheckpoint, {
-        id: checkpoint.id,
-        createdAt: checkpoint.createdAt,
-        files: checkpoint.files.map((file) => ({ path: file.path, created: file.before === null, deleted: file.after === null })),
-      });
+      broadcast(CHANNELS.aiCheckpoint, checkpointView(checkpoint));
       recordDebug("info", "ai", `Turn changed ${checkpoint.files.length} file${checkpoint.files.length === 1 ? "" : "s"} (undo available)`);
       /*
        * Automatic mode - the default - writes through checkpoints, not through a review task,
@@ -1573,11 +1570,7 @@ export async function aiSend(
     // Whatever the turn wrote before failing is still undoable.
     const checkpoint = await checkpoints.finish().catch(() => null);
     if (checkpoint !== null) {
-      broadcast(CHANNELS.aiCheckpoint, {
-        id: checkpoint.id,
-        createdAt: checkpoint.createdAt,
-        files: checkpoint.files.map((file) => ({ path: file.path, created: file.before === null, deleted: file.after === null })),
-      });
+      broadcast(CHANNELS.aiCheckpoint, checkpointView(checkpoint));
     }
     broadcast(CHANNELS.aiEvent, { kind: "error", detail });
     recordMilestone("turn_failed");
