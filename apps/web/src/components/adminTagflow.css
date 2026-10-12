@@ -1,0 +1,11 @@
+.tagflow-admin, .tagflow-admin .admin-models-provider, .tagflow-admin form { min-width: 0; }
+.tagflow-admin .admin-card-head { flex-wrap: wrap; gap: 12px; }
+.tagflow-admin .admin-models-actions { flex-wrap: wrap; max-width: 100%; }
+.tagflow-admin .admin-models-actions .input { min-width: 0; width: auto; max-width: 100%; }
+.tagflow-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 16px 0; }
+.tagflow-field { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.tagflow-field .input, .tagflow-field .select { width: 100%; }
+.tagflow-model { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.tagflow-model legend { font-size: 13px; padding: 0 6px; }
+.tagflow-checks { display: grid; gap: 10px; font-size: 13px; }
+@media (max-width: 640px) { .tagflow-fields { grid-template-columns: 1fr; } }

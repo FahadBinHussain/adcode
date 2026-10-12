@@ -3,6 +3,33 @@
 All notable changes to ADCode. Dates are the date the version was prepared; a version is
 only public once its installers are attached to a GitHub release.
 
+## 2.3.0 — 2026-10-12
+
+- Agent activity now scrolls inside the conversation instead of occupying a fixed panel above messages. Solo runs use a compact status card with the same Stop controls.
+- Edited files appear in a themed summary with per-file added and removed lines, expandable file rows, recorded diffs and conflict-aware Undo. Malformed tool arguments recover literal JSON line breaks safely; incomplete calls retry as smaller edits without writing partial files.
+
+- Free AI includes 1,000,000 tokens per account per day and unlimited request counts. The usage view separates the daily balance from local history, and explains repeated input context and estimated counts. Allowance reservations and context checks now use the same token estimate, then settle against provider-reported usage.
+- Chats and agent runs wait for recoverable free AI limits and resume automatically at the reset time while ADCode stays open. Stop cancels the wait; completed tool operations are not replayed.
+- Switching models carries the conversation, compacted summary and completed tool results to the new model. Selecting another model during a limit wait continues the pending task.
+- Privileged database functions are restricted to the server role, with fixed search paths. Public clients cannot call balance or administrative functions directly.
+- Admin provider reports cover every free model: demand, usage, distinct and returning accounts, peak load, reliability, response speed and voluntary feedback, with full HTML/PDF, CSV and JSON exports. Audience tables include network country, optional user role and experience, AI assistant persona, workflows, declared purpose and desktop platform, with coverage and unknown groups. Users can opt into or remove a profile in AI usage. Tagflow Code 27B uses its owner-confirmed 256k context window. Model-level collection starts October 11; older account totals are not presented as model history.
+- Included AI response ratings can include an optional comment. Provider reports include comments only with explicit user permission; conversations and project files are never attached. The privacy policy dated October 11 explains the new operational metadata and feedback.
+- Included Tagflow AI is selected by default for new users and older unconnected default profiles. Sign in with a verified account to use the included allowance; existing connected providers stay selected.
+- Connect a model separates **Free · no API key** from **Bring your own key**. Admin manages both catalogs, including new models, defaults, availability and per-account limits. Supported server connections are Tagflow, OpenAI, Gemini, Groq and OpenRouter.
+- AI usage adds a yearly activity calendar, current and longest streaks, active days, and account allowance meters. Daily details are accessible by pointer and keyboard; live updates keep focus and scroll position.
+- Agent cards separate model and tool access, use consistent actions, and fit smaller windows. Starter specialists appear before model discovery and follow the current model; their editor can also pin a fixed model.
+- Edit an agent or revise and delete a stopped run directly from its card or popup. Active runs must be stopped first, and deleting a run preserves changes already applied to the project.
+- The chat composer shows separate circular meters for context, Included AI allowance and requests. Personal providers and local models show recorded usage without inventing account limits.
+- Included AI distinguishes oversized context, unsupported images and unavailable models. Valid coding tool loops no longer fail because byte size was mistaken for token count, and failed plans stop showing an active spinner.
+- When Included AI cannot read a browser screenshot, the assistant explains that limitation and continues with the tool's text findings instead of failing the turn.
+- Failed file edits return the current text and a precise recovery read, so the assistant can retry with a correct match. Permission errors no longer look like missing files.
+- Quality tools discover and run the project's existing checks, and audit local pages at phone, tablet and desktop widths. Product design guidance covers visual hierarchy, interaction states, accessibility, restrained motion and release verification.
+- The editor bundles DOMPurify 3.4.16 with its latest sanitization fixes. Release security checks include dependencies that ship in the app even when they are listed as development tools.
+- Google and GitHub account pages use the current ADCode logo, clearer status and accessible layouts. Google waits for the token exchange before confirming approval; GitHub opens completion after the account connects, and respects cancellation and code expiry.
+- Motion preferences cover decorative transitions and animations across the app.
+- The website introduces founder Sinan Faizal Bayan and ADCode’s mission, with a **Talk to the team** booking link.
+- See [the new feature guide](docs/features/ai-activity-and-free-models.md) for usage, privacy and administrator setup.
+
 ## 2.2.0 — 2026-10-09
 
 - Watch your agents work. When the assistant writes a file, a live window in the

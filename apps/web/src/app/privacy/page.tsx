@@ -69,9 +69,19 @@ If you use the feedback button, we receive what you typed, the app version, and 
 
 ### AI features
 
-You choose the AI provider and supply its API key. Chat and agent tools can send your prompt, relevant source text, and tool results to that provider so it can answer or edit an isolated task workspace. Automatic inline completion sends bounded text around the cursor (up to 6,000 characters before it and 2,000 after it), the language, and a small output allowance; it does not send the file path. You can turn inline completion off in Settings.
+You choose included AI when available, a provider using your own API key, or a local model. Chat and agent tools can send your prompt, relevant source text, and tool results to the chosen provider so it can answer or edit your project. Automatic inline completion sends bounded text around the cursor (up to 6,000 characters before it and 2,000 after it), the language, and a small output allowance; it does not send the file path. You can turn inline completion off in Settings.
 
-AI traffic goes directly from the desktop app to the selected provider under that provider's terms and privacy policy, not through ADCode's advertising service. ADCode keeps task sandboxes, rollback checkpoints, schedules, and operational traces locally. Traces describe actions and outcomes rather than storing a provider's private reasoning, and common credential shapes are redacted. ADCode also skips inline completion for common credential files, but you should still review what you ask any AI provider to read.
+With your own key, AI traffic goes directly from the desktop app to the selected provider. With included AI, prompts, source context and tool results pass through ADCode's dedicated AI relay to the provider identified on the selected model (Tagflow, OpenAI, Gemini, Groq or OpenRouter), under that provider's terms and privacy policy. This route uses a server-side provider key and requires a verified account. The relay stores daily request and token counts, estimated spending, reservations for active requests, and allowance settings by account so it can enforce shared limits. Administrators can view those counts and change allowances. It does not store prompts or replies in the server database, and AI content is not used by the advertising pipeline.
+
+For included AI reporting, the relay also records the account identifier, request identifier, model and provider revision, request times, token counts, estimated cost, workload type, response speed, generated tool-call counts, outcome and a fixed error category. It does not record tool arguments, file paths or raw provider errors. Administrators use this metadata to prepare aggregate reports on demand, usage, reliability and performance for model providers. Those reports exclude account identifiers and conversation content.
+
+Audience reports include the approximate country of an AI request's network connection, supplied by Cloudflare. This is not verified residence and can be affected by VPNs or proxies. This reporting system does not store IP addresses or precise location. The desktop also reports its operating system and a fixed assistant category (such as Reviewer or Tester), with custom agents grouped as Custom agent. Custom agent names, instructions and conversation text are not used to classify audience or purpose.
+
+In AI usage → About your AI use, you can optionally provide your role, coding experience and main purpose for using included AI, and expressly choose to include these in aggregate provider reports. These fields are not inferred from your work. Your current choices classify your account in reports, including historical periods. You can update them or remove your profile in the same form; future generated reports then reflect the change. Copies already downloaded cannot be recalled. Missing information is reported as unknown.
+
+You can voluntarily rate an included AI response and submit a category and comment. Feedback is linked to that response and your account so a rating can be updated or removed. Ratings contribute to aggregate statistics. Comments are shared in provider reports only when you explicitly check the sharing option; it is off by default. No conversation or project files are attached to model feedback. Avoid including private information in a comment you choose to share.
+
+ADCode keeps task sandboxes, rollback checkpoints, schedules, and operational traces locally. Traces describe actions and outcomes rather than storing a provider's private reasoning, and common credential shapes are redacted. ADCode also skips inline completion for common credential files, but you should still review what you ask any AI provider to read. Clearing local AI usage history does not clear your server-enforced Tagflow allowance.
 
 ## Identity
 
@@ -85,6 +95,7 @@ If you later choose to withdraw money, you can attach an email address to that s
 - Your ledger: one row per credit, reversal, adjustment, or withdrawal, with the amount and a short description.
 - Records of ads served to you, kept briefly, so a receipt can be checked against a real serve.
 - Feedback you send, if you send any.
+- Included AI usage counts, account allowances and model-level operational metadata, if you use that service; no AI prompt or reply text is stored in its accounting or reporting tables.
 - **If you use invites:** your invite code, which code you joined with and when, and who joined with yours - the record your invite earnings are worked out from. Your invite page shows your first name only if you allow it, which you can turn off in Invite & earn. People you invite see that name, if shown; you see how many people joined and used ADCode, never who they are.
 - **If, and only if, you ask to be paid:** the payout details you enter — the full name on the receiving account, the country and currency, and either the email address on your Wise account or the bank details you give us. We store them so a person can make the transfer, and a copy is attached to each request so that editing your details later cannot redirect a payment already in progress. You can change or clear them at any time from the Payouts tab.
 
@@ -117,7 +128,7 @@ We use Google Cloud and Firebase to run the service, Dodo Payments to take payme
 
 ## Retention
 
-Ledger rows are kept as long as the account exists, because they are the record of what you were paid. Serve records expire automatically within hours. Feedback is kept until it is resolved.
+Ledger rows are kept as long as the account exists, because they are the record of what you were paid. Serve records expire automatically within hours. General support feedback is kept until it is resolved. Included AI reporting metadata is retained for usage and reliability reporting; it has no automatic expiry at present. Model feedback remains until its rating is removed or you request its deletion. You can request deletion of included AI reporting metadata through the contact below.
 
 ## Children
 

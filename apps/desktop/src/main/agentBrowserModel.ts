@@ -36,6 +36,8 @@ export interface ViewPageRequest {
   readonly actions: readonly PageAction[];
   readonly screenshot: boolean;
   readonly fullPage: boolean;
+  readonly reducedMotion?: boolean;
+  readonly audit?: boolean;
 }
 
 export const DEFAULT_VIEWPORT = { width: 1280, height: 800 } as const;
@@ -166,6 +168,7 @@ export function parseViewPageInput(input: Record<string, unknown>): ViewPageRequ
   const width = input["width"] === undefined ? DEFAULT_VIEWPORT.width : int(input["width"], 240, 3840);
   const height = input["height"] === undefined ? DEFAULT_VIEWPORT.height : int(input["height"], 240, 2400);
   if (width === null || height === null) return "view_page width is 240 to 3840 and height 240 to 2400, in whole pixels.";
+  if (input["reduced_motion"] !== undefined && typeof input["reduced_motion"] !== "boolean") return "reduced_motion must be true or false.";
   const rawActions = input["actions"];
   if (rawActions !== undefined && !Array.isArray(rawActions)) return "view_page actions must be a list of steps.";
   const list = (rawActions as unknown[] | undefined) ?? [];
@@ -176,7 +179,25 @@ export function parseViewPageInput(input: Record<string, unknown>): ViewPageRequ
     if (typeof parsed === "string") return parsed;
     actions.push(parsed);
   }
-  return { target, width, height, actions, screenshot: input["screenshot"] !== false, fullPage: input["full_page"] === true };
+  return { target, width, height, actions, screenshot: input["screenshot"] !== false, fullPage: input["full_page"] === true,
+    ...(input["reduced_motion"] === undefined ? {} : { reducedMotion: input["reduced_motion"] as boolean }),
+  };
+}
+
+/** Every audit starts from the same page so a previous viewport's clicks cannot skew it. */
+export function parseAuditPageInput(input: Record<string, unknown>): ViewPageRequest[] | string {
+  const raw = input["viewports"] ?? [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }];
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 3) return "audit_page viewports must contain 1–3 width/height pairs.";
+  const requests: ViewPageRequest[] = [];
+  for (const viewport of raw) {
+    if (typeof viewport !== "object" || viewport === null || Array.isArray(viewport)) return "Each viewport needs width and height.";
+    const size = viewport as Record<string, unknown>;
+    if (size["width"] === undefined || size["height"] === undefined) return "Each viewport needs width and height.";
+    const parsed = parseViewPageInput({ ...input, width: size["width"], height: size["height"], screenshot: false, full_page: false, reduced_motion: input["reduced_motion"] ?? true });
+    if (typeof parsed === "string") return parsed;
+    requests.push({ ...parsed, target: parsed.target.kind === "current" ? { kind: "preview", path: "/" } : parsed.target, audit: true });
+  }
+  return requests;
 }
 
 /** A key name a model writes, as the DevTools protocol wants it. */

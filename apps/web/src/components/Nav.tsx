@@ -8,6 +8,7 @@ import { Mark } from "./Mark";
 import { useAuth } from "./AuthProvider";
 import { PortalActions } from "./PortalActions";
 import { ThemePicker } from "./ThemeProvider";
+import { TEAM } from "@/lib/site";
 
 export function Nav() {
   const pathname = usePathname();
@@ -45,6 +46,7 @@ export function Nav() {
   const secondaryLinks = (
     <>
       <Link href="/#product" className="glass-nav-link">Product</Link>
+      <a href="/#about" className="glass-nav-link">About us</a>
       <Link href="/portal" className="glass-nav-link nav-mobile-only">Advertiser portal</Link>
       <Link
         href="/docs"
@@ -61,12 +63,13 @@ export function Nav() {
       */}
       <Link
         href="/compare"
-        className="glass-nav-link"
+        className="glass-nav-link nav-mobile-only"
         aria-current={pathname === "/compare" || pathname.startsWith("/compare/") ? "page" : undefined}
       >
         Compare
       </Link>
-      <Link href="/support" className="glass-nav-link" aria-current={pathname === "/support" ? "page" : undefined}>Support</Link>
+      <Link href="/support" className="glass-nav-link nav-mobile-only" aria-current={pathname === "/support" ? "page" : undefined}>Support</Link>
+      <a href={TEAM.bookingUrl} className="glass-nav-link nav-team nav-mobile-only" target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a>
       {/* The desktop bar has its own Download button; a second "Download" beside it split one action in two. Phones hide that button, so the sheet keeps this. */}
       <Link href="/versions" className="glass-nav-link nav-mobile-only" aria-current={pathname === "/versions" ? "page" : undefined}>Download</Link>
       {isAdmin && <Link href="/admin" className="glass-nav-link">Admin</Link>}
@@ -87,6 +90,7 @@ export function Nav() {
         <nav className="glass-nav" aria-label="Main navigation">
           <span className="glass-nav-secondary">{secondaryLinks}</span>
           <ThemePicker />
+          <a href={TEAM.bookingUrl} className="glass-nav-link nav-team nav-team-action" target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a>
           <PortalActions />
           {/* The primary action on every page: most visitors came to get the editor. */}
           <Link href="/versions" className="nav-download">Download</Link>
@@ -94,7 +98,7 @@ export function Nav() {
             <button type="button" className="glass-menu-trigger" aria-label="Open navigation menu" aria-controls="glass-mobile-navigation" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
               <span /><span />
             </button>
-            {open && <div className="glass-mobile-sheet" id="glass-mobile-navigation">{secondaryLinks}</div>}
+            {open && <div className="glass-mobile-sheet" id="glass-mobile-navigation" onClick={(event) => { if ((event.target as Element).closest("a")) setOpen(false); }}>{secondaryLinks}</div>}
           </div>
         </nav>
       </div>

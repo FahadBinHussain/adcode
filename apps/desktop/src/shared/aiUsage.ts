@@ -15,6 +15,8 @@
  * and the tests exercise both through this file.
  */
 
+import { shiftDay, usageActivity, type UsageActivityView } from "./usageActivity.ts";
+
 export type UsageSource = "chat" | "agents";
 export type UsageRange = "today" | "7d" | "30d" | "all";
 
@@ -83,6 +85,8 @@ export interface UsageDayView {
 }
 
 export interface AiUsageView {
+  /** Local calendar activity for the past year, independent of the totals range. */
+  readonly activity: UsageActivityView;
   readonly range: UsageRange;
   readonly totals: {
     readonly requests: number;
@@ -103,7 +107,6 @@ export interface AiUsageView {
 /** How long rows are kept. Long enough for "this year", short enough to stay a small file. */
 export const KEEP_USAGE_DAYS = 400;
 const MAX_ROWS = 20_000;
-const DAY_MS = 86_400_000;
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -152,7 +155,7 @@ export function addUsage(rows: readonly UsageRow[], entry: UsageEntry): UsageRow
 
 /** Drop rows older than the keep window. */
 export function pruneUsage(rows: readonly UsageRow[], now: number, keepDays = KEEP_USAGE_DAYS): UsageRow[] {
-  const oldest = dayKey(now - keepDays * DAY_MS);
+  const oldest = shiftDay(dayKey(now), -keepDays);
   return rows.filter((row) => row.day >= oldest).slice(-MAX_ROWS);
 }
 
@@ -186,7 +189,7 @@ export function parseUsageRows(raw: unknown): UsageRow[] {
 export function rangeStart(range: UsageRange, now: number): string | null {
   if (range === "all") return null;
   const days = range === "today" ? 0 : range === "7d" ? 6 : 29;
-  return dayKey(now - days * DAY_MS);
+  return shiftDay(dayKey(now), -days);
 }
 
 function daysBetween(first: string, now: number): string[] {
@@ -195,7 +198,7 @@ function daysBetween(first: string, now: number): string[] {
   // Walk back from today rather than forward from `first`, so a clock change mid-range
   // cannot skip or repeat a day.
   for (let back = 0; back < KEEP_USAGE_DAYS + 1; back += 1) {
-    const day = dayKey(now - back * DAY_MS);
+    const day = shiftDay(today, -back);
     if (day < first) break;
     if (out[out.length - 1] !== day) out.push(day);
     if (day === first) break;
@@ -258,7 +261,8 @@ export function summarizeUsage(rows: readonly UsageRow[], range: UsageRange, now
   const firstDay = start ?? since ?? dayKey(now);
   const days = daysBetween(firstDay, now).map((day) => ({ day, tokens: tokensByDay.get(day) ?? 0 }));
 
-  return { range, totals, models, days, since };
+  const activity = usageActivity(rows.map((row) => ({ day: row.day, requests: row.requests, tokens: row.inputTokens + row.outputTokens })), dayKey(now));
+  return { range, totals, models, days, since, activity };
 }
 
 /** 950, 12.4k, 3.1M - the way token counts are usually said. */

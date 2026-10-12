@@ -60,6 +60,13 @@ export const PARENT = {
   id: "https://bluethenics.com/#organization",
 } as const;
 
+/** Public founder and contact details, shared by the homepage and navigation. */
+export const TEAM = {
+  founder: "Sinan Faizal Bayan",
+  bookingUrl: "https://calendly.com/bluethenics01/30min",
+  portrait: "/images/sinan-faizal-bayan.jpeg",
+} as const;
+
 /**
  * Where the code lives and how it is licensed.
  *

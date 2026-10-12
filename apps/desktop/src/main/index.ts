@@ -11,7 +11,8 @@
  * be granted a permission, and can only reach the disk through handlers that confine
  * every path to the opened workspace.
  */
-// First, so its ipcMain.handle wrapper is in place before any module registers a handler.
+import "./profileBootstrap.ts";
+// Install its ipcMain.handle wrapper before any module registers a handler.
 import { describeDebugContext, registerDebugLogIpc } from "./debugLog.ts";
 import { join } from "node:path";
 import { BrowserWindow, app, ipcMain, shell } from "electron";

@@ -115,6 +115,19 @@ describe("tool calls", () => {
     expect(events.at(-1)).toEqual({ kind: "stop", reason: "tool-use" });
   });
 
+  it("recovers literal newlines in streamed file arguments without changing their contents", async () => {
+    const args = '{"path":"a.txt","contents":"first\nsecond"}';
+    const provider = createOpenAiProvider("key", sseFetch([
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "propose_edit", arguments: args.slice(0, 24) } }] } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(24) } }] } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}`,
+    ]));
+    const events = await collect(provider.stream(request, new AbortController().signal));
+    const event = events.find(event => event.kind === "tool-call");
+    expect(event).toMatchObject({ call: { input: { path: "a.txt", contents: "first\nsecond" } } });
+    if (event?.kind === "tool-call") expect(event.call.inputError).toBeUndefined();
+  });
+
   it("marks malformed tool arguments as invalid instead of silently executing an empty object", async () => {
     const provider = createOpenAiProvider(
       "key",

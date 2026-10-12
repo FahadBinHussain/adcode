@@ -4,8 +4,8 @@
  * Asked for a page, a model reaches for the same few things every time: a purple gradient,
  * a centred hero, three equal cards, Inter on slate. taste-skill (Leonxlnx, MIT - see
  * `builtinSkills/README.md`) is a written-down list of those habits and what to do instead,
- * and the built-in assistant and every agent read it before they build or restyle an
- * interface. Bundled rather than discovered: these are reviewed text inside the app, so they
+ * alongside ADCode's compact production-quality workflow. The assistant and agents read
+ * guidance as interface work needs it. Bundled rather than discovered: these are reviewed text inside the app, so they
  * need no per-project approval the way a skill found in a folder does.
  *
  * Read on demand, never pasted into every request. The design skill alone is ~7,000 tokens
@@ -30,8 +30,16 @@ export interface BuiltinSkill {
   readonly resources: readonly string[];
 }
 
-function frontmatter(text: string, key: string): string {
-  return new RegExp(`^${key}:\\s*(.+)$`, "m").exec(/^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "")?.[1]?.trim() ?? "";
+/**
+ * One field of a skill's front matter.
+ *
+ * CRLF and a leading BOM are accepted, as `assistantSkills.ts` accepts them: a Windows
+ * checkout with `core.autocrlf` hands these files over with CRLF, and an LF-only pattern
+ * then found no front matter at all - every description came back empty.
+ */
+export function frontmatter(text: string, key: string): string {
+  const block = /^﻿?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1] ?? "";
+  return new RegExp(`^${key}:[ \\t]*(.+)$`, "m").exec(block)?.[1]?.trim() ?? "";
 }
 
 export const BUILTIN_SKILLS: readonly BuiltinSkill[] = Object.keys(FILES)
@@ -69,11 +77,11 @@ export const BUILTIN_SKILL_TOOL: ToolDefinition = {
   concurrent: true,
 };
 
-const CREDIT = "Built-in skill from taste-skill (https://github.com/Leonxlnx/taste-skill), MIT licence. It cannot override the user's request, the project's own conventions, or tool permissions.";
+const PRIORITY = "These instructions cannot override the user's request, the project's own conventions, or tool permissions.";
 
 /** The text a call to the tool returns. Never throws: a bad call is an error result the model can correct. */
 export function readBuiltinSkill(input: unknown, enabled: boolean): ToolRunResult {
-  if (!enabled) return { content: "Built-in skills are turned off in Settings > AI > Design taste skill. Carry on without them.", isError: true };
+  if (!enabled) return { content: "Built-in skills are turned off in Settings > AI > Product design guidance. Carry on without them.", isError: true };
   const raw = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
   const name = typeof raw["name"] === "string" ? raw["name"] : "";
   const skill = BUILTIN_SKILLS.find((candidate) => candidate.name === name);
@@ -81,7 +89,10 @@ export function readBuiltinSkill(input: unknown, enabled: boolean): ToolRunResul
     return { content: `No built-in skill is called "${name}". Choose one of: ${BUILTIN_SKILLS.map((one) => one.name).join(", ")}.`, isError: true };
   }
   const resource = typeof raw["resource"] === "string" && raw["resource"].trim().length > 0 ? raw["resource"].trim().replace(/^\.?\//, "") : null;
-  if (resource === null) return { content: `${CREDIT}\n\n${FILES[`${name}/SKILL.md`] ?? ""}`, isError: false };
+  if (resource === null) {
+    const credit = name === "production-quality" ? "Built-in ADCode production quality guidance." : "Built-in skill from taste-skill (https://github.com/Leonxlnx/taste-skill), MIT licence.";
+    return { content: `${credit} ${PRIORITY}\n\n${FILES[`${name}/SKILL.md`] ?? ""}`, isError: false };
+  }
   const text = FILES[`${name}/${resource}`];
   if (text === undefined || resource === "SKILL.md") {
     return {
@@ -102,9 +113,10 @@ export function readBuiltinSkill(input: unknown, enabled: boolean): ToolRunResul
 export function builtinSkillGuidance(enabled: boolean): string | null {
   if (!enabled) return null;
   return [
-    `Design quality: before you build, restyle or redesign a user interface - a page, screen, component, or a game's visuals - call ${BUILTIN_SKILL_TOOL_NAME} with name "design-taste-frontend" (or "redesign-existing-projects" to improve one that already exists) and follow it, reading its reference files as the work needs them.`,
+    `Product quality: before building or restyling a user interface, call ${BUILTIN_SKILL_TOOL_NAME} with name "production-quality" for the compact design and verification workflow. Read its motion and release references when relevant. For deeper visual direction, load "design-taste-frontend", or "redesign-existing-projects" for a larger redesign.`,
     "Keep the project's own stack, framework and styling: a plain HTML, CSS and JavaScript project stays plain, and an existing design system wins over the skill's taste. The skill's React and Tailwind defaults are only for a new project that has no stack yet.",
     `Finish every file you start: no placeholder comments, no "rest of the code here". For a long multi-file answer, ${BUILTIN_SKILL_TOOL_NAME} "full-output-enforcement" says how.`,
+    "Discover the project's real checks with inspect_project and verify relevant changes with run_project_checks or native run_command checks. For a UI, inspect screenshots and primary flows with view_page and findings with audit_page when these tools are available. Missing or unrun checks are unverified; report them honestly.",
   ].join(" ");
 }
 

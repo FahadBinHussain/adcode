@@ -56,6 +56,7 @@ import type { AssistantControlAction, AssistantControlsView } from "./assistantC
 import type { McpNodeCheck } from "./mcpNode.ts";
 import type { LiveAgentEventView } from "./liveAgents.ts";
 import type { AiUsageView, UsageRange } from "./aiUsage.ts";
+import type { TagflowAllowanceView } from "./tagflow.ts";
 
 export type { ActivityDelta };
 
@@ -573,6 +574,7 @@ export const CHANNELS = {
   memoryWrite: "memory:write",
   memoryRemove: "memory:remove",
   aiProviders: "ai:providers",
+  aiProvidersChanged: "ai:providers-changed",
   aiSetKey: "ai:set-key",
   aiClearKey: "ai:clear-key",
   aiSend: "ai:send",
@@ -619,10 +621,15 @@ export const CHANNELS = {
   aiTeamRead: "ai-team:read",
   aiTeamStart: "ai-team:start",
   aiTeamCancel: "ai-team:cancel",
+  aiTeamRemove: "ai-team:remove",
+  aiTeamRemoved: "ai-team:removed",
   aiTeamTraces: "ai-team:traces",
   aiTeamChanged: "ai-team:changed",
   aiLive: "ai:live",
   aiUsageRead: "ai:usage-read",
+  aiUsageAllowance: "ai:usage-allowance",
+  aiModelFeedback: "ai:model-feedback",
+  aiAudience: "ai:audience",
   aiUsageClear: "ai:usage-clear",
   aiUsageChanged: "ai:usage-changed",
   aiAutomationCreate: "ai-automation:create",
@@ -1141,6 +1148,7 @@ export interface ChatMessageView {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly at: number;
+  readonly includedRequestId?: string;
 }
 
 export interface ChatSessionView {
@@ -1201,7 +1209,15 @@ export interface AiCheckpointView {
   readonly id: string;
   readonly createdAt: number;
   /** `deleted`: the turn deleted the file, or moved it away from this path. */
-  readonly files: ReadonlyArray<{ readonly path: string; readonly created: boolean; readonly deleted?: boolean }>;
+  readonly files: ReadonlyArray<{
+    readonly path: string;
+    readonly created: boolean;
+    readonly deleted?: boolean;
+    readonly added?: number;
+    readonly removed?: number;
+    /** Recorded before/after changes, not a diff against later user edits. Absent for binary files. */
+    readonly hunks?: readonly DiffHunkView[];
+  }>;
 }
 
 export interface AiUndoResultView {
@@ -1822,6 +1838,7 @@ export interface AdcodeApi {
     previewSkill(id: string): Promise<string>;
     onControlsChanged(listener: () => void): () => void;
     status(): Promise<AiStatus>;
+    onStatusChanged(listener: () => void): () => void;
     setKey(provider: string, key: string): Promise<AiStatus>;
     clearKey(provider: string): Promise<AiStatus>;
     /**
@@ -1896,7 +1913,10 @@ export interface AdcodeApi {
     read(id: string): Promise<AiTeamView | null>;
     start(id: string): Promise<AiTeamView>;
     cancel(id: string): Promise<AiTeamView>;
+    /** Delete a stopped run and its private work; applied project changes remain. */
+    remove(id: string): Promise<boolean>;
     traces(id: string): Promise<readonly AiTeamTraceView[]>;
+    onRemoved(listener: (id: string) => void): () => void;
     onChanged(listener: (team: AiTeamView) => void): () => void;
   };
   /** What background agents are doing right now, for the chat's live room. */
@@ -1905,6 +1925,9 @@ export interface AdcodeApi {
   };
   /** Tokens and estimated cost per model, kept on this machine. */
   readonly aiUsage: {
+    audience(input?: import("./tagflow.ts").TagflowAudienceInput): Promise<import("./tagflow.ts").TagflowAudienceResult>;
+    feedback(input: import("./tagflow.ts").TagflowFeedbackInput): Promise<import("./tagflow.ts").TagflowFeedbackResult>;
+    allowance(): Promise<TagflowAllowanceView | null>;
     read(range: UsageRange): Promise<AiUsageView>;
     clear(): Promise<void>;
     onChanged(listener: () => void): () => void;

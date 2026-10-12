@@ -40,6 +40,7 @@ import "./styles/liveAgents.css";
 import "./styles/conversation.css";
 // Stop controls, who is replying, reply styles, text size, menus, usage and Customise chat.
 import "./styles/chatControls.css";
+import "./styles/composer.css";
 // Last: its reduced-motion-guarded rules refine the entrances the sheets above declare.
 import "./styles/motion.css";
 import { createFrameTask } from "./frameTask.ts";
@@ -100,7 +101,7 @@ import {
   reducePopupLayer,
   type PopupId,
 } from "./workbench/popupLayer.ts";
-import { createPopupShell, type PopupShell } from "./workbench/popupShell.ts";
+import { createPopupShell, handleOutsidePopupEscape, type PopupShell } from "./workbench/popupShell.ts";
 import { createQuickOpen, createSearchPanel } from "./panels/searchPanel.ts";
 import { createProblemsPanel } from "./panels/problemsPanel.ts";
 import { createBottomPanel, type PanelTabId } from "./panels/bottomPanel.ts";
@@ -184,6 +185,7 @@ import {
   type ContextMenuNode,
 } from "./workbench/contextMenu.ts";
 import { createInlineEditor } from "./workbench/inlineEdit.ts";
+import { reconcileTreeChildren } from "./workbench/treeRefresh.ts";
 import type {
   AdcodeApi,
   DirEntry,
@@ -1055,7 +1057,7 @@ async function refreshDirectory(dirPath: string): Promise<void> {
   );
 
   // Anything left in `existing` is gone from disk, and dropping it here is what removes it.
-  box.replaceChildren(...next);
+  reconcileTreeChildren(box, next);
 }
 
 /** Expand a directory so something created inside it is actually visible. */
@@ -2452,6 +2454,17 @@ document.addEventListener(
 );
 
 document.addEventListener("keydown", (event) => {
+  if (popupLayerState.primary === null) return;
+  const primary = primaryPopups.get(popupLayerState.primary);
+  if (primary === undefined) return;
+  const dependent = popupLayerState.dependent === null ? undefined : dependentPopups.get(popupLayerState.dependent);
+  handleOutsidePopupEscape(event, primary.shell, dependent?.shell, () => {
+    if (popupLayerState.dependent !== null) closeDependentPopup(popupLayerState.dependent);
+    else if (popupLayerState.primary !== null) closePrimaryPopup(popupLayerState.primary);
+  });
+}, true);
+
+document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented || popupLayerState.primary === null)
     return;
   const modal = event.composedPath().find((target) => target instanceof HTMLDialogElement && target.open)
@@ -3718,15 +3731,16 @@ const sourceControlShell = createPopupShell({
   initialFocus: () =>
     sourceControl.element.querySelector<HTMLElement>(".scm-message"),
   onRequestClose: () => closePrimaryPopup("source-control"),
+  onClosed: () => {
+    if (sourceControlRestoreFocus === "editor" && popupLayerState.primary === null) editorHost.focus();
+  },
 });
 
 registerPrimaryPopup("source-control", sourceControlShell, {
   shown() {
     void sourceControl.refresh();
   },
-  hidden() {
-    if (sourceControlRestoreFocus === "editor") editorHost.focus();
-  },
+  hidden() {},
 }, {
   restoreShellFocus: () => sourceControlRestoreFocus === "launcher",
 });
@@ -4796,7 +4810,10 @@ function openChat(input: LayoutInput): void {
 
 function createConnectContent(requestOpen: () => void, requestClose: () => void) {
   return createConnectView({
-    onStatusChanged: listener => window.adcode.settings.onChanged(listener),
+    onStatusChanged: listener => {
+      const stops = [window.adcode.settings.onChanged(listener), window.adcode.ai.onStatusChanged(listener), window.adcode.account.onChanged(listener)];
+      return () => stops.forEach((stop) => stop());
+    },
     status: () => window.adcode.ai.status(),
     checkKey: (provider, key) => window.adcode.ai.checkKey(provider, key),
     setKey: (provider, key) => window.adcode.ai.setKey(provider, key),
@@ -5778,6 +5795,7 @@ function registerCommands(): void {
   add("run.file", "Run Active File", () => runButton.activate());
   add("ai.toggle", "Assistant", () => chat.toggle());
   add("ai.connect", "Connect a Model", () => connectView.open());
+  add("ai.tagflow", "Choose Included Tagflow AI", () => connectView.open());
   add("ai.getFreeKey", "Get a Free AI Key", () => {
     connectView.showQuick();
     connectView.open();

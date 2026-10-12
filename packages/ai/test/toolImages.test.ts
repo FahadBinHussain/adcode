@@ -80,10 +80,14 @@ describe("pictures a tool returns", () => {
     expect(JSON.stringify(third[2])).toContain("Call that tool again to see the current state");
   });
 
-  it("are described in words when the model cannot read images, and the turn carries on", async () => {
+  it.each([
+    "Invalid content type. image_url is only supported by certain models.",
+    "Included AI returned HTTP 400: Image attachments are not supported by included AI. (code bad-request)",
+    "Included AI returned HTTP 400: Included AI cannot read image attachments. Choose a model that supports images, or start a text-only conversation. (code images-not-supported)",
+  ])("continues with the tool's text report after an image refusal: %s", async (detail) => {
     const provider = recordingProvider([
       look("look-1"),
-      new Error("Invalid content type. image_url is only supported by certain models."),
+      new Error(detail),
       [{ kind: "text", text: "Read the report instead." }, { kind: "stop", reason: "end-turn" }],
       look("look-2"),
       [{ kind: "stop", reason: "end-turn" }],

@@ -14,6 +14,18 @@ import { createAgentMascot } from "./agentMascot.ts";
 import { MASCOT_COLORS, MASCOT_SHAPES, defaultMascotFor, type MascotLook } from "./mascotStyle.ts";
 import type { BoxModel, EvidenceChip } from "./agentBoardModel.ts";
 import type { RiskFlag, RunCheck } from "../../shared/runEvidence.ts";
+import { createIcon, ICON } from "../workbench/icons.ts";
+
+function openAgentModal(className: string, heading: string, settle: () => void) {
+  const modal = openFormModal(className, heading, settle);
+  const header = el("div", "agents-dialog-heading");
+  const close = button("", "agents-dialog-close", modal.finish);
+  close.setAttribute("aria-label", "Close dialog");
+  close.append(createIcon(ICON.close));
+  header.append(modal.title, close);
+  modal.card.prepend(header);
+  return modal;
+}
 
 /* ── New task ──────────────────────────────────────────────────────────────── */
 
@@ -46,7 +58,7 @@ export function openNewTaskDialog(options: {
   return new Promise((resolve) => {
     let result: NewTaskRequest | null = null;
     const heading = options.team ? "Team task" : options.followUp ? "Follow up" : "New task";
-    const { dialog, card, finish } = openFormModal("agents-new-task", heading, () => resolve(result));
+    const { dialog, card, finish } = openAgentModal("agents-new-task", heading, () => resolve(result));
     if (options.followUp) card.append(el("p", "result-summary", `Continuing: ${options.followUp.title}`));
     if (options.team) card.append(el("p", "result-summary", `${options.team.names.join(", ")} will split this task and hand their work back for one review.`));
     const form = el("form", "form-dialog-form");
@@ -63,7 +75,7 @@ export function openNewTaskDialog(options: {
     fallback.value = "";
     agent.append(fallback);
     for (const profile of options.agents) {
-      const option = el("option", "", `${profile.name} · ${profile.model}${profile.toolAccess === "read-only" ? " · read-only" : ""}`);
+      const option = el("option", "", `${profile.name} · ${profile.useCurrentModel ? "current model" : profile.model}${profile.toolAccess === "read-only" ? " · read-only" : ""}`);
       option.value = profile.id;
       agent.append(option);
     }
@@ -91,7 +103,7 @@ export function openNewTaskDialog(options: {
     const raceChoices = el("fieldset", "agents-race-choices");
     raceChoices.append(el("legend", "form-field-label", "Agents in the race"));
     const racers: { value: string; box: HTMLInputElement }[] = [];
-    for (const [value, labelText] of [["", `Default agent · ${options.defaultModel || "your connected model"}`], ...options.agents.map((profile) => [profile.id, `${profile.name} · ${profile.model}`] as const)] as const) {
+    for (const [value, labelText] of [["", `Default agent · ${options.defaultModel || "your connected model"}`], ...options.agents.map((profile) => [profile.id, `${profile.name} · ${profile.useCurrentModel ? "current model" : profile.model}`] as const)] as const) {
       const box = el("input", "");
       box.type = "checkbox";
       box.value = value;
@@ -167,6 +179,7 @@ export function openNewTaskDialog(options: {
 export interface AgentEditorResult {
   readonly kind: "save" | "delete";
   readonly agent: AgentProfile;
+  readonly prompt?: string;
 }
 
 export function openAgentEditorDialog(options: {
@@ -175,13 +188,24 @@ export function openAgentEditorDialog(options: {
   readonly activeProvider: string;
   readonly activeModel: string;
   readonly validate: (agent: AgentProfile) => string | null;
+  /** A run's settings can be changed before starting a fresh attempt. */
+  readonly run?: { readonly prompt: string };
 }): Promise<AgentEditorResult | null> {
   return new Promise((resolve) => {
     let result: AgentEditorResult | null = null;
     const existing = options.agent;
     const id = existing?.id ?? `agent-${crypto.randomUUID()}`;
-    const { dialog, card, finish } = openFormModal("agents-editor", existing ? `Edit ${existing.name}` : "New agent", () => resolve(result));
+    const { dialog, card, finish } = openAgentModal("agents-editor", options.run ? "Edit run" : existing ? `Edit ${existing.name}` : "New agent", () => resolve(result));
     const form = el("form", "form-dialog-form");
+    const prompt = el("textarea", "form-input agents-run-prompt");
+    if (options.run) {
+      prompt.rows = 3;
+      prompt.maxLength = 20_000;
+      prompt.required = true;
+      prompt.value = options.run.prompt;
+      form.append(field("Task", prompt));
+      card.append(el("p", "agents-dialog-hint", "Adjust this attempt, then start a new run."));
+    }
 
     // Look: a live mascot beside the shape and colour pickers.
     let look: MascotLook = existing?.mascot ?? defaultMascotFor(id);
@@ -226,7 +250,7 @@ export function openAgentEditorDialog(options: {
     name.value = existing?.name ?? "";
     name.placeholder = "e.g. Reviewer";
     const instructions = el("textarea", "form-input");
-    instructions.rows = 5;
+    instructions.rows = options.run ? 3 : 4;
     instructions.maxLength = 2_000;
     instructions.required = true;
     instructions.value = existing?.instructions ?? "";
@@ -245,12 +269,12 @@ export function openAgentEditorDialog(options: {
       option.value = entry.id;
       provider.append(option);
     }
-    if (existing && !usable.some((item) => item.id === existing.provider)) {
+    if (existing && !existing.useCurrentModel && !usable.some((item) => item.id === existing.provider)) {
       const missing = el("option", "", `${existing.provider} · not connected`);
       missing.value = existing.provider;
       provider.append(missing);
     }
-    provider.value = existing?.provider ?? options.activeProvider;
+    provider.value = existing?.useCurrentModel ? options.activeProvider : existing?.provider ?? options.activeProvider;
     const fillModels = (): void => {
       models.replaceChildren(...(usable.find((item) => item.id === provider.value)?.models ?? []).map((entry) => {
         const option = el("option", "");
@@ -259,7 +283,7 @@ export function openAgentEditorDialog(options: {
         return option;
       }));
     };
-    model.value = existing?.model ?? (provider.value === options.activeProvider ? options.activeModel : usable.find((item) => item.id === provider.value)?.models[0]?.id ?? "");
+    model.value = existing?.useCurrentModel ? options.activeModel : existing?.model ?? (provider.value === options.activeProvider ? options.activeModel : usable.find((item) => item.id === provider.value)?.models[0]?.id ?? "");
     fillModels();
     provider.addEventListener("change", () => {
       model.value = usable.find((item) => item.id === provider.value)?.models[0]?.id ?? "";
@@ -267,10 +291,22 @@ export function openAgentEditorDialog(options: {
     });
     const route = el("div", "form-row");
     route.append(field("Connection", provider), field("Model", model));
+    const currentModel = el("input", "");
+    currentModel.type = "checkbox";
+    currentModel.checked = existing ? existing.useCurrentModel === true : true;
+    const currentModelLabel = el("label", "agents-check");
+    currentModelLabel.append(currentModel, document.createTextNode("Use the currently connected model"));
+    const syncModelChoice = (): void => {
+      route.hidden = currentModel.checked;
+      provider.disabled = currentModel.checked;
+      model.disabled = currentModel.checked;
+    };
+    currentModel.addEventListener("change", syncModelChoice);
+    syncModelChoice();
 
     // Tool access, enforced in the main process when the agent runs.
     const access = el("fieldset", "agents-access");
-    access.append(el("legend", "form-field-label", "Tools it may use"));
+    access.append(el("legend", "form-field-label", "Tool access"));
     const accessChoices = el("div", "agents-access-choices");
     const accessName = `agents-access-${id}`;
     const radio = (value: "all" | "read-only" | "pick", labelText: string, hint: string): HTMLInputElement => {
@@ -285,9 +321,9 @@ export function openAgentEditorDialog(options: {
       accessChoices.append(label);
       return input;
     };
-    const all = radio("all", "All tools", "Read, edit, run commands and fetch pages.");
-    const readOnly = radio("read-only", "Read-only", "Looks and reports; never changes a file.");
-    const pick = radio("pick", "Pick tools", "Only the tools you tick.");
+    const all = radio("all", "All tools", "Read, edit and run commands.");
+    const readOnly = radio("read-only", "Read-only", "Read and report.");
+    const pick = radio("pick", "Pick tools", "Choose allowed tools.");
     const picks = el("div", "agents-tool-picks");
     const chosen = new Set(Array.isArray(existing?.toolAccess) ? existing.toolAccess : []);
     for (const tool of AGENT_PICKABLE_TOOLS) {
@@ -319,7 +355,7 @@ export function openAgentEditorDialog(options: {
     capInput.inputMode = "decimal";
     capInput.placeholder = "No cap";
     capInput.value = existing?.capDollars === undefined ? "" : String(existing.capDollars);
-    const capField = field("Usual cost cap (USD)", capInput, "Suggested on every task you give this agent; you can change it per task.");
+    const capField = field(options.run ? "Cost cap (USD)" : "Usual cost cap (USD)", capInput, "Optional");
     const afterLabel = el("label", "agents-check");
     afterLabel.append(after, document.createTextNode("In a Team, run after teammates (receive their handoffs)"));
 
@@ -327,16 +363,26 @@ export function openAgentEditorDialog(options: {
     notice.setAttribute("role", "alert");
     notice.hidden = true;
     const buttons = el("div", "confirm-buttons");
-    const save = el("button", "result-close", existing ? "Save" : "Create agent");
+    const save = el("button", "result-close", options.run ? "Run with changes" : existing ? "Save changes" : "Create agent");
     save.type = "submit";
-    if (existing) {
+    if (existing && !options.run) {
       buttons.append(button("Delete", "confirm-cancel agents-danger", () => {
         result = { kind: "delete", agent: existing };
         finish();
       }));
     }
     buttons.append(button("Cancel", "confirm-cancel", finish), save);
-    form.append(lookRow, field("Name", name), field("Instructions", instructions), route, access, capField, afterLabel, models, notice, buttons);
+    if (options.run) {
+      form.append(currentModelLabel, route, capField);
+      const advanced = el("details", "agents-editor-options");
+      const advancedBody = el("div", "agents-editor-advanced");
+      advancedBody.append(field("Name", name), field("Instructions", instructions), access, lookRow);
+      advanced.append(el("summary", "", "Agent settings"), advancedBody);
+      form.append(advanced);
+    } else {
+      form.append(lookRow, field("Name", name), field("Instructions", instructions), currentModelLabel, route, access, capField, afterLabel);
+    }
+    form.append(models, notice, buttons);
     card.append(form);
     paintLook();
 
@@ -353,6 +399,7 @@ export function openAgentEditorDialog(options: {
         instructions: instructions.value,
         provider: provider.value,
         model: model.value,
+        ...(currentModel.checked ? { useCurrentModel: true } : {}),
         ...(after.checked ? { runAfterTeammates: true } : {}),
         mascot: look,
         ...(toolAccess === "all" ? {} : { toolAccess }),
@@ -369,11 +416,17 @@ export function openAgentEditorDialog(options: {
         notice.textContent = problem;
         return;
       }
-      result = { kind: "save", agent };
+      if (options.run && !prompt.value.trim()) {
+        notice.hidden = false;
+        notice.textContent = "Describe the task first.";
+        prompt.focus();
+        return;
+      }
+      result = { kind: "save", agent, ...(options.run ? { prompt: prompt.value.trim() } : {}) };
       finish();
     });
     dialog.showModal();
-    name.focus();
+    (options.run ? prompt : name).focus();
   });
 }
 
@@ -385,16 +438,24 @@ export function openRunDetailDialog(options: {
   readonly changedPaths: readonly string[];
   readonly loadTraces: () => Promise<readonly AiTeamTraceView[]>;
   readonly actions: readonly { readonly label: string; readonly primary?: boolean; readonly run: () => void }[];
+  readonly management?: readonly { readonly label: string; readonly danger?: boolean; readonly run: () => void }[];
   readonly mascot: HTMLElement;
   /** What the run proved and what its change puts at risk; null while it is still working. */
   readonly evidence?: { readonly checks: readonly RunCheck[]; readonly risks: readonly RiskFlag[] } | null;
 }): void {
-  const { dialog, card, title, finish } = openFormModal("agents-run-detail", options.box.title, () => undefined);
+  const { dialog, card, finish } = openAgentModal("agents-run-detail", options.box.title, () => undefined);
   const head = el("div", "agents-detail-head");
   const who = el("div", "agents-detail-who");
   who.append(el("strong", "", options.box.agentLabel), el("span", "", [options.box.modelLabel, options.box.usage, options.box.cost].filter(Boolean).join(" · ")));
   head.append(options.mascot, who);
-  card.insertBefore(head, title.nextSibling);
+  card.append(head);
+  if (options.management?.length) {
+    const management = el("div", "agents-detail-management");
+    for (const action of options.management) {
+      management.append(button(action.label, `agent-box-action${action.danger ? " agent-box-action-danger" : ""}`, () => { finish(); action.run(); }));
+    }
+    card.append(management);
+  }
   const status = el("p", "agents-detail-status", options.box.statusText);
   status.setAttribute("role", "status");
   card.append(status);
@@ -466,7 +527,7 @@ export interface RaceLane {
  * race lands in the project; the page discards the others.
  */
 export function openRaceCompareDialog(options: { readonly lanes: readonly RaceLane[]; readonly onKeep: (laneId: string) => void }): void {
-  const { dialog, card, finish } = openFormModal("agents-race-compare", "Compare the race", () => undefined);
+  const { dialog, card, finish } = openAgentModal("agents-race-compare", "Compare the race", () => undefined);
   card.append(el("p", "result-summary", "Same task, different agents. Keep the one you like; the others are discarded and your project only changes once."));
   const grid = el("ul", "agents-race-grid");
   grid.setAttribute("role", "list");

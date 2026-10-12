@@ -561,7 +561,7 @@ A conversation workspace with searchable history, a live working block per answe
 
 Why use it: Asking in the editor beats copying code into a browser, because the assistant can already see the project. A playful mascot, a scroll pill that respects your place, and a clear way back from an interrupted turn keep long runs feeling alive instead of hung.
 
-How to use it: Open Assistant from the workbench or command palette. Write in the composer and send your request. The answer reads in the order it happened, as in Claude: a block of work, the text it led to, the next block of work, more text. While a block runs it names the current step with elapsed time — the blue mascot with white eyes bounces while working, its eyes follow your pointer, and clicking it pops a morale-boosting quip. Tool calls stream in as bordered rows, each gaining a checkmark when done. When the assistant starts writing again, that block collapses to Worked for Ns; select its header to expand it again. Scroll up and the transcript stays pinned while a Jump to latest pill appears with a count of new messages; select it to return to the tail. Type a follow-up while the assistant is still working and press Enter: it is queued above the composer and sent by itself when the current turn finishes - Send now stops the current turn and sends it at once, and × drops it. While a turn runs, a line at the bottom of the conversation shows who is working - the assistant's face and name - what it is doing, for how long, and a Stop button. Esc stops it too, and so does the send button, a stop square while a turn runs. If you stop a turn, an interrupted banner offers Edit prompt (your last message back in the composer) and Try again. If a turn fails, a card in the conversation says why in plain words - a rate limit, a request too large for the model, a rejected key, a broken tool call, a network problem - with buttons to try again, switch model, start fresh or report it, and the provider’s exact message under Details. When another model is the fix - out of credit, a rejected key, a model that is gone - choosing one picks the request back up by itself, whether you choose it from the card, the model chip, Connect a model or Settings. A failed turn never breaks the conversation: the next message works as normal. Code arrives in labelled blocks with a Copy button and inline commands read as pills. Every response offers icon actions for Copy, Read aloud, helpful or not helpful, and Retry, with relative time like just now. Use History to browse conversations; Team, schedules and activity opens as a floating panel, and the Agents page shows every agent at work. Share copies the conversation as markdown. When nothing is running, Escape closes the workspace without losing the conversation. A history row's ⋯ menu opens, renames, copies as Markdown or deletes a conversation. The assistant changes existing files with exact replacements instead of rewriting them, reads several files at once, and works through up to 50 steps per request, and Keep going until done carries it on past that by itself. Its edits land in your files as it works, and each turn that changed files gets an Undo card. On an empty conversation, starters get going in one click: Continue picks up the conversation this project was left on, then Explain this project, Build something, Fix an error, Plan new idea and Multitask. With no folder open the starters are things to build - a landing page, a snake game, a to-do app, a portfolio - and asking for something to be built makes a project folder for it. In Vibe a short checklist shows anything still missing: connecting your AI (free in about a minute), then describing what to build.
+How to use it: Open Assistant from the workbench or command palette. Write in the composer and send your request. The answer reads in the order it happened, as in Claude: a block of work, the text it led to, the next block of work, more text. While a block runs it names the current step with elapsed time — the blue mascot with white eyes bounces while working, its eyes follow your pointer, and clicking it pops a morale-boosting quip. Tool calls stream in as bordered rows, each gaining a checkmark when done. When the assistant starts writing again, that block collapses to Worked for Ns; select its header to expand it again. Scroll up and the transcript stays pinned while a Jump to latest pill appears with a count of new messages; select it to return to the tail. Type a follow-up while the assistant is still working and press Enter: it is queued above the composer and sent by itself when the current turn finishes - Send now stops the current turn and sends it at once, and × drops it. While a turn runs, a line at the bottom of the conversation shows what the assistant is doing, for how long, and a Stop button; while a block of work is open the block names the step and keeps the time, so the line shows just Stop. One assistant at work shows one face: the mascot in the block. The name above the turn gets its face back once the reply is finished. Esc stops it too, and so does the send button, a stop square while a turn runs. If you stop a turn, an interrupted banner offers Edit prompt (your last message back in the composer) and Try again. If a turn fails, a card in the conversation says why in plain words - a rate limit, a request too large for the model, a rejected key, a broken tool call, a network problem - with buttons to try again, switch model, start fresh or report it, and the provider’s exact message under Details. When another model is the fix - out of credit, a rejected key, a model that is gone - choosing one picks the request back up by itself, whether you choose it from the card, the model chip, Connect a model or Settings. A failed turn never breaks the conversation: the next message works as normal. Code arrives in labelled blocks with a Copy button and inline commands read as pills. Every response offers icon actions for Copy, Read aloud, helpful or not helpful, and Retry, with relative time like just now. Use History to browse conversations; Team, schedules and activity opens as a floating panel, and the Agents page shows every agent at work. Share copies the conversation as markdown. When nothing is running, Escape closes the workspace without losing the conversation. A history row's ⋯ menu opens, renames, copies as Markdown or deletes a conversation. The assistant changes existing files with exact replacements instead of rewriting them, reads several files at once, and works through up to 50 steps per request, and Keep going until done carries it on past that by itself. Its edits land in your files as it works, and each turn that changed files gets an Undo card. On an empty conversation, starters get going in one click: Continue picks up the conversation this project was left on, then Explain this project, Build something, Fix an error, Plan new idea and Multitask. With no folder open the starters are things to build - a landing page, a snake game, a to-do app, a portfolio - and asking for something to be built makes a project folder for it. In Vibe a short checklist shows anything still missing: connecting your AI (free in about a minute), then describing what to build.
 
 Access: `All Features → AI chat workspace`; `Turn on or off`; `Settings`.
 
@@ -594,18 +594,18 @@ Create named agents with their own instructions and models, then let a team divi
 
 Why use it: Independent research, coding, and checking can finish faster without making one assistant carry every detail in the same context.
 
-How to use it: Open Agents from the Vibe sidebar or the command palette. Create agents under Your agents with a name, look, instructions, connection, model and the tools they may use. Enable Run after teammates for an agent that should receive others' handoffs first. Choose Select for a Team, tick two to four agents, press Set up Team and describe the shared task. The Team appears as one box under Needs you with its members' mascots; press Start to begin. Select the box to see each step it took. Review combined changes before applying them, or Stop a running team. Requests share each connection's rate limit, and Teams count towards Agents working at once. The assistant can also suggest a Team for a big request in the chat.
+How to use it: Open Agents from the Vibe sidebar or the command palette. Five starter specialists appear on the first visit and use your currently connected model. Create agents under Your agents with a name, look, instructions and the tools they may use. In Edit, keep Use the currently connected model on to follow your selection in Connect a model, or turn it off to pin a connection and model to that agent. Enable Run after teammates for an agent that should receive others' handoffs first. Choose Select for a Team, tick two to four agents, press Set up Team and describe the shared task. The Team appears as one box under Needs you with its members' mascots; press Start to begin. Select the box to see each step it took. Review combined changes before applying them, or Stop a running team. Requests share each connection's rate limit, and Teams count towards Agents working at once. The assistant can also suggest a Team for a big request in the chat.
 
 Access: `All Features → AI Team`; `Set up Team`; `Settings`.
 
 <!-- feature:ai.usage -->
 ### AI usage
 
-Shows how many tokens the chat and your agents have used, and roughly what that cost, model by model.
+Shows your AI activity, daily streaks, tokens and estimated cost, model by model.
 
-Why use it: You pay your provider for every token. Seeing which model used what - today, this week or this month - tells you where the money goes before the bill does.
+Why use it: See where your own provider spending goes and how much of your included Tagflow allowance remains.
 
-How to use it: Select Usage in the chat's header (or ••• when docked), choose Usage by model in the context meter's menu, or run AI: Show Usage. Pick Today, 7 days, 30 days or All time. The top shows total tokens, requests and estimated cost; a bar per day shows when you used it; each model has its share, tokens in and out, requests from the chat and from agents, and a cost from the model catalogue's prices. Counts the provider did not report are estimated and marked ≈; a model with no catalogue price says No price rather than $0. Everything is kept on this machine only, and Clear usage removes it. Your provider's billing page has the exact bill.
+How to use it: Select Usage in the chat's header (or ••• when docked), choose Usage by model in the context meter's menu, or run AI: Show Usage. Pick Today, 7 days, 30 days or All time for this machine's history. Activity always shows the past year: current streak, longest streak and days with AI requests on this computer. Hover or select a square for its date, requests and tokens; arrow keys move between days, Home and End jump to the oldest and newest day. Streaks use local calendar days and include yesterday while today is still empty. Counts not reported by a provider are estimated and marked ≈; a model with no catalogue price says No price. Included AI has no charge to you; its separate account-wide allowance shows requests, tokens and budget remaining, including room reserved for active replies. It resets at midnight UTC. Clear usage removes this computer's history, activity and streaks, not the server-enforced allowance. Your own provider's billing page has the exact bill.
 
 Access: `All Features → AI usage`; `Show usage`.
 
@@ -634,11 +634,11 @@ Access: `All Features → Chat history and memory`; `Open Assistant`; `New conve
 <!-- feature:ai.connect -->
 ### Connect a model
 
-Connect an AI provider in three steps - choose a provider, check and save its key, pick a model - or save several named API connections with a requests-per-minute limit, including NVIDIA NIM.
+Choose ready models in Free · no API key, or use Bring your own key to connect a provider or named API endpoint.
 
 Why use it: A key that was pasted wrong should say so immediately, not silently fail the first time you ask a question.
 
-How to use it: Open Connect a model. While nothing is connected, the top of the screen offers the fastest ways in - a free Google Gemini key, a model already running in Ollama, or any key you paste - and the full list is underneath. Otherwise follow the three steps at the top. Choose a provider or add a named connection with an OpenAI-compatible base URL and exact model ID. The NVIDIA NIM preset fills its hosted endpoint. Set requests per minute, save the connection, then check and save its API key. Select the connection for chat or an agent. Chat, completion, and team requests share its queue. Server cooldowns are respected; token or account quotas can still cause rate-limit errors. Keys remain encrypted by the operating system.
+How to use it: Open Connect a model. Free · no API key opens first with included models and ready local models: choose Use this model. Included models require a verified ADCode account and share its daily allowance. Use the local setup buttons to start or download Ollama. Bring your own key contains personal provider connections and the three-step guide: choose a provider, check and save its key, pick a model. Add a named connection with an OpenAI-compatible base URL and exact model ID for other endpoints; the NVIDIA NIM preset fills its hosted endpoint. Set requests per minute, save the connection, then check and save its API key. Select the connection for chat or an agent. Chat, completion, and team requests share its queue. Server cooldowns are respected; token or account quotas can still cause rate-limit errors. Keys remain encrypted by the operating system. Administrators can add, hide and select default models in the linked Free models and BYOK models catalogs.
 
 Access: `All Features → Connect a model`; `Connect`; `Settings`.
 
@@ -664,17 +664,6 @@ How to use it: Set Provider to Custom, paste the address, and give it your key. 
 
 Access: `All Features → Custom endpoint`; `Settings`.
 
-<!-- feature:adcode.ai.designTaste -->
-### Design taste skill
-
-Before the assistant or an agent builds or restyles a page, screen or game, it reads a design guide so the result does not look like every other AI-made page.
-
-Why use it: Asked for a page, AI models reach for the same purple gradient, centred headline and three equal cards every time. The guide names those habits and what to do instead, so what you get looks designed for your project.
-
-How to use it: On by default. When the work is a user interface, the assistant reads the bundled taste-skill guide (by Leonxlnx, MIT licence) - you will see Reading the design guide in its steps - and follows it while keeping your project's own stack: a plain HTML, CSS and JavaScript project stays plain, and an existing design system wins. It also reads a guide on finishing every file instead of leaving placeholders. Questions that are not about an interface never load it, so they cost nothing extra. Turn it off in Settings > AI > Design taste skill.
-
-Access: `All Features → Design taste skill`; `Turn on or off`; `Settings`.
-
 <!-- feature:ai.inlineEdit -->
 ### Edit with AI
 
@@ -696,6 +685,17 @@ Why use it: You should not need a credit card, or to know what an API key is, to
 How to use it: Choose Connect your AI - free in the Vibe checklist, run Get a Free AI Key from the command palette, or just send a message - with no model connected, the reply offers the same choices. Press Get my free key: Google AI Studio opens in your browser. Sign in, click Create API key, and copy it. Come back to ADCode and the copied key is picked up and checked on its own; you can also paste it. If Ollama is running on this computer, Use it connects a local model instead, and nothing leaves your machine. Already have a key from OpenAI, Anthropic, OpenRouter, Groq, xAI, DeepSeek or Cerebras? Paste it under I already have a key and ADCode works out which service it belongs to. Nothing is saved until the model has answered a test message. Google's free tier may use what you send to improve its products, so use a paid key for private or work code.
 
 Access: `All Features → Free AI in a minute`; `Get a free key`.
+
+<!-- feature:ai.tagflow -->
+### Included AI without a key
+
+Use the AI included with your verified ADCode account without buying or pasting an API key.
+
+Why use it: Start with an allowance paid for by ADCode. You can still switch to your own provider or a local model when you need more capacity.
+
+How to use it: Open Account, sign in and verify your email, then send a message. Included AI is selected automatically for new installations when enabled, using the administrator's default model. Older installations with an unconnected default provider also switch automatically. In Connect a model, the Free · no API key tab lists included and ready local models; choose Use this model to switch. Bring your own key keeps your personal provider connections separate. Administrators manage Free models and BYOK models from separate linked catalogs: add new models, set defaults, and hide models. Free models can use Tagflow, OpenAI, Gemini, Groq or OpenRouter through configured server keys. Chat, completions and agents share your daily account allowance. Open AI usage to see requests, tokens and budget remaining and the reset time. Limits reset at midnight UTC. Clearing local history does not reset the allowance. Prompts, project context and tool results pass through ADCode's server to the selected provider; the server stores usage counts, not prompts or replies. Included AI currently accepts text and tool calls, not image attachments.
+
+Access: `All Features → Included AI without a key`; `Choose included AI`.
 
 <!-- feature:adcode.ai.inlineCompletion -->
 ### Inline completion
@@ -774,6 +774,17 @@ How to use it: Pick from the list, which shows only models that can work as your
 
 Access: `All Features → Model`; `Settings`.
 
+<!-- feature:adcode.ai.designTaste -->
+### Product design guidance
+
+Give the assistant and agents a practical workflow for professional styling, purposeful animation, accessible interactions and verified results.
+
+Why use it: A polished product needs a coherent visual system and complete behavior. The guidance helps agents make choices that fit your users, then check what they built.
+
+How to use it: On by default. Interface work loads ADCode's compact production-quality guide; motion and release references load when needed. The existing taste-skill and redesign guides (Leonxlnx, MIT licence) remain available for deeper visual direction. You will see Reading product guidance in the steps. The guide preserves your project's stack and design system. In Tools, Quality lists Inspect project checks, Run project checks and Audit a page. The audit checks phone, tablet and desktop layouts, automated accessibility findings and reduced motion; manual keyboard and visual review still matter. Missing or unrun checks are reported as unverified. Turn guidance off in Settings > AI > Product design guidance.
+
+Access: `All Features → Product design guidance`; `Turn on or off`; `Settings`.
+
 <!-- feature:ai.memoryEditor -->
 ### Project memory
 
@@ -788,11 +799,11 @@ Access: `All Features → Project memory`; `Open project memory`.
 <!-- feature:adcode.ai.provider -->
 ### Provider
 
-Which company's AI you want to use. You bring your own account and key.
+Choose included Tagflow AI, a provider with your own key, or a local model.
 
-Why use it: Different models are better at different things, and cost different amounts. ADCode does not resell anybody's AI, so the choice - and the bill - is yours.
+Why use it: Use your account's included allowance when available, or choose your own provider and budget for another model.
 
-How to use it: Open Connect a model, pick a provider, and paste your key. ADCode checks the key works before saving it. Keys are kept in your operating system's own password store, never in a settings file. The local option, Ollama, needs no key at all - it talks to a model running on your own machine, and its row says what is true right now: Running with how many models, Installed but not running (with Start Ollama), or Not installed (with Download Ollama).
+How to use it: Included AI is selected by default on a new installation when enabled. Sign in with a verified account and chat without a key. Open Connect a model: Free · no API key lists included and ready local models; Bring your own key lists providers for your own keys. ADCode checks your key before saving it in your operating system's password store. Ollama runs on this computer and needs no key. Use a local model that supports tools for file tasks. If it prints a complete tool call as JSON, ADCode recovers the call and continues; invented tools get correction feedback. Repeated failed calls stop with an explanation. Your own provider requests go directly to that provider; included requests pass through ADCode's dedicated AI relay to the selected provider, which enforces your account allowance.
 
 Access: `All Features → Provider`; `Settings`.
 
@@ -876,7 +887,7 @@ Access: `All Features → The assistant sees your app`; `Check my running app`.
 <!-- feature:ai.agentTools -->
 ### What the assistant can do
 
-Besides reading and changing code, the assistant can delete, move and rename files, keep a dev server running, wait out long installs and builds, and show its plan as a checklist.
+The assistant can change files, run project checks, inspect responsive layouts and accessibility, keep a dev server running, and show its plan as a checklist.
 
 Why use it: When it cannot do a job with a proper tool, an assistant improvises with shell commands no Undo can reverse, gives up on anything slower than half a minute, or tells you to run the server yourself. With the right tools it just does the job, and you can put it back.
 
@@ -1284,7 +1295,7 @@ Choose the assistant's name and face, whether replies show who wrote them, and h
 
 Why use it: A chat you spend hours in should look the way you like. Faces and names also make it obvious which agent said what once several are working.
 
-How to use it: Select Customise in the chat's header (or ••• when the chat is docked), or run AI: Customise Chat from the command palette. Type a name, pick one of eight shapes and ten colours, and choose a reply style: Document runs replies full width, Bubbles puts each in a soft card, Compact fits more on screen. Show who is replying adds the face and name above replies. A live preview shows the result before you save. Saved agents keep their own look - change theirs in the agent editor on the Agents board. Every choice is also in Settings > Appearance.
+How to use it: Select Customise in the chat's header (or ••• when the chat is docked), or run AI: Customise Chat from the command palette. Type a name, pick one of eight shapes and ten colours, and choose a reply style: Document runs replies full width, Bubbles puts each in a soft card, Compact fits more on screen. Show who is replying adds the face and name above replies; while a reply is still being written the name stands alone, because the face at work is the mascot in the activity block. A live preview shows the result before you save. Saved agents keep their own look - change theirs in the agent editor on the Agents board. Every choice is also in Settings > Appearance.
 
 Access: `All Features → Customise chat`; `Customise`; `Turn on or off`; `Settings`.
 

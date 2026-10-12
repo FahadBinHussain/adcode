@@ -15,6 +15,8 @@ export interface PopupShellOptions {
   readonly initialFocus?: () => HTMLElement | null;
   readonly closeOnBackdrop?: boolean;
   readonly onRequestClose: () => void;
+  /** Runs after the native dialog releases focus and the top layer. */
+  readonly onClosed?: () => void;
 }
 
 export interface PopupOpenOptions {
@@ -31,6 +33,23 @@ export interface PopupShell {
   close(options?: { readonly restoreFocus?: boolean; readonly immediate?: boolean }): void;
   isOpen(): boolean;
   focus(): void;
+}
+
+/** An open popup owns Escape before a background editor can consume the key. */
+export function handleOutsidePopupEscape(
+  event: KeyboardEvent,
+  primary: Pick<PopupShell, "element" | "surface">,
+  dependent: Pick<PopupShell, "element" | "surface"> | undefined,
+  dismiss: () => void,
+): boolean {
+  if (event.key !== "Escape" || event.defaultPrevented) return false;
+  if ((dependent ?? primary).surface.contains(event.target as Node)) return false;
+  const modal = document.querySelector("dialog:modal");
+  if (modal !== null && modal !== primary.element && modal !== dependent?.element) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  dismiss();
+  return true;
 }
 
 /**
@@ -169,6 +188,7 @@ export function createPopupShell(options: PopupShellOptions): PopupShell {
     event.preventDefault();
     options.onRequestClose();
   });
+  dialog.addEventListener("close", () => options.onClosed?.());
   dialog.addEventListener("keydown", (event) => {
     if (!options.modal && event.key === "Escape") {
       event.preventDefault();

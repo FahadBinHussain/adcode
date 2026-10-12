@@ -4101,65 +4101,47 @@ button.chat-setup-action {
 }
 
 .chat-checkpoint {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 14px;
+  padding: 0;
   border: 1px solid var(--border-hairline);
   border-radius: 12px;
   background: var(--bg-elevated);
+  overflow: hidden;
   animation: chat-rise var(--duration-enter) var(--ease-sheet);
 }
-.chat-checkpoint-icon {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--success) 18%, transparent);
-  color: var(--success);
-  font-size: 12px;
-  font-weight: 800;
-}
-.chat-checkpoint[data-state="undone"] .chat-checkpoint-icon { background: var(--bg-active); color: var(--text-secondary); }
+.chat-checkpoint-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.chat-checkpoint-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 8px; color: var(--text-secondary); background: var(--bg-active); }
+.chat-checkpoint-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .chat-checkpoint-body { flex: 1; min-width: 0; }
 .chat-checkpoint-title { display: block; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
-.chat-checkpoint-files { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
-.chat-checkpoint-file {
-  max-width: 100%;
-  padding: 2px 8px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 6px;
-  background: var(--bg-app);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.chat-checkpoint-file:hover { border-color: var(--border-strong); color: var(--text-primary); }
-.chat-checkpoint-more { align-self: center; color: var(--text-tertiary); font-size: 11.5px; }
-.chat-checkpoint-status { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
-.chat-checkpoint-undo {
-  flex: none;
-  min-height: 30px;
-  padding: 5px 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.chat-checkpoint-undo:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.chat-checkpoint-counts { display: inline-flex; align-items: center; gap: 8px; flex: none; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chat-edit-added { color: var(--success); }
+.chat-edit-removed { color: var(--danger); }
+.chat-checkpoint-actions { display: flex; gap: 8px; align-items: center; flex: none; }
+.chat-checkpoint-undo, .chat-checkpoint-review { min-height: 30px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border-subtle); background: transparent; color: var(--text-primary); font: 12px var(--font-ui); cursor: pointer; }
+.chat-checkpoint-undo { border-color: transparent; color: var(--accent); }
+.chat-checkpoint-undo:hover, .chat-checkpoint-review:hover { background: var(--bg-hover); }
 .chat-checkpoint-undo:disabled { opacity: .55; cursor: default; }
-.chat-checkpoint-undo:focus-visible, .chat-checkpoint-file:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
+.chat-checkpoint-files { border-top: 1px solid var(--border-hairline); padding: 8px 16px 4px; }
+.chat-checkpoint-row { display: flex; gap: 12px; align-items: center; min-height: 29px; }
+.chat-checkpoint-row[hidden], .chat-checkpoint-more[hidden], .chat-checkpoint-diffs[hidden] { display: none; }
+.chat-checkpoint-file { flex: 1; min-width: 0; text-align: left; padding: 3px 0; border: 0; background: transparent; color: var(--text-secondary); font: 12px var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.chat-checkpoint-file:hover { color: var(--accent); }
+.chat-checkpoint-file[data-deleted="true"] { text-decoration: line-through; cursor: default; }
+.chat-checkpoint-more { margin: 2px 12px 10px; padding: 4px; border: 0; border-radius: 4px; background: transparent; color: var(--text-primary); font: 12px var(--font-ui); cursor: pointer; }
+.chat-checkpoint-more:hover { color: var(--accent); }
+.chat-checkpoint-status { margin: 0; padding: 10px 16px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.chat-checkpoint-diffs { border-top: 1px solid var(--border-hairline); padding: 0 16px 12px; }
+.chat-checkpoint-diffs h4 { margin: 12px 0 6px; color: var(--text-primary); font: 600 12px var(--font-ui); overflow-wrap: anywhere; }
+.chat-checkpoint-diffs p { color: var(--text-secondary); font-size: 12px; }
+.chat-checkpoint-diffs .diff-body { max-height: 360px; overflow: auto; border-radius: 6px; background: var(--bg-app); }
+.chat-checkpoint-diff-location { display: block; padding: 4px 6px; color: var(--text-tertiary); font-size: 11px; }
+.chat-checkpoint[data-state="undone"] .chat-checkpoint-icon { color: var(--text-tertiary); }
+.chat-checkpoint :is(button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 520px) {
+  .chat-checkpoint-header { flex-wrap: wrap; padding: 12px; gap: 8px; }
+  .chat-checkpoint-actions { margin-left: auto; }
+  .chat-checkpoint-files { padding-inline: 12px; }
+}
 /* ── Long chat memory: the context meter, the compaction line, the summary ── */
 
 .chat-context-meter {

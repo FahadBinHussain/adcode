@@ -24,6 +24,10 @@
  */
 import { BrowserWindow, nativeImage, session, type WebContents } from "electron";
 import type { ImageBlock, ToolRunResult } from "@adcode/ai";
+// Keep the browser distribution verbatim. Bundlers rewrite CommonJS guards in axe.source's
+// function body, which can leave an unguarded `module.exports` inside the injected script.
+import axeSource from "axe-core/axe.min.js?raw";
+import { AXE_RUN_SCRIPT, MOTION_SCAN_SCRIPT, formatAccessibilityScan, formatMotionScan, type AccessibilityScan, type MotionScan } from "./pageAudit.ts";
 import {
   focusForTypingScript,
   formatPageReport,
@@ -477,10 +481,13 @@ export interface ViewPageDeps {
 }
 
 async function view(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortSignal): Promise<ToolRunResult> {
+  if (signal.aborted) return { content: "Stopped before inspecting the page.", isError: true };
   const target = await ensurePage();
   touch();
   target.console.length = 0;
   target.failed.length = 0;
+  // Always set it: an audit's media preference must not leak into a later normal screenshot.
+  await target.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: request.reducedMotion === true ? "reduce" : "no-preference" }] });
 
   if (target.viewport.width !== request.width || target.viewport.height !== request.height) {
     await target.send("Emulation.setDeviceMetricsOverride", {
@@ -535,6 +542,20 @@ async function view(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortS
   // The report describes the page once it has had a moment to react to the last step.
   await waitForQuiet(target, 1_500);
   const snapshot = await evaluate<PageSnapshot>(target, SNAPSHOT_SCRIPT);
+  const audit: string[] = [];
+  let auditFailed = false;
+  if (request.audit) {
+    if (signal.aborted) return { content: "Audit cancelled; this page is unverified.", isError: true };
+    try {
+      await evaluate(target, `${axeSource}\n;true;`);
+      const scan = await withTimeout(evaluate<AccessibilityScan>(target, AXE_RUN_SCRIPT), 15_000, "The accessibility scan");
+      audit.push(formatAccessibilityScan(scan));
+    } catch (error) {
+      auditFailed = true;
+      audit.push(`Accessibility scan did not finish: ${error instanceof Error ? error.message : String(error)}. Accessibility is unverified.`);
+    }
+    audit.push(formatMotionScan(await evaluate<MotionScan>(target, MOTION_SCAN_SCRIPT)));
+  }
   let image: ImageBlock | null = null;
   let shot: "attached" | "skipped" | "failed" = "skipped";
   if (request.screenshot) {
@@ -546,8 +567,9 @@ async function view(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortS
     }
   }
   touch();
-  const content = formatPageReport({ snapshot, status, actions, console: [...target.console], failedRequests: [...target.failed], screenshot: shot, fullPage: request.fullPage });
-  return { content, isError: false, ...(image === null ? {} : { images: [image] }) };
+  const reportedSnapshot = request.audit ? { ...snapshot, text: snapshot.text.slice(0, 1000), links: snapshot.links.slice(0, 8), buttons: snapshot.buttons.slice(0, 8), fields: snapshot.fields.slice(0, 8) } : snapshot;
+  const content = [...audit, formatPageReport({ snapshot: reportedSnapshot, status, actions, console: [...target.console], failedRequests: [...target.failed], screenshot: shot, fullPage: request.fullPage })].join("\n\n");
+  return { content, isError: auditFailed, ...(image === null ? {} : { images: [image] }) };
 }
 
 /** Load, act on and report a page. Calls queue, so two chats never share a half-finished one. */

@@ -2,7 +2,7 @@
  * ADCode's own tools, in plain words: what the agent editor's "Pick tools" list and the Tools
  * page show. Names match `packages/ai/src/tools.ts`; `toolsModel.test.ts` keeps them in step.
  */
-export type BuiltInToolGroup = "Read" | "Write" | "Run" | "Preview" | "Plan" | "Web" | "Memory";
+export type BuiltInToolGroup = "Read" | "Write" | "Run" | "Preview" | "Quality" | "Plan" | "Web" | "Memory";
 
 export interface BuiltInToolInfo {
   readonly name: string;
@@ -33,6 +33,9 @@ export const BUILT_IN_TOOLS_INFO: readonly BuiltInToolInfo[] = [
   { name: "stop_command", label: "Stop commands", group: "Run", description: "Stop a background command and everything it started.", chatOnly: true },
   { name: "open_preview", label: "Open the preview", group: "Preview", description: "Show your running app - any page of it - in the conversation.", chatOnly: true },
   { name: "view_page", label: "Look at pages", group: "Preview", description: "Load a page in a real browser, click and type through it, and report what shows: text, errors, failed requests and a screenshot.", chatOnly: true },
+  { name: "inspect_project", label: "Inspect project checks", group: "Quality", description: "Find the project's stack and existing test, type, lint and build scripts without running them." },
+  { name: "run_project_checks", label: "Run project checks", group: "Quality", description: "Run the project's checks and report each result, failure and missing check." },
+  { name: "audit_page", label: "Audit a page", group: "Quality", description: "Check phone, tablet and desktop layouts, accessibility, runtime errors and reduced motion in a real browser.", chatOnly: true },
   { name: "update_plan", label: "Show a plan", group: "Plan", description: "Keep a checklist of the steps of a bigger task in the chat, ticked off as they finish.", chatOnly: true },
   { name: "fetch_url", label: "Fetch web pages", group: "Web", description: "Read a web page or API response, such as documentation, as plain text." },
   { name: "memory_search", label: "Search memory", group: "Memory", description: "Look up decisions and conventions saved for this project." },

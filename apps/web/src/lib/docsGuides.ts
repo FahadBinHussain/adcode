@@ -719,12 +719,15 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "ai-connect": {
     steps: [
       "Open Connect a model from the Assistant or command palette - or choose Connect on the banner that says ADCode works directly with your codebase.",
+      "The Free · no API key tab lists included models and ready local models. Choose Use this model to connect immediately. Included models need a verified ADCode account and share its daily allowance.",
+      "Switch to Bring your own key for your personal provider connections. Administrators control both model catalogs, including new models, hidden models, recommendations and defaults.",
       "Follow the three steps at the top: choose a provider, check and save its key, pick a model. The steps light up and the progress bar fills as you complete them. Add a named connection with its OpenAI-compatible base URL and exact model ID for anything else. Use the NVIDIA NIM preset for https://integrate.api.nvidia.com/v1.",
       "Choose a requests-per-minute limit that fits your provider account and save the connection. All agents using that connection share the same queue.",
       "Paste your API key and choose Check and save. Keys are encrypted using this computer's operating-system credential store.",
       "Choose the model for chat - the first one listed is the recommended default - or assign the connection to a named agent. Waiting and cooldown status explain when a request is queued.",
       "Set thinking effort if you want reasoning models to think harder than their default: Auto lets the provider decide, Max costs the most. For a custom address, follow the three numbered hints and choose Save endpoint.",
       "If the provider still returns 429, allow its cooldown to finish. RPM pacing cannot override token quotas, account limits, or requests made outside ADCode.",
+      "For local file tasks, choose an Ollama model that supports tools. ADCode recovers complete tool calls returned as plain JSON or tool_call envelopes and runs them through the usual file controls. Examples and incomplete replies stay text. If a model keeps inventing tools or returning invalid arguments, the turn stops after three identical failed calls; try a fresh chat or another tool-capable model.",
     ],
     benefits: [
       "A mistyped key fails at setup, with a clear message - not silently on your first question.",
@@ -910,6 +913,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
     steps: [
       "Connect the models your agents will use in Connect a model.",
       "Open Agents from the Vibe sidebar. Under Your agents, use the starter agents or choose New agent and give it a name, look, instructions, connection, model and the tools it may use.",
+      "Starter agents follow your currently connected model and appear immediately, even before a model is available. In the agent editor, Use the currently connected model follows changes in Connect a model; turn it off to choose a fixed connection and model.",
       "Make sure you have at least two agents. For example, give one implementation instructions and another review instructions. Enable Run after teammates for the reviewer so it receives the builder's handoff first.",
       "Choose Select for a Team, tick two to four agents, press Set up Team and describe the shared task.",
       "The Team appears as one box under Needs you with its members' mascots. Press Start. Select the box any time to see each step it took; press Stop if the task should end.",
@@ -931,7 +935,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Watch the strip. When one agent messages another (\"API done, endpoints in src/api.ts\"), hands its work on, or edits a file a teammate already edited, the sender turns to the receiver, a speech bubble crosses between them, and the line stays underneath.",
       "Click a mascot or a window's title bar to fill the room with that agent; click again to see them all. Hide windows keeps just the mascots.",
       "Stop an agent from its window's title bar - Stop for one agent, Stop team for a Team - or every run at once with Stop all in the room's header. The ⋯ beside it opens the agent on the Agents board or edits the saved agent.",
-      "In the main chat, the line at the bottom shows who is writing and for how long, with its own Stop button. Esc stops it too.",
+      "In the main chat, the line at the bottom shows what the assistant is doing and for how long, with its own Stop button. Esc stops it too.",
       "Read the bottom of each window before you trust the result: Checks passed, Check failed or Unverified comes from the commands the agent actually ran.",
       "Prefer a quieter chat? Turn it off in Settings > AI > Live agent view.",
     ],
@@ -1170,8 +1174,20 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Bundled-model editors pick the default that makes their economics work, not yours. Showing what your key can actually call and letting you choose per task keeps that decision where it belongs.",
   },
 
+  "ai-tagflow": {
+    steps: [
+      "Open Account and sign in with an email verified by your provider.",
+      "Included AI is selected automatically on a new installation when enabled, using the administrator's default model. Send a message without entering an API key. To switch, open Connect a model → Free · no API key and choose Use this model.",
+      "Choose a model and send your first message. You do not need a provider API key.",
+      "Open AI usage to check your account's remaining requests, tokens and included budget. Chats, completions and agents share the allowance across devices.",
+      "When the allowance cannot cover a request, wait for midnight UTC or switch to your own provider or a local model. Clearing local history does not reset the allowance.",
+    ],
+    benefits: ["Start without purchasing a provider key.", "See the remaining allowance and reset time inside the editor.", "Administrators can set default allowances, individual limits and access blocks."],
+    betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models using server keys, set their prices and default model, hide models, and adjust allowances. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
+  },
   "ai-provider": {
     steps: [
+      "For included AI, sign in with a verified ADCode account and choose a model in Connect a model → Free · no API key. No provider key is needed.",
       "Open Connect a model and choose a provider - Anthropic, OpenAI, Google, or any OpenAI-compatible endpoint.",
       "Paste your key; ADCode checks it really works before saving.",
       "Keys go into your operating system's credential store, never a plaintext file.",
@@ -1540,6 +1556,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "workbench-agents-board": {
     steps: [
       "Choose Agents in the Vibe sidebar (in the IDE window, Agents in the More menu or Open Agents in the command palette).",
+      "Your agents starts with five specialists that use your current model. Edit one to pin a specific connection and model instead, or change its instructions, appearance and tool access.",
       "Press New task. Describe what you want - for example: Add a dark mode toggle to the settings page.",
       "Pick an agent, or keep Default agent to use your connected model with every tool. Optionally set a cost cap in dollars, then press Enter.",
       "Watch its box under Working: the mascot thinks while it works, the status line says what it is doing right now, and the time, files, tokens and cost count up. Start more tasks straight away - they run side by side, and extra ones wait as Queued.",
@@ -1802,14 +1819,19 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Select Usage in the chat's header, or Usage by model in the context meter's menu, or run AI: Show Usage.",
       "Pick a range: Today, 7 days, 30 days or All time.",
       "Read the totals - tokens in and out, requests, and the estimated cost - and the bar per day underneath.",
+      "Activity shows the past year independently of the totals range: your current streak, longest streak and active days. A day is active when the chat or an agent makes an AI request on this computer.",
+      "Hover, click or focus a calendar square for its date, requests and tokens. Arrow keys inspect neighbouring days; Home and End go to the oldest and newest day. Small windows scroll the calendar horizontally, starting at the recent days.",
+      "Streaks follow local calendar days. Yesterday keeps a streak alive while today is still empty; the longest streak is measured within the displayed year.",
       "Look down the list of models: each shows its share of tokens, its requests from the chat and from agents, and its cost at the catalogue's price.",
-      "A ≈ marks counts ADCode estimated because the provider did not report them. Clear usage removes everything from this machine.",
+      "A ≈ marks counts ADCode estimated because the provider did not report them. Clear usage removes this machine's history, activity and streaks.",
+      "For included Tagflow AI, read your account-wide allowance above the history. It includes active reservations, resets at midnight UTC, and cannot be reset by clearing local history.",
     ],
     benefits: [
       "See where the money goes, model by model, before your provider's bill arrives.",
       "Spot the agent run or long chat that used far more than you expected.",
+      "See your real pattern of AI use without collecting new activity data or sending local history to a server.",
       "Honest numbers: estimates are marked, and a model with no known price says No price instead of showing $0.",
-      "Private by design - the counts never leave your machine.",
+      "Your own provider history stays local. Included Tagflow usage counts are stored on the server to enforce the shared account allowance.",
     ],
     betterThan:
       "Provider dashboards show one total a day late and cannot tell your chat from your agents. ADCode counts every request as it happens, split by model and by where it came from, right inside the editor.",

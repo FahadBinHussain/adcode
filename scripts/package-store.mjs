@@ -105,6 +105,9 @@ if (build !== 0) {
   process.exit(build);
 }
 
+const sanitizer = await run(process.execPath, [join(REPO, "scripts", "check-runtime-sanitizer.mjs")]);
+if (sanitizer !== 0) process.exit(sanitizer);
+
 // The licences of everything just bundled, staged where electron-builder picks them up.
 const notices = await run(process.execPath, [join(REPO, "scripts", "third-party-notices.mjs")]);
 if (notices !== 0) process.exit(notices);

@@ -10,13 +10,14 @@ import { LiveAgentsShowcase } from "@/components/LiveAgentsShowcase";
 import { LiveRecording } from "@/components/LiveRecording";
 import { Partners } from "@/components/Partners";
 import { DocsShowcase } from "@/components/DocsShowcase";
+import { AboutUs } from "@/components/AboutUs";
 import Link from "next/link";
 import { HomeFaq } from "@/components/HomeFaq";
 import { JsonLd } from "@/components/JsonLd";
 import { FAQ, faqPage } from "@/lib/schema";
 import { comparisons, landingPath } from "@/lib/landings";
 import { pageMetadata } from "@/lib/seo";
-import { SITE } from "@/lib/site";
+import { SITE, TEAM } from "@/lib/site";
 
 /*
  * The title leads with what the page is, not only with what it promises.
@@ -67,6 +68,7 @@ export default function Home() {
         <li>Open source, Apache-2.0</li>
       </ul>
       <HeroInstall source="hero" tour="#how-it-works" />
+      <p className="hero-team-note">Have a question before you start? <a href={TEAM.bookingUrl} target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a></p>
       </div><DeveloperCounter /></div>
       <AppShowcase />
       <Partners />
@@ -121,6 +123,7 @@ export default function Home() {
       </p>
       </section>
 
+      <AboutUs />
       <HomeFaq />
       <section className="closing-cta marketplace-wrap"><p className="marketplace-eyebrow">YOUR NEXT CHAPTER</p><h2>Your first app is<br />one sentence away.</h2><HeroInstall source="closing" advertise={false} /><p>Free to build, no card, and half the ad revenue is yours.</p></section>
 

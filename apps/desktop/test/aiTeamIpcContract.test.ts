@@ -64,6 +64,8 @@ describe("AI Team IPC channels", () => {
       CHANNELS.aiTeamRead,
       CHANNELS.aiTeamStart,
       CHANNELS.aiTeamCancel,
+      CHANNELS.aiTeamRemove,
+      CHANNELS.aiTeamRemoved,
       CHANNELS.aiTeamTraces,
       CHANNELS.aiTeamChanged,
     ];

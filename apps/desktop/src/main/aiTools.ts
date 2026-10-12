@@ -20,7 +20,8 @@ import type { NodeMemory } from "@adcode/memory";
 import { isBinaryByName, loadDirectoryFilter, type DirectoryFilter } from "@adcode/search";
 import { resolveSandboxPath } from "./aiSandbox.ts";
 import { clipOutput, createCommandRunner, looksLikeServer, timeoutFrom, MAX_TIMEOUT_SECONDS, type CommandReading, type CommandRunner } from "./aiCommands.ts";
-import { parseViewPageInput, type ViewPageRequest } from "./agentBrowserModel.ts";
+import { parseAuditPageInput, parseViewPageInput, type ViewPageRequest } from "./agentBrowserModel.ts";
+import { inspectProject, runProjectChecks } from "./projectChecks.ts";
 import { htmlToText, looksLikeHtml } from "./htmlText.ts";
 import type { PreviewStatus } from "../shared/api.ts";
 
@@ -325,6 +326,17 @@ function closestLine(text: string, needle: string): number | null {
   return index === -1 ? null : index + 1;
 }
 
+function editRecovery(original: string, needle: string, path: string): string {
+  const normalized = original.replaceAll("\r\n", "\n");
+  const near = closestLine(normalized, needle);
+  const offset = Math.max(1, (near ?? 1) - 3);
+  const limit = Math.min(80, Math.max(12, needle.split("\n").length + 6));
+  const read = JSON.stringify({ path, offset, limit, line_numbers: false });
+  if (near === null) return `Recovery: call read_file ${read}, or search for a distinctive phrase to locate the block. Correct old_string from current file text; do not repeat this replacement.`;
+  const excerpt = normalized.split("\n").slice(offset - 1, offset - 1 + Math.min(limit, 20)).join("\n").slice(0, 6000);
+  return `Recovery: call read_file ${read} for exact text. Correct old_string; do not repeat this replacement. The following is an excerpt of the unchanged file starting at line ${offset}, not the failed batch's intermediate edits:\n<file_text>\n${excerpt}\n</file_text>`;
+}
+
 const leadingSpace = (line: string): string => /^[ \t]*/.exec(line)?.[0] ?? "";
 
 /**
@@ -405,7 +417,7 @@ export function applyReplacements(
       const near = closestLine(text, oldString);
       return {
         ok: false,
-        message: `${label} was not found in ${relativePath}. Copy it exactly from read_file output, without line numbers${near === null ? "" : ` - the closest match starts near line ${near}`}. Nothing was changed.`,
+        message: `${label} was not found in ${relativePath}. Copy it exactly from read_file output, without line numbers${near === null ? "" : ` - the closest match starts near line ${near}`}. Nothing was changed.\n${editRecovery(original, oldString, relativePath)}`,
       };
     }
     if (count > 1 && !replacement.replaceAll) {
@@ -592,6 +604,32 @@ export function createAiToolRunner(deps: AiToolDeps): ToolRunner {
           return deps.viewPage(request, signal);
         }
 
+        case "audit_page": {
+          if (!deps.viewPage) return fail("This agent has no browser. Run project checks or ask the chat to audit the running UI.");
+          const requests = parseAuditPageInput(input);
+          if (typeof requests === "string") return fail(requests);
+          const reports: string[] = [];
+          let failed = false;
+          for (const request of requests) {
+            if (signal.aborted) return fail(`Audit cancelled. Completed ${reports.length}/${requests.length} viewports; remaining sizes are unverified.\n\n${reports.join("\n\n")}`);
+            const result = await deps.viewPage(request, signal);
+            failed ||= result.isError;
+            reports.push(`--- ${request.width}×${request.height} ---\n${clipOutput(result.content, 7500)}`);
+          }
+          return { content: `Browser quality audit (${requests.length} viewports). Automated findings do not replace keyboard, screen-reader or visual review.\n\n${reports.join("\n\n")}`, isError: failed };
+        }
+
+        case "inspect_project":
+        case "run_project_checks": {
+          const workspace = await (call.name === "inspect_project" ? deps.workspace() : writeWorkspace());
+          if (workspace === null) return unavailable();
+          const directory = await resolveDirOrRoot(workspace, input["cwd"]);
+          if (directory === null) return fail(INVALID_WORKSPACE_PATH);
+          if (call.name === "inspect_project") return inspectProject(directory);
+          try { return await runProjectChecks(directory, input, commands, signal); }
+          finally { deps.onCommandFinished?.(); }
+        }
+
         case "update_plan": {
           const steps = parsePlan(input);
           if (typeof steps === "string") return fail(steps);
@@ -635,14 +673,24 @@ export function createAiToolRunner(deps: AiToolDeps): ToolRunner {
             if (!Number.isSafeInteger(limit) || limit < 1 || (limitRaw !== undefined && limit > 2000)) {
               return fail("read_file limit is between 1 and 2000 lines.");
             }
-            const slice = lines.slice(offset - 1, offset - 1 + limit);
+            if (input["line_numbers"] !== undefined && typeof input["line_numbers"] !== "boolean") return fail("line_numbers must be true or false.");
+            const withNumbers = input["line_numbers"] !== false;
+            const slice: string[] = [];
+            let pageChars = 0;
+            for (const line of lines.slice(offset - 1, offset - 1 + limit)) {
+              const chars = Math.min(line.length, MAX_LINE_CHARS) + 90;
+              if (slice.length > 0 && pageChars + chars > MAX_OUTPUT_CHARS) break;
+              slice.push(line);
+              pageChars += chars;
+            }
             let clipped = 0;
             const numbered = slice
               .map((line, index) => {
                 // A minified bundle is one enormous line; show its start, not all of it.
-                if (line.length <= MAX_LINE_CHARS) return `${String(offset + index).padStart(4)} ${line}`;
+                const prefix = withNumbers ? `${String(offset + index).padStart(4)} ` : "";
+                if (line.length <= MAX_LINE_CHARS) return `${prefix}${line}`;
                 clipped += 1;
-                return `${String(offset + index).padStart(4)} ${line.slice(0, MAX_LINE_CHARS)}… [${(line.length - MAX_LINE_CHARS).toLocaleString("en-US")} more characters on this line]`;
+                return `${prefix}${line.slice(0, MAX_LINE_CHARS)}… [${(line.length - MAX_LINE_CHARS).toLocaleString("en-US")} more characters on this line]`;
               })
               .join("\n");
             const more = offset - 1 + slice.length < lines.length ? `\n[Showing lines ${offset}-${offset + slice.length - 1} of ${lines.length}. Pass offset ${offset + slice.length} to continue.]` : "";
@@ -781,7 +829,8 @@ export function createAiToolRunner(deps: AiToolDeps): ToolRunner {
           let current = "";
           try {
             current = await readFile(path, "utf8");
-          } catch {
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException | null)?.code !== "ENOENT") throw error;
             // A new file. An empty original makes the whole proposal one insertion hunk.
           }
 
@@ -809,7 +858,8 @@ export function createAiToolRunner(deps: AiToolDeps): ToolRunner {
             if (!info.isFile()) return fail("That path is not a file.");
             if (info.size > MAX_READ_BYTES) return fail(`That file is ${info.size} bytes, too large to edit here.`);
             current = await readFile(path, "utf8");
-          } catch {
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException | null)?.code !== "ENOENT") throw error;
             exists = false;
           }
           if (!exists && replacements.some((replacement) => replacement.oldString.length > 0)) {

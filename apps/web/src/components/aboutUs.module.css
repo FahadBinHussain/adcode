@@ -1,0 +1,30 @@
+.section {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: clamp(32px, 6vw, 88px);
+  align-items: center;
+  padding-block: clamp(56px, 7vw, 100px);
+  border-top: 1px solid var(--hairline);
+  scroll-margin-top: 96px;
+}
+.story { min-width: 0; }
+.story h2 { margin: 14px 0 24px; font-size: clamp(30px, 3.5vw, 48px); font-weight: 520; line-height: 1.12; letter-spacing: -.04em; }
+.story > p:not(:first-child) { max-width: 600px; color: var(--muted); font-size: 14px; line-height: 1.85; margin-block: 16px; }
+.story > p.lead { color: var(--text); font-size: 18px; line-height: 1.65; }
+.actions { display: flex; flex-wrap: wrap; gap: 18px 24px; align-items: center; margin-top: 28px; }
+.actions > a { display: inline-flex; align-items: center; gap: 14px; }
+.actions > a:last-child { color: var(--text); font-size: 13px; text-underline-offset: 4px; }
+.actions > a:last-child:hover { text-decoration: underline; }
+.actions a:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; }
+.note { display: block; margin-top: 14px; color: var(--faint); font-size: 12px; line-height: 1.7; }
+.founder { margin: 0; min-width: 0; max-width: 480px; width: 100%; justify-self: end; border: 1px solid var(--hairline); border-radius: 18px; overflow: hidden; background: var(--card); }
+.founder img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; }
+.founder figcaption { display: flex; flex-direction: column; gap: 8px; padding: 24px; }
+.founder strong { color: var(--text); font-size: clamp(19px, 2vw, 24px); font-weight: 550; letter-spacing: -.025em; }
+.founder figcaption > span:last-child { color: var(--muted); font-size: 13px; }
+.role { color: var(--faint); font-size: 10px; letter-spacing: .12em; font-weight: 550; }
+@media (max-width: 760px) {
+  .section { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .founder { justify-self: start; max-width: 420px; }
+  .story > p.lead { font-size: 17px; }
+}

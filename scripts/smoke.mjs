@@ -32,7 +32,7 @@ const require = createRequire(join(REPO, "package.json"));
 
 const packaged = process.argv.includes("--packaged");
 const electronPath = packaged
-  ? join(releaseDirectory(REPO), "win-unpacked", "ADCode.exe")
+  ? join(releaseDirectory(REPO), process.platform === "win32" ? "win-unpacked" : "linux-unpacked", process.platform === "win32" ? "ADCode.exe" : "ADCode")
   : require("electron");
 
 // A packaged app *is* the app; an unpackaged Electron has to be told where it lives.
@@ -109,9 +109,20 @@ await writeFile(
  * `accountMadeLocally` below fails if anything goes back to production.
  */
 const backend = await startSmokeBackend();
+// Diagnose identity retries without logging credentials or changing the account check.
+let authTraceCount = 0;
+const authTrace = process.env.ADCODE_SMOKE_AUTH_TRACE === "1" ? setInterval(() => {
+  const count = backend.server.signUpCount();
+  if (count !== authTraceCount) {
+    process.stdout.write(`authTrace: ${JSON.stringify({ count, at: new Date().toISOString() })}\n`);
+    authTraceCount = count;
+  }
+}, 250) : null;
+authTrace?.unref();
 const childEnv = {
   ...process.env,
   ...backend.env,
+  ADCODE_USER_DATA_DIR: userData,
   ELECTRON_ENABLE_LOGGING: "1",
   ADCODE_PIN_PROMPT: "1",
   ADCODE_UPDATE_SIMULATE: "1",
@@ -164,6 +175,20 @@ async function findTarget() {
 }
 
 const target = await findTarget();
+// Fail before driving the app if it ignored the isolated application profile.
+let isolatedProfileReady = false;
+for (let attempt = 0; attempt < 80; attempt++) {
+  try {
+    await access(join(userData, "ads", "ads", "identity.json"));
+    isolatedProfileReady = true;
+    break;
+  } catch { await sleep(250); }
+}
+if (!isolatedProfileReady) {
+  child.kill();
+  await backend.server.close();
+  throw new Error("The app did not initialize its temporary account profile; refusing to drive a real profile");
+}
 let socket = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
   socket.addEventListener("open", resolve, { once: true });
@@ -219,6 +244,7 @@ async function evaluate(expression) {
 // CDP can attach before the first document has loaded. Wait for the restored editor
 // instead of assuming a fixed delay is enough on a cold or removable drive.
 await send("Page.bringToFront", {});
+await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 const startupDeadline = Date.now() + 60_000;
 while (Date.now() < startupDeadline) {
   const ready = await evaluate(`Boolean(
@@ -297,6 +323,7 @@ const chatControls = await evaluate(`(async () => {
   probe.remove();
   const row = document.querySelector('.vibe-history-host .chat-history-row');
   const options = row?.querySelector('.chat-history-options');
+  const optionsLeft = options?.getBoundingClientRect().left ?? null;
   options?.click();
   await frame();
   const menu = document.querySelector('.menu-panel[data-context]');
@@ -308,7 +335,7 @@ const chatControls = await evaluate(`(async () => {
     dangerBackground: danger ? getComputedStyle(danger).backgroundColor : null,
     // The position it was given, not its box: menus scale in, and mid-animation the box is not where it lands.
     menuLeft: menu ? parseFloat(menu.style.left) : null,
-    buttonLeft: options ? options.getBoundingClientRect().left : null,
+    buttonLeft: optionsLeft,
   };
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await frame();
@@ -426,7 +453,7 @@ const vibePages = await evaluate(`(async () => {
   result.toolsShown = !!tools && !tools.hidden;
   result.toolsTabs = tools?.querySelectorAll('[role=tab]').length === 4;
   // One card per row of BUILT_IN_TOOLS_INFO (renderer/tools/builtInTools.ts).
-  result.builtInCards = tools?.querySelectorAll('#tools-panel-built-in .tool-card').length === 19;
+  result.builtInCards = tools?.querySelectorAll('#tools-panel-built-in .tool-card').length === 22;
   document.querySelector('.vibe-page-item.vibe-page-chat')?.click();
   await wait(() => document.getElementById('vibe-page-chat')?.hidden === false);
   result.backToChat = document.getElementById('vibe-page-chat')?.hidden === false && !!document.querySelector('#vibe-page-chat .chat-card');
@@ -442,11 +469,11 @@ const memoryAndMotion = await evaluate(`(async () => {
   const wait = async (test) => { for (let i = 0; i < 40 && !test(); i++) await new Promise((r) => setTimeout(r, 100)); };
   const chat = document.getElementById('vibe-page-chat');
   const meter = chat?.querySelector('.chat-context-meter');
-  await wait(() => /^Context \\d{1,3}%$/.test(meter?.querySelector('.chat-context-label')?.textContent ?? '') && (meter?.title ?? '').length > 0);
+  await wait(() => /^\\d{1,3}%$/.test(meter?.querySelector('.composer-meter-value')?.textContent ?? '') && (meter?.title ?? '').length > 0);
   const result = {
     motionLively: document.documentElement.dataset.motion === 'lively',
     meterInComposer: !!meter && !!meter.closest('.chat-composer-footer'),
-    meterReads: /^Context \\d{1,3}%$/.test(meter?.querySelector('.chat-context-label')?.textContent ?? ''),
+    meterReads: /^\\d{1,3}%$/.test(meter?.querySelector('.composer-meter-value')?.textContent ?? '') && meter?.querySelector('.composer-meter-label')?.textContent === 'Context',
     meterExplains: / tokens\\. /.test(meter?.title ?? ''),
   };
   meter?.click();
@@ -504,6 +531,7 @@ await new Promise((resolve, reject) => {
 });
 socket.addEventListener("message", onSocketMessage);
 await send("Page.bringToFront", {});
+await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 for (let attempt = 0; attempt < 240; attempt++) {
   if (await evaluate("Boolean(document.body.dataset.sessionReady === 'true' && document.body.dataset.workspaceMode === 'code' && document.getElementById('status-workspace')?.textContent !== 'No folder' && document.querySelector('.monaco-editor') && document.querySelector('#filetree .tree-row') && document.querySelector('#tabs .tab'))") === true) break;
   await sleep(250);
@@ -990,6 +1018,10 @@ checks.scmKeyboardCloseRestoresEditor = await (async () => {
   if (openedFromKeyboard !== true) return false;
 
   await pressEscape();
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await evaluate("document.querySelector('[data-popup-id=\"source-control\"]')?.open === false && document.activeElement?.closest('.monaco-editor') !== null") === true) break;
+    await sleep(50);
+  }
   return await evaluate(
     `document.querySelector('[data-popup-id="source-control"]')?.open === false &&
       document.activeElement?.closest(".monaco-editor") !== null`,
@@ -1533,7 +1565,11 @@ async function closeStructure() {
     `document.querySelector('[data-popup-id="structure"]')?.open === true`,
   );
   if (open === true) await pressEscape();
-  await sleep(300);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await evaluate("document.querySelector('[data-popup-id=\"structure\"]')?.open === false") === true) return;
+    await sleep(50);
+  }
+  throw new Error("Structure did not finish closing before the next editor action");
 }
 
 /** Select a docked sidebar view without toggling it closed when it is already selected. */
@@ -3125,7 +3161,7 @@ try {
   checks.dragMovesFile = await evaluate(
     `(async () => {
        const root = (await window.adcode.workspace.current()).root;
-       const base = root + '\\\\' + ${JSON.stringify(SCRATCH)};
+       const base = root + '/' + ${JSON.stringify(SCRATCH)};
        const rows = () => [...document.querySelectorAll('#filetree .tree-row')];
        const file = rows().find(r => r.dataset.path?.endsWith('smoke-renamed.md'));
        let folder = rows().find(r => r.dataset.path?.endsWith('nested'));
@@ -3139,7 +3175,7 @@ try {
        await new Promise(r => setTimeout(r, 1500));
        file.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
 
-       const inside = await window.adcode.workspace.list(base + '\\\\nested');
+       const inside = await window.adcode.workspace.list(base + '/nested');
        return highlighted && inside.some(e => e.name === 'smoke-renamed.md')
          ? true
          : 'highlighted=' + highlighted + ' nested=' + inside.map(e => e.name).join(',');
@@ -3150,12 +3186,12 @@ try {
   checks.copyAndGuards = await evaluate(
     `(async () => {
        const root = (await window.adcode.workspace.current()).root;
-       const base = root + '\\\\' + ${JSON.stringify(SCRATCH)};
-       const source = base + '\\\\nested\\\\smoke-renamed.md';
+       const base = root + '/' + ${JSON.stringify(SCRATCH)};
+       const source = base + '/nested/smoke-renamed.md';
 
        const first = await window.adcode.files.copy(source, base);
        const second = await window.adcode.files.copy(source, base);
-       const intoSelf = await window.adcode.files.move(base, base + '\\\\nested');
+       const intoSelf = await window.adcode.files.move(base, base + '/nested');
 
        if (!first.ok || !second.ok) return 'copy failed: ' + first.message + ' / ' + second.message;
        if (first.path === second.path) return 'the second copy overwrote the first';
@@ -4582,7 +4618,10 @@ try {
   await evaluate("document.querySelector('.tree-edit-input').value = ''; true");
   await typeText("smoke-style.css");
   await pressEnter();
-  await sleep(1200);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (await evaluate("document.querySelector('.editor-file-panel[data-active=\"true\"]')?.dataset.path?.endsWith('smoke-style.css') && Boolean(document.querySelector('.editor-file-panel[data-active=\"true\"] .monaco-editor'))") === true) break;
+    await sleep(150);
+  }
 
   const styleEditorPoint = await evaluate(
     `(() => {
@@ -4592,7 +4631,18 @@ try {
        return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 20) } : null;
      })()`,
   );
-  if (styleEditorPoint === null) throw new Error('The new stylesheet did not open in the active editor');
+  if (styleEditorPoint === null) {
+    const detail = await evaluate(`(() => ({
+      tabs: [...document.querySelectorAll('.tab')].map(tab => ({ label: tab.querySelector('.tab-label')?.textContent, selected: tab.getAttribute('aria-selected') })),
+      panels: [...document.querySelectorAll('.editor-file-panel')].map(panel => ({ path: panel.dataset.path, active: panel.dataset.active, editor: !!panel.querySelector('.monaco-editor') })),
+      name: document.querySelector('.tree-edit-input')?.value,
+      error: document.querySelector('.tree-edit-error:not([hidden])')?.textContent,
+      focused: document.activeElement?.className,
+      status: document.getElementById('status-message')?.textContent
+    }))()`);
+    const debug = await evaluate("window.adcode.debugLog.report()");
+    throw new Error('The new stylesheet did not open in the active editor: ' + JSON.stringify(detail) + '\\n' + String(debug));
+  }
   await clickAt(styleEditorPoint.x, styleEditorPoint.y);
 
   await send("Input.dispatchKeyEvent", {
@@ -4957,7 +5007,13 @@ checks.previewPaneRendersIt = await evaluate(
      const row = rows.find((r) => r.querySelector('span')?.textContent === 'Toggle Live Preview');
      if (!row) return 'no Toggle command; palette had [' + titles.join(' | ') + ']';
      row.click();
-     await new Promise((r) => setTimeout(r, 2500));
+     // Opening detects the project and starts a server asynchronously. Wait for the
+     // visible pane rather than assuming a cold disk finishes within a fixed delay.
+     for (let attempt = 0; attempt < 80; attempt++) {
+       const shown = document.querySelector('.preview-pane');
+       if (shown && !shown.hidden) break;
+       await new Promise((r) => setTimeout(r, 100));
+     }
 
      const pane = document.querySelector('.preview-pane');
      if (!pane || pane.hidden) {
@@ -5806,6 +5862,17 @@ checks.ideAssistantFloats = await evaluate(
  * reload is invisible to every assertion except one that watches the frame's identity and
  * its `src` across the change. So that is what this watches.
  */
+async function closePreviewBeforeOpening() {
+  const closed = await evaluate(`(async () => {
+    const pane = document.querySelector('.preview-pane');
+    if (!pane || pane.hidden) return true;
+    pane.querySelector('.icon-button[aria-label="Close preview"]')?.click();
+    for (let attempt = 0; attempt < 100 && !pane.hidden; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
+    return pane.hidden;
+  })()`);
+  if (closed !== true) throw new Error("Preview did not close before testing its open action");
+}
+await closePreviewBeforeOpening();
 checks.previewFloatsAndMaximisesWithoutReloading = await evaluate(
   `(async () => {
      /*
@@ -5886,6 +5953,7 @@ checks.previewFloatsAndMaximisesWithoutReloading = await evaluate(
  * page. So this asserts the iframe is the same node with the same `src` afterwards, which is
  * the same assertion the undocking check makes, for the same reason.
  */
+await closePreviewBeforeOpening();
 checks.deviceSizingDoesNotReloadThePage = await evaluate(
   `(async () => {
      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'P', ctrlKey: true, shiftKey: true, bubbles: true }));
@@ -6563,7 +6631,7 @@ checks.settingsCloseButtonDismisses = await evaluate(
      close.focus();
       const focused = document.activeElement === close;
       close.click();
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      for (let attempt = 0; attempt < 100 && dialog.open; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
       return focused && dialog.open === false && document.activeElement === document.querySelector('#open-settings');
   })()`,
 );
@@ -7217,6 +7285,14 @@ checks.dialogCloseAuditPass = Object.values(checks.dialogCloseAudit).every(
  */
 // The card waits for a focused window; automation has none unless it is emulated.
 await send("Emulation.setFocusEmulationEnabled", { enabled: true });
+if (packaged) {
+  // A distributed build must use its real feed and must ignore simulation flags.
+  // Do not install anything from a smoke run or imply that this tested an upgrade.
+  checks.packagedUpdateFeed = await evaluate(`(async () => {
+    const checked = await window.adcode.updates.check();
+    return { checkedCurrent: checked.state === 'current', ignoresSimulation: checked.version !== '9.9.9', state: checked.state };
+  })()`);
+} else {
 checks.updateReadyVisible = await evaluate(`(async () => {
   const wait = async (test) => { for (let i = 0; i < 60 && !test(); i++) await new Promise((r) => setTimeout(r, 100)); };
   const card = () => [...document.querySelectorAll('.toast')].find((node) => /9\\.9\\.9 is ready/.test(node.textContent ?? ''));
@@ -7238,6 +7314,7 @@ checks.updateReadyVisible = await evaluate(`(async () => {
     restartAnswers: after.state === 'ready',
   };
 })()`);
+}
 
 await send("Emulation.setDeviceMetricsOverride", {
   width: 1280,
@@ -7252,6 +7329,7 @@ await send("Emulation.setDeviceMetricsOverride", {
  */
 const signUps = backend.server.signUpCount();
 checks.accountMadeLocally = signUps === 1 ? true : `${signUps} sign-ups reached the mock, expected 1`;
+if (authTrace !== null) clearInterval(authTrace);
 
 socket.close();
 child.kill();
@@ -7270,7 +7348,7 @@ const bad = output
   // Chromium's GPU and cache chatter on a headless Windows box is noise.
   .filter(
     (line) =>
-      !/gpu|dxgi|passthrough|swiftshader|d3d|vulkan|GLES|cache_util|registration_protocol|Autofill|DevTools listening|AttachConsole/i.test(
+      !/gpu|dxgi|passthrough|swiftshader|d3d|vulkan|GLES|cache_util|net[\\/]disk_cache|registration_protocol|Autofill|DevTools listening|AttachConsole/i.test(
         line,
       ),
   );
@@ -7296,6 +7374,7 @@ const requiredEvidence = {
   welcomeScreenIsUsable: ["primaryClickable", "showsVersion", "marked"],
   earningsSettingsButtonWorks: ["settingsOpened", "settingsSelected"],
   updateReadyVisible: ["checkedReady", "statusBarSays", "cardShown", "cardOffersRestart", "restartAnswers"],
+  packagedUpdateFeed: ["checkedCurrent", "ignoresSimulation"],
   licencesDialog: ["opened", "threeTabs", "showsApache", "closes"],
 };
 const failed = Object.entries(checks).filter(

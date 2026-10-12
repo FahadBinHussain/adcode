@@ -135,7 +135,10 @@ function main() {
     writeFileSync(path, text.replace(/\r\n/g, "\n"), "utf8");
   };
 
-  rmSync(target, { recursive: true, force: true });
+  // Only regenerate the vendored skills. Keep ADCode's original production guidance.
+  for (const folder of ["design-taste-frontend", "redesign-existing-projects", "full-output-enforcement"]) {
+    rmSync(join(target, folder), { recursive: true, force: true });
+  }
   const design = splitDesignSkill(readFileSync(join(upstream, "skills", "taste-skill", "SKILL.md"), "utf8"));
   for (const [path, text] of Object.entries(design)) write(join(target, "design-taste-frontend", path), text);
   write(join(target, "redesign-existing-projects", "SKILL.md"), readFileSync(join(upstream, "skills", "redesign-skill", "SKILL.md"), "utf8"));
@@ -159,6 +162,8 @@ function main() {
       "| `full-output-enforcement/` | `skills/output-skill/SKILL.md`, verbatim |",
       "",
       "Regenerate with `node scripts/vendor-taste-skill.mjs <checkout>`, then read the diff: these files become prompts.",
+      "",
+      "`production-quality/` is original ADCode guidance under the project's Apache-2.0 licence. Its compact workflow and on-demand motion/release references complement the vendored visual taste skills. The vendoring script preserves this folder.",
       "",
     ].join("\n"),
   );

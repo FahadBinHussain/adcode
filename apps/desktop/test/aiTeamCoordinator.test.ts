@@ -144,6 +144,22 @@ function handoff(input: AiTeamNodeRunInput, summary = `${input.node.id} complete
 }
 
 describe("confirmed AI Team coordination", () => {
+  it("deletes a completed run durably and releases its cached execution result", async () => {
+    const { teams, configure } = services();
+    const team = await configure();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const coordinator = createAiTeamCoordinator({ teamService: teams, resolveRoute: (_team, node) => route(node.id), runNode: async (input) => { await pending; return handoff(input); } });
+    await coordinator.startConfirmed(team.id);
+    await expect(coordinator.remove(team.id)).rejects.toThrow("Stop the agent");
+    release();
+    expect((await coordinator.wait(team.id)).state).toBe("completed");
+    await expect(coordinator.remove(team.id)).resolves.toBe(true);
+    await expect(teams.list(project)).resolves.toEqual([]);
+    await expect(coordinator.wait(team.id)).rejects.toThrow("was not found");
+    await expect(teams.traces(team.id)).resolves.toEqual([]);
+  });
+
   it("reserves conservatively before each provider stream and retains the estimate without usage", async () => {
     const order: string[] = [];
     let estimated: { tokens: number; costMicros: number } | null = null;

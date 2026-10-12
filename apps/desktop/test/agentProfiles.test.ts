@@ -25,6 +25,17 @@ describe("reusable named agents", () => {
     expect(() => buildNamedAgentTeam("Task", [ada, ada])).toThrow(/duplicate/i);
     expect(parseAiTeamConfigure({ ...input, roles: input.roles.map(r => ({ ...r, route: { provider: "", model: "x" } })) }, "team-bad")).toBeNull();
   });
+  it("offers starters before a model is connected, and follows the active connection when they run", () => {
+    const starters = starterAgents({ provider: "", model: "", useCurrentModel: true });
+    const parsed = parseAgentProfiles(JSON.stringify(starters));
+    expect(parsed).toHaveLength(5);
+    expect(buildSoloRun("Review this change", parsed[0]!).roles[0]?.route).toBeUndefined();
+    expect(buildSoloRun("Review this change", parsed[0]!).roles[0]?.toolAccess).toBe("read-only");
+    const team = buildNamedAgentTeam("Review and test", parsed.slice(0, 2));
+    expect(parseAiTeamConfigure(team, "current-model-team")).not.toBeNull();
+    expect(team.roles.every((role) => role.route === undefined)).toBe(true);
+    expect(() => saveAgentProfile([], { ...ada, useCurrentModel: "true" } as unknown as typeof ada)).toThrow();
+  });
   it("lets a reviewer wait for teammate handoffs and rejects teams with no starting agent", () => {
     const reviewer = { ...grace, runAfterTeammates: true };
     const input = buildNamedAgentTeam("Implement and verify", [ada, reviewer]);

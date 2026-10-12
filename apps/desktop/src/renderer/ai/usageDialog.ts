@@ -19,6 +19,10 @@ import {
 } from "../../shared/aiUsage.ts";
 import { askThemed } from "../dialogs/confirmDialog.ts";
 import { button, el, openFormModal } from "../dialogs/formDialog.ts";
+import { createUsageActivity } from "./usageActivityView.ts";
+import { allowanceSummary } from "./allowanceSummary.ts";
+import { UNLIMITED_REQUESTS_PER_MINUTE } from "../../shared/tagflow.ts";
+import { openAudienceProfile } from "./audienceProfile.ts";
 
 const RANGE_KEY = "adcode.usage.range";
 
@@ -76,12 +80,75 @@ export function openUsageDialog(): Promise<void> {
     let range = savedRange();
     let stop: (() => void) | null = null;
     let request = 0;
+    let allowanceRequest = 0;
+    let allowanceTimer: ReturnType<typeof setInterval> | undefined;
     const { dialog, card, finish } = openFormModal("ai-usage-dialog", "AI usage", () => {
+      request += 1;
+      allowanceRequest += 1;
       stop?.();
+      clearInterval(allowanceTimer);
       resolve();
     });
 
-    card.append(el("p", "usage-lead", "Tokens and estimated cost for the chat and every agent, kept on this machine. Your provider's billing page has the exact bill."));
+    const historyNote = el("p", "usage-lead", "History below covers the selected period and all models on this computer. The free allowance above covers today across your devices. Included AI is free; costs for your own models are estimates.");
+    const allowance = el("div", "usage-allowance", "Checking included AI allowance…");
+    const allowanceHelp = el("details", "usage-allowance-help");
+    const budgetNote = el("p", "usage-note");
+    allowanceHelp.append(
+      el("summary", "", "How this allowance works"),
+      el("p", "usage-note", "Tokens measure the text the AI reads and writes. One message can use several AI requests as the assistant works with tools. Active replies temporarily hold tokens; unused tokens return when the reply finishes."),
+      el("p", "usage-note", "Each AI request reads conversation history, instructions and tool results again. These input tokens count each time, even when the reply is short. For example, sending a 20,000-token context ten times uses about 200,000 input tokens. Start a new chat when changing tasks to avoid carrying older history."),
+      el("p", "usage-note", "Completed requests use the provider's token counts when available. Missing counts are marked as estimates. Before a request starts, ADCode temporarily reserves estimated input tokens plus room for the reply. An interrupted request without final counts can use its full reservation."),
+      el("p", "usage-note", "If a chat or agent reaches a temporary limit, it waits and resumes automatically when the limit resets. Keep ADCode running. Press Stop to cancel the wait; closing ADCode ends automatic resumption. A request larger than your entire daily allowance needs a smaller conversation or a higher allowance."),
+      budgetNote,
+    );
+    allowanceHelp.hidden = true;
+    allowance.setAttribute("role", "status");
+    card.append(allowance);
+    async function refreshAllowance(): Promise<void> {
+      const mine = ++allowanceRequest;
+      try {
+        const view = await window.adcode.aiUsage.allowance();
+        if (mine !== allowanceRequest) return;
+        allowance.hidden = view === null || !view.available;
+        allowanceHelp.hidden = allowance.hidden;
+        if (view === null || !view.available) return;
+        if (view.blocked) { allowance.textContent = "Included AI is disabled for this account."; allowanceHelp.hidden = true; return; }
+        const summary = allowanceSummary(view);
+        const heading = el("div", "usage-allowance-heading");
+        heading.append(el("strong", "", "Your free AI today"), el("span", "usage-allowance-reset", `Resets ${summary.reset}`));
+        const meters = el("div", "usage-allowance-meters");
+        for (const [label, remaining, limit, unit] of [["Tokens left today", summary.remainingTokens, view.limits.dailyTokens, "tokens"], ["AI requests left", summary.remainingRequests, view.limits.dailyRequests, "requests"]] as const) {
+          const meter = el("div", "usage-allowance-meter");
+          if (remaining === null) {
+            meter.append(el("span", "usage-stat-label", "AI requests"), el("strong", "usage-allowance-value", "Unlimited"), el("span", "usage-stat-detail", `${view.usage.requests.toLocaleString()} requests used today`));
+          } else {
+            const progress = el("progress", "ad-progress");
+            progress.max = Math.max(1, limit);
+            progress.value = Math.min(limit, remaining);
+            progress.setAttribute("aria-label", `${unit === "tokens" ? "Tokens" : "AI requests"} remaining today`);
+            meter.append(el("span", "usage-stat-label", label), el("strong", "usage-allowance-value", remaining.toLocaleString()), progress, el("span", "usage-stat-detail", `of ${limit.toLocaleString()} daily ${unit}`));
+          }
+          meters.append(meter);
+        }
+        const breakdown = el("p", "usage-note", `${summary.usedTokens.toLocaleString()} tokens used${summary.heldTokens > 0 ? ` · ${summary.heldTokens.toLocaleString()} held for active replies` : ""}. Shared across your devices.`);
+        const counts = el("p", "usage-note usage-token-breakdown", `${view.usage.inputTokens.toLocaleString()} input (read) · ${view.usage.outputTokens.toLocaleString()} output (written). ${view.usage.estimatedRequests > 0 ? `${view.usage.estimatedRequests.toLocaleString()} ${view.usage.estimatedRequests === 1 ? "request has" : "requests have"} estimated counts.` : "Completed requests have provider-reported counts."}`);
+        const requestLimit = view.limits.requestsPerMinute === UNLIMITED_REQUESTS_PER_MINUTE ? "ADCode has no per-minute request cap. The AI provider may still limit busy periods." : `Up to ${view.limits.requestsPerMinute.toLocaleString()} AI requests per minute.`;
+        budgetNote.textContent = `${requestLimit} Service budget: ${formatUsageCost(summary.remainingCost)} left of ${formatUsageCost(view.limits.dailyCostMicros)} today. ADCode pays this cost; you are not charged. Your daily token allowance resets at the time above.`;
+        const parts: HTMLElement[] = [heading, meters, breakdown, counts];
+        if (summary.remainingTokens === 0 || summary.remainingRequests === 0 || summary.remainingCost === 0) {
+          parts.push(el("p", "usage-allowance-warning", `${summary.remainingTokens === 0 ? "Today's token allowance is used up" : summary.remainingRequests === 0 ? "Today's AI request allowance is used up" : "Today's service budget is used up"}. Wait for the reset above, or use your own connected model.`));
+        }
+        allowance.replaceChildren(...parts);
+      } catch {
+        if (mine !== allowanceRequest) return;
+        allowance.hidden = false;
+        allowanceHelp.hidden = true;
+        allowance.replaceChildren(el("span", "usage-note", "Account allowance could not be checked."), button("Retry", "ad-btn ad-btn-tertiary", () => void refreshAllowance()));
+      }
+    }
+    void refreshAllowance();
+    allowanceTimer = setInterval(() => void refreshAllowance(), 15_000);
 
     const tabs = el("div", "ad-tabs usage-tabs");
     tabs.setAttribute("role", "tablist");
@@ -94,31 +161,48 @@ export function openUsageDialog(): Promise<void> {
     });
     tabs.append(...tabButtons);
     tabs.addEventListener("keydown", (event) => {
-      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
       const at = USAGE_RANGES.findIndex((option) => option.value === range);
-      const next = USAGE_RANGES[(at + (event.key === "ArrowRight" ? 1 : USAGE_RANGES.length - 1)) % USAGE_RANGES.length]!;
+      const next = USAGE_RANGES[event.key === "Home" ? 0 : event.key === "End" ? USAGE_RANGES.length - 1 : (at + (event.key === "ArrowRight" ? 1 : USAGE_RANGES.length - 1)) % USAGE_RANGES.length]!;
       choose(next.value);
       tabButtons.find((tab) => tab.dataset["range"] === next.value)?.focus();
     });
 
     const body = el("div", "usage-body");
+    body.id = "ai-usage-panel";
+    body.setAttribute("role", "tabpanel");
     body.setAttribute("aria-live", "polite");
     const footer = el("div", "usage-footer");
     const clear = button("Clear usage", "ghost-button usage-clear", () => void clearAll());
     const close = button("Done", "ad-btn ad-btn-primary", () => finish());
-    footer.append(clear, close);
+    footer.append(clear, button("About your AI use","ad-btn ad-btn-tertiary",() => void openAudienceProfile()), close);
     card.append(tabs, body, footer);
 
     function paintTabs(): void {
       for (const tab of tabButtons) {
         const on = tab.dataset["range"] === range;
         tab.setAttribute("aria-selected", String(on));
+        tab.id = `ai-usage-range-${tab.dataset["range"]}`;
+        tab.setAttribute("aria-controls", body.id);
+        if (on) body.setAttribute("aria-labelledby", tab.id);
         tab.tabIndex = on ? 0 : -1;
       }
     }
 
     function paint(view: AiUsageView): void {
+      const focusedDay = body.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset["day"] : undefined;
+      const focusedHelp = allowanceHelp.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+      const day = body.querySelector<HTMLElement>('.usage-calendar-cell[tabindex="0"]')?.dataset["day"];
+      const scrollLeft = body.querySelector<HTMLElement>(".usage-calendar-scroll")?.scrollLeft;
+      const scrollTop = body.scrollTop;
+      const activity = createUsageActivity(view.activity, { ...(day === undefined ? {} : { day }), ...(scrollLeft === undefined ? {} : { scrollLeft }) });
+      const replace = (...parts: HTMLElement[]): void => {
+        body.replaceChildren(allowanceHelp, historyNote, ...parts);
+        body.scrollTop = scrollTop;
+        if (focusedDay) body.querySelector<HTMLButtonElement>(`[data-day="${focusedDay}"]`)?.focus({ preventScroll: true });
+        focusedHelp?.focus({ preventScroll: true });
+      };
       clear.disabled = view.since === null;
       if (view.totals.requests === 0) {
         const empty = el("div", "usage-empty");
@@ -128,7 +212,7 @@ export function openUsageDialog(): Promise<void> {
             ? "Send a message in the chat or give an agent a task, and the tokens it uses appear here."
             : "Pick a longer range to see earlier use."),
         );
-        body.replaceChildren(empty);
+        replace(activity, empty);
         return;
       }
       const totals = view.totals;
@@ -139,10 +223,11 @@ export function openUsageDialog(): Promise<void> {
         stat("Estimated cost", costText(totals.costMicros, totals.costPartial), totals.costPartial ? "Some models have no price" : "From catalogue prices"),
       );
 
-      const parts: HTMLElement[] = [stats];
+      const parts: HTMLElement[] = [stats, activity];
       if (view.days.length > 1) {
         const most = Math.max(1, ...view.days.map((day) => day.tokens));
         const chart = el("div", "usage-days");
+        chart.style.setProperty("--usage-day-count", String(view.days.length));
         chart.setAttribute("role", "img");
         chart.setAttribute("aria-label", `Tokens per day, ${shortDay(view.days[0]!.day)} to ${shortDay(view.days[view.days.length - 1]!.day)}`);
         for (const day of view.days) {
@@ -159,7 +244,7 @@ export function openUsageDialog(): Promise<void> {
       for (const model of view.models) list.append(modelRow(model));
       parts.push(list);
       if (totals.estimated) parts.push(el("p", "usage-note", "≈ marks counts ADCode estimated because the provider did not report them."));
-      body.replaceChildren(...parts);
+      replace(...parts);
     }
 
     async function refresh(): Promise<void> {
@@ -168,7 +253,7 @@ export function openUsageDialog(): Promise<void> {
         const view = await window.adcode.aiUsage.read(range);
         if (mine === request) paint(view);
       } catch {
-        if (mine === request) body.replaceChildren(el("p", "usage-note", "Usage could not be read."));
+        if (mine === request) body.replaceChildren(el("p", "usage-note", "Usage could not be read."), button("Try again", "ad-btn ad-btn-tertiary", () => void refresh()));
       }
     }
 
@@ -186,16 +271,17 @@ export function openUsageDialog(): Promise<void> {
     async function clearAll(): Promise<void> {
       const sure = await askThemed({
         title: "Clear AI usage?",
-        body: "Every count on this page is removed from this machine. Your provider's own records are not affected.",
+        body: "This clears this computer’s usage history, activity calendar and streaks. Your account’s included AI allowance and your provider’s billing records are kept.",
         confirmLabel: "Clear",
         danger: true,
       });
       if (!sure) return;
-      await window.adcode.aiUsage.clear();
-      void refresh();
+      clear.disabled = true;
+      try { await window.adcode.aiUsage.clear(); void refresh(); }
+      catch { clear.disabled = false; body.prepend(el("p", "usage-note", "History could not be cleared. Try again.")); }
     }
 
-    stop = window.adcode.aiUsage.onChanged(() => void refresh());
+    stop = window.adcode.aiUsage.onChanged(() => { void refresh(); void refreshAllowance(); });
     dialog.showModal();
     paintTabs();
     body.replaceChildren(el("p", "usage-note", "Loading…"));

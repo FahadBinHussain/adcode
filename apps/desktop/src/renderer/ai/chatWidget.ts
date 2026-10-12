@@ -13,8 +13,9 @@
  * Only `transform` and `opacity` animate (§1) - the card is positioned with a translate,
  * never with `left`/`top`, so dragging never triggers layout.
  */
-import { CONTINUE_PROMPT, describeAiFailure, OUTPUT_LIMIT_AGAIN, resumeAfterModelSwitch, type AiFailure } from "./aiFailure.ts";
+import { CONTINUE_PROMPT, describeAiFailure, OUTPUT_LIMIT_AGAIN, resumeAfterModelSwitch, retryAfterFailure, type AiFailure } from "./aiFailure.ts";
 import { createChatQueue, type QueuedMessage } from "./chatQueue.ts";
+import { createEditSummary } from "./editSummary.ts";
 import { chipLabel, modelChoices, rememberModel, switchedFrom, type ModelChoice, type ModelInUse } from "./modelSwitch.ts";
 import { askThemed } from "../dialogs/confirmDialog.ts";
 import { createChatPreview } from "./chatPreview.ts";
@@ -56,6 +57,8 @@ import { runChatWidgetIntent } from "./chatWidgetIntents.ts";
 import { createIcon, ICON } from "../workbench/icons.ts";
 import { createContextMenu, attachContextMenuDismissal, type ContextMenuNode } from "../workbench/contextMenu.ts";
 import { compactCommand, contextMeterModel, createContextMeter } from "./contextMeter.ts";
+import { createComposerUsage } from "./composerUsage.ts";
+import { openModelFeedback } from "./modelFeedback.ts";
 import { markFor } from "../motionFlip.ts";
 import { button as dialogButton, el as dialogEl, openFormModal } from "../dialogs/formDialog.ts";
 import type { CodeReference } from "../editor/codeReferences.ts";
@@ -360,6 +363,9 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   modelLabel.setAttribute("aria-label", "Choose a provider and model");
   modelLabel.setAttribute("aria-haspopup", "menu");
   modelLabel.setAttribute("aria-expanded", "false");
+  const modelName = document.createElement("span");
+  modelName.className = "chat-model-name";
+  modelLabel.append(modelName);
 
   /*
    * The chip switches model from a small menu, as Claude, Codex and Cursor do: what can
@@ -388,6 +394,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   let choosingModel = false;
   async function switchModel(choice: ModelChoice): Promise<void> {
     if (choice.current) return;
+    const resumeWaitingTask = waitingForIncludedLimit && sendButton.dataset["mode"] === "stop";
+    const waitingGeneration = includedWaitGeneration;
     choosingModel = true;
     try {
       await window.adcode.settings.write("adcode.ai.provider", choice.provider);
@@ -397,6 +405,12 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     }
     writeRecentModels(rememberModel(readRecentModels(), choice.provider, choice.model));
     await refreshModelStatus();
+    if (resumeWaitingTask && waitingGeneration === includedWaitGeneration) {
+      waitingForIncludedLimit = false;
+      modeNote(`Now using ${choice.modelName} on ${choice.providerName} - continuing the waiting task.`);
+      continueWhenIdle(CONTINUE_PROMPT, 12, () => waitingGeneration === includedWaitGeneration && card.isConnected);
+      return;
+    }
     if (await resumeIfSwitched()) return;
     modeNote(`Now using ${choice.modelName} on ${choice.providerName}. The conversation carries on.`);
   }
@@ -463,7 +477,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         ? chipLabel(status)
         : saved ? "Select a saved connection" : "Connect a model to begin";
       // No flicker: only touch the DOM when the label actually changed.
-      if (modelLabel.textContent !== label) modelLabel.textContent = label;
+      if (modelName.textContent !== label) {
+        modelName.textContent = label;
+        refreshContextMeter();
+      }
+      usageMeters.setIncluded(status.activeProvider === "tagflow");
       connectButton.textContent = status.ready || saved ? "Models" : "Connect";
       modelLabel.dataset["ready"] = String(status.ready);
       modelLabel.title = status.ready
@@ -498,8 +516,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         connectBanner.hidden = status.ready || dismissed;
         if (open && inspectorOpen) void refreshAgentActivity();
     } catch {
-      if (modelLabel.textContent !== "Connection status unavailable") {
-        modelLabel.textContent = "Connection status unavailable";
+      if (modelName.textContent !== "Connection status unavailable") {
+        modelName.textContent = "Connection status unavailable";
       }
     } finally {
       statusRefreshInFlight = false;
@@ -782,9 +800,14 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   /* ── Transcript ───────────────────────────────────────────────────────── */
 
   const transcript = document.createElement("div");
-  // Agents at work: the room of background agents above the transcript, and the
-  // assistant's own live window inside it.
+  // Every agent's ongoing work lives in the transcript, beside the turn that started it.
   const live = createChatLiveRoom({
+    onActivity: (element, newRun) => {
+      if (newRun || element.parentElement !== transcript) {
+        transcript.append(element);
+        scrollToEnd();
+      }
+    },
     stopChat: () => stopTurn(),
     runCommand: (command, arg) => deps.runCommand?.(command, arg),
   });
@@ -1034,6 +1057,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   /** True while a reopened conversation is drawn, which should appear at once. */
   let restoring = false;
+  let includedFeedbackRequest: string | null = null;
 
   /** Draw a past conversation back into the transcript. */
   async function resume(id: string): Promise<void> {
@@ -1055,7 +1079,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     restoring = true;
     try {
       for (const message of session.messages) {
-        bubble(message.role === "user" ? "user" : "assistant", message.text, [], message.at);
+        bubble(message.role === "user" ? "user" : "assistant", message.text, [], message.at,message.includedRequestId);
       }
     } finally {
       restoring = false;
@@ -1366,7 +1390,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const input = document.createElement("textarea");
   input.className = "chat-input";
   input.rows = 2;
-  input.placeholder = "Plan, Build, / for skills, @ for context…";
+  input.placeholder = "Ask anything, or describe what to build…";
   input.setAttribute("aria-label", "Message the assistant");
 
   // Auto-growing composer, capped at ~140px per the Agent Chat reference.
@@ -1383,7 +1407,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const sendButton = document.createElement("button");
   sendButton.className = "chat-send";
   sendButton.type = "submit";
-  sendButton.textContent = "↑";
+  sendButton.append(createIcon("M8 12V4M4 8l4-4 4 4"));
   sendButton.title = "Send (Enter)";
   sendButton.setAttribute("aria-label", "Send message");
   sendButton.dataset["mode"] = "send";
@@ -1405,7 +1429,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const attachContext = document.createElement("button");
   attachContext.className = "chat-team-button";
   attachContext.type = "button";
-  attachContext.textContent = "@ Files";
+  attachContext.append(createIcon("M3.5 2.5h6l3 3v8h-9zM9.5 2.5v3h3"), "Files");
   attachContext.title = "Add a project file to the conversation (or type @)";
   attachContext.setAttribute("aria-label", "Add a project file to the conversation");
   attachContext.addEventListener("click", () => {
@@ -1580,7 +1604,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const attachButton = document.createElement("button");
   attachButton.className = "chat-team-button";
   attachButton.type = "button";
-  attachButton.textContent = "+ Attach";
+  attachButton.append(createIcon(ICON.plus), "Attach");
   attachButton.title = "Attach images or documents (or drag them in, or paste)";
   attachButton.setAttribute("aria-label", "Attach images or documents");
 
@@ -1730,13 +1754,15 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   const toolbar = document.createElement("div");
   toolbar.className = "chat-toolbar";
-  const spacer = document.createElement("span");
-  spacer.className = "chat-toolbar-spacer";
+  const utilities = document.createElement("div");
+  utilities.className = "chat-composer-utilities";
+  const routing = document.createElement("div");
+  routing.className = "chat-composer-routing";
   modelLabel.classList.add("chat-model-pill");
   const composerTools = document.createElement("details");
   composerTools.className = "composer-tools";
   const toolsLabel = document.createElement("summary");
-  toolsLabel.textContent = "Tools";
+  toolsLabel.append(createIcon("M3 4h10M3 8h10M3 12h10M6 2.5v3M10 6.5v3M6 10.5v3"), "Tools");
   const toolsMenu = document.createElement("div");
   toolsMenu.className = "composer-tools-menu";
   const livePreviewButton = document.createElement("button");
@@ -1753,16 +1779,44 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   composerTools.addEventListener("keydown", event => {
     if (event.key === "Escape" && composerTools.open) { event.stopPropagation(); composerTools.open = false; toolsLabel.focus(); }
   });
-  toolbar.append(attachButton, attachContext, composerTools, spacer, modePill, modelLabel, sendButton);
+  utilities.append(attachButton, attachContext, composerTools);
+  routing.append(modePill, modelLabel, sendButton);
+  toolbar.append(utilities, routing);
   const composerFooter = document.createElement("div");
   composerFooter.className = "chat-composer-footer";
   const disclaimer = document.createElement("span");
   disclaimer.className = "chat-disclaimer";
-  disclaimer.textContent = "Enter to send · Shift+Enter new line · @ file · / command · ↑ last prompt";
+  disclaimer.textContent = "Enter to send · Shift+Enter for a new line";
+  const composerHelp = document.createElement("button");
+  composerHelp.type = "button";
+  composerHelp.className = "composer-help";
+  composerHelp.textContent = "?";
+  composerHelp.title = "Keyboard shortcuts · / commands · @ files";
+  composerHelp.setAttribute("aria-label", "Composer keyboard shortcuts");
+  composerHelp.setAttribute("aria-haspopup", "menu");
+  composerHelp.setAttribute("aria-expanded", "false");
+  const helpMenu = createContextMenu(document.body);
+  attachContextMenuDismissal(helpMenu, () => composerHelp.focus());
+  composerHelp.addEventListener("click", () => {
+    const rect = composerHelp.getBoundingClientRect();
+    composerHelp.setAttribute("aria-expanded", "true");
+    helpMenu.open(rect.left, rect.top - 4, [
+      { kind: "heading", label: "Enter · send message" },
+      { kind: "heading", label: "Shift+Enter · new line" },
+      { kind: "heading", label: "↑ · reuse your last prompt" },
+      { kind: "separator" },
+      { label: "Browse commands", accelerator: "/", run: () => api.openComposerMenu("/") },
+      { label: "Add a project file", accelerator: "@", run: () => api.openComposerMenu("@") },
+    ], () => composerHelp.setAttribute("aria-expanded", "false"));
+  });
+  const composerHints = document.createElement("div");
+  composerHints.className = "composer-hints";
+  composerHints.append(composerHelp, disclaimer);
   // How full the model's context is, and the way to make room on purpose.
   const meterMenu = createContextMenu(document.body);
   attachContextMenuDismissal(meterMenu, () => contextMeter.element.focus());
   let lastUsage: AiContextUsageView | null = null;
+  let contextRequest = 0;
   const contextMeter = createContextMeter((trigger) => {
     trigger.setAttribute("aria-expanded", "true");
     const rect = trigger.getBoundingClientRect();
@@ -1776,12 +1830,21 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     ], () => trigger.setAttribute("aria-expanded", "false"));
   });
   function refreshContextMeter(): void {
+    const mine = ++contextRequest;
     void window.adcode.ai.contextUsage().then((usage) => {
+      if (mine !== contextRequest) return;
       lastUsage = usage;
       contextMeter.update(usage);
     }, () => undefined);
   }
-  composerFooter.append(disclaimer, contextMeter.element);
+  const usageMeters = createComposerUsage(window.adcode.aiUsage, () => void openUsageDialog());
+  const meters = document.createElement("div");
+  meters.className = "composer-meters";
+  meters.setAttribute("role", "group");
+  meters.setAttribute("aria-label", "Context and AI usage");
+  meters.append(contextMeter.element, ...usageMeters.elements);
+  composerFooter.append(composerHints, meters);
+  window.adcode.account.onChanged(() => { if (open) void usageMeters.refresh(); });
   refreshContextMeter();
   window.adcode.chat.onChanged((session) => {
     // Whichever conversation is current now - possibly a new one started in the other window.
@@ -2180,23 +2243,22 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     input.focus({ preventScroll: true });
   });
   transcript.addEventListener("scroll", () => updateScrollButton(), { passive: true });
-  conversation.append(memory, connectBanner, folderBanner, welcome, live.element, transcript, scrollButton, composer, quickActions);
+  conversation.append(memory, connectBanner, folderBanner, welcome, transcript, scrollButton, composer, quickActions);
   refreshWelcome();
   /*
-   * The "is writing" row: who is working, what they are doing, for how long, and the way to
-   * stop them - in the conversation, where the eye already is, rather than only as the
-   * square the send button turns into at the far corner of the composer.
+   * The "is writing" row: what the assistant is doing, for how long, and the way to stop it
+   * - in the conversation, where the eye already is, rather than only as the square the send
+   * button turns into at the far corner of the composer.
+   *
+   * No face and no name of its own. Who is replying is the author line above the turn, and
+   * the face at work is the activity block's mascot; a third copy here made one running
+   * assistant look like three.
    */
   let appearance: ChatAppearance = chatAppearanceFrom({});
   const working = document.createElement("div");
   working.className = "chat-working";
   working.hidden = true;
   working.setAttribute("role", "status");
-  const workingMascot = createAgentMascot({ look: appearance.look, mood: "thinking", size: 20 });
-  workingMascot.element.classList.add("chat-working-avatar");
-  const workingName = document.createElement("span");
-  workingName.className = "chat-working-name";
-  workingName.textContent = appearance.name;
   const workingText = document.createElement("span");
   workingText.className = "chat-working-text";
   workingText.textContent = "Thinking";
@@ -2221,7 +2283,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   workingStopKey.setAttribute("aria-hidden", "true");
   workingStop.append(workingStopIcon, document.createTextNode("Stop"), workingStopKey);
   workingStop.addEventListener("click", () => stopTurn());
-  working.append(workingMascot.element, workingName, workingText, workingDots, workingElapsed, workingStop);
+  working.append(workingDots, workingText, workingElapsed, workingStop);
   let workingSince = 0;
   let workingClock: number | null = null;
   function paintElapsed(): void {
@@ -2233,13 +2295,23 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const authorMascots: AgentMascot[] = [];
   /** True until the turn's first reply has its author line. */
   let authorPending = true;
-  /** The turn's author line, once: above its first block of work or its first reply. */
+  /**
+   * The turn's author line, once: above its first block of work or its first reply.
+   *
+   * While its turn runs the line shows the name only: the face at work is the activity
+   * block's mascot, and two faces for one assistant read as two assistants. The face
+   * appears when the turn is over, as the signature on the finished reply.
+   */
   function ensureAuthor(): void {
     if (!authorPending) return;
     authorPending = false;
     const line = authorLine();
+    if (turnActive) line.dataset["live"] = "true";
     if (working.isConnected) transcript.insertBefore(line, working);
     else transcript.append(line);
+  }
+  function settleAuthorLines(): void {
+    for (const line of transcript.querySelectorAll<HTMLElement>(".chat-author[data-live]")) delete line.dataset["live"];
   }
   function authorLine(): HTMLElement {
     const line = document.createElement("div");
@@ -2256,8 +2328,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     appearance = next;
     card.dataset["messageStyle"] = next.style;
     card.dataset["avatars"] = String(next.avatars);
-    workingName.textContent = next.name;
-    workingMascot.setLook(next.look);
     for (let index = authorMascots.length - 1; index >= 0; index -= 1) {
       const mascot = authorMascots[index]!;
       if (!mascot.element.isConnected) authorMascots.splice(index, 1);
@@ -2357,6 +2427,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    * as any turn starts: whatever was sent instead is where the conversation went.
    */
   let resumeOnSwitch: { readonly card: HTMLElement; readonly failedOn: ModelInUse; readonly prompt: string } | null = null;
+  let waitingForIncludedLimit = false;
+  let includedWaitGeneration = 0;
 
   /* ── Agent activity: one collapsible block per assistant turn ──────────
    *
@@ -2379,9 +2451,10 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    */
   function ensureActivity(): ActivityBlockHandle {
     if (activeActivity !== null) return activeActivity;
-    // The activity block names the step, so the "is writing" row underneath drops its own
-    // step text rather than read as a second, competing "Thinking" - but it stays, because
-    // it carries who is working, for how long, and Stop.
+    // Who is replying goes above the work it did, not below it.
+    ensureAuthor();
+    // The activity block names the step and keeps the time, so the "is writing" row
+    // underneath shows only Stop rather than a second, competing "Thinking" and clock.
     working.dataset["activity"] = "open";
     const block = createActivityBlock({ label: "Thinking" });
     transcript.append(block.element);
@@ -2421,6 +2494,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   /** Drop a live block without finalizing (reset / resume replace the transcript). */
   function resetActivity(): void {
+    waitingForIncludedLimit = false;
+    includedWaitGeneration += 1;
     delete working.dataset["activity"];
     streamPaint.cancel();
     dirtyMessages.clear();
@@ -2433,6 +2508,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   /** A collapsed errored turn never claims it worked. */
   function finishActivityFailed(): void {
+    planCard?.finish("failed");
     if (activeActivity === null) return;
     finishActivity(formatFailedLabel((Date.now() - activeActivity.startedAt) / 1000));
   }
@@ -2687,10 +2763,14 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     text: string,
     attachments: readonly AiAttachmentView[] = [],
     at: number = Date.now(),
+    restoredRequestId?: string,
   ): HTMLElement {
     const element = document.createElement("div");
     element.className = `chat-bubble chat-bubble-${role}`;
     element.dataset["at"] = String(at);
+    if (!restoring && role === "user") includedFeedbackRequest = null;
+    const requestId = restoring ? restoredRequestId : includedFeedbackRequest;
+    if (role === "assistant" && requestId) element.dataset["includedRequestId"] = requestId;
     // New messages rise in; a reopened conversation's hundred messages do not.
     if (!restoring) markFor(element, "enter", "true", 700);
     if (role === "user" && text.trim().length > 0) lastUserPrompt = text;
@@ -2804,14 +2884,15 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    * Send once the turn that just ended has fully returned. The step-limit error arrives
    * while main is still finishing that turn, and a send in that moment is refused.
    */
-  function continueWhenIdle(prompt: string, attempts = 12): void {
+  function continueWhenIdle(prompt: string, attempts = 12, stillWanted?: () => boolean): void {
+    if (stillWanted !== undefined && !stillWanted()) return;
     setSendMode("stop");
     streamingBubble = null;
     void window.adcode.ai.send(prompt, undefined, currentEditorContext()).then((ok) => {
       if (!ok) setSendMode("send");
     }, (error: unknown) => {
       if (attempts > 0 && /already handling/i.test(String(error))) {
-        window.setTimeout(() => continueWhenIdle(prompt, attempts - 1), 400);
+        window.setTimeout(() => continueWhenIdle(prompt, attempts - 1, stillWanted), 400);
         return;
       }
       setSendMode("send");
@@ -2907,8 +2988,10 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     failure.actions.forEach((kind, index) => {
       const primary = index === 0;
       if (kind === "retry") {
-        const retry = action("Try again", () => { if (resend(lastUserPrompt)) retry.disabled = true; }, primary);
+        const retry = action("Try again", () => { if (resend(retryAfterFailure(failure, lastUserPrompt))) retry.disabled = true; }, primary);
         retry.disabled = lastUserPrompt.trim().length === 0;
+      } else if (kind === "usage") {
+        action("View AI usage", () => void openUsageDialog(), primary);
       } else if (kind === "models") {
         action("Switch model", () => deps.openConnect(), primary).title = "Choose another model - the request carries on with it";
       } else if (kind === "new-conversation") {
@@ -3082,8 +3165,21 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     good.setAttribute("aria-pressed", "false");
     const bad = iconActionButton(ICON.thumbDown, "Mark not helpful", "Not helpful (stored on this machine only)");
     bad.setAttribute("aria-pressed", "false");
-    good.addEventListener("click", () => vote(good, bad));
-    bad.addEventListener("click", () => vote(bad, good));
+    const requestId = bubbleElement.dataset["includedRequestId"];
+    let feedbackOpen = false;
+    const rate = (rating: "helpful" | "not-helpful"): void => {
+      if (!requestId) { vote(rating === "helpful" ? good : bad,rating === "helpful" ? bad : good); return; }
+      if (feedbackOpen) return;
+      feedbackOpen = true;
+      void openModelFeedback(requestId,rating,true,input => window.adcode.aiUsage.feedback(input)).then(result => {
+        if (result === undefined) return;
+        good.setAttribute("aria-pressed",String(result === "helpful")); bad.setAttribute("aria-pressed",String(result === "not-helpful"));
+        goodMenu.setAttribute("aria-pressed",String(result === "helpful")); badMenu.setAttribute("aria-pressed",String(result === "not-helpful"));
+      }).finally(() => { feedbackOpen = false; });
+    };
+    if (requestId) { good.title = "Send helpful feedback to ADCode"; bad.title = "Send feedback about this model to ADCode"; }
+    good.addEventListener("click", () => rate("helpful"));
+    bad.addEventListener("click", () => rate("not-helpful"));
 
     const retry = iconActionButton(ICON.reload, "Retry last message", "Send the last message again");
     retry.addEventListener("click", () => {
@@ -3126,16 +3222,17 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     badMenu.title = "Not helpful (stored on this machine only)";
     badMenu.setAttribute("aria-label", "Mark not helpful");
     goodMenu.addEventListener("click", () => {
-      vote(good, bad);
-      vote(goodMenu, badMenu);
+      rate("helpful");
+      if (!requestId) vote(goodMenu, badMenu);
       closeOpenMenu();
     });
     badMenu.addEventListener("click", () => {
-      vote(bad, good);
-      vote(badMenu, goodMenu);
+      rate("not-helpful");
+      if (!requestId) vote(badMenu, goodMenu);
       closeOpenMenu();
     });
     menu.append(goodMenu, badMenu);
+    if (requestId) { goodMenu.title = good.title; badMenu.title = bad.title; }
     wrap.append(more, menu);
 
     more.addEventListener("click", () => {
@@ -3916,11 +4013,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     sendButton.setAttribute("aria-busy", String(mode === "stop"));
     input.setAttribute("aria-busy", String(mode === "stop"));
     if (mode === "stop") {
-      sendButton.textContent = "■";
+      sendButton.replaceChildren(createIcon("M5 5h6v6H5z"));
       sendButton.title = "Stop this turn";
       sendButton.setAttribute("aria-label", "Stop this turn");
     } else {
-      sendButton.textContent = "↑";
+      sendButton.replaceChildren(createIcon("M8 12V4M4 8l4-4 4 4"));
       sendButton.title = "Send (Enter)";
       sendButton.setAttribute("aria-label", "Send message");
     }
@@ -3930,6 +4027,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   window.adcode.ai.onEvent((raw) => {
     const event = raw as { kind: string; [key: string]: unknown };
+    if (event.kind === "included-request") {
+      includedFeedbackRequest = typeof event["requestId"] === "string" ? event["requestId"] : null;
+      if (streamingBubble !== null && includedFeedbackRequest !== null) streamingBubble.dataset["includedRequestId"] = includedFeedbackRequest;
+      return;
+    }
     // Flush before tool boundaries, cancellation, and completion so no final text
     // is stranded in a scheduled frame or attached to the next message.
     if (event.kind !== "text") flushStream();
@@ -3937,6 +4039,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       const tokens = Number(event["tokens"]);
       const contextWindow = Number(event["contextWindow"]);
       if (lastUsage !== null && Number.isFinite(tokens) && Number.isFinite(contextWindow)) {
+        contextRequest += 1;
         lastUsage = { ...lastUsage, tokens, contextWindow };
         contextMeter.update(lastUsage);
       } else refreshContextMeter();
@@ -3966,6 +4069,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       live.chatWindow.reset();
     } else if (ending && turnActive) {
       turnActive = false;
+      settleAuthorLines();
       live.chatWindow.finish(event.kind === "turn-end");
       void offerStagedChanges(turnStartedAt);
     }
@@ -3999,6 +4103,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         // Host progress, not model reasoning: "Waiting 21s for Groq's rate limit" is
         // shown live, so a wait never reads as a hang.
         const text = String(event["text"] ?? "");
+        if (/^Free AI (?:allowance reached|is temporarily limited)\./.test(text)) waitingForIncludedLimit = true;
+        else if (text === "Checking the limit and resuming this task automatically…") waitingForIncludedLimit = false;
         workingText.textContent = text;
         ensureActivity().setLabel(text);
         break;
@@ -4082,6 +4188,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       }
 
       case "refusal":
+        waitingForIncludedLimit = false;
+        planCard?.finish("stopped");
         streamingBubble?.classList.remove("is-streaming");
         streamingBubble = null;
         finishActivity("Declined");
@@ -4090,6 +4198,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         break;
 
       case "error": {
+        waitingForIncludedLimit = false;
         streamingBubble?.classList.remove("is-streaming");
         streamingBubble = null;
         finishActivityFailed();
@@ -4138,6 +4247,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       }
 
       case "cancelled":
+        waitingForIncludedLimit = false;
+        planCard?.finish("stopped");
         streamingBubble = null;
         finishActivity();
         setSendMode("send");
@@ -4152,6 +4263,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         break;
 
       case "turn-end": {
+        waitingForIncludedLimit = false;
+        planCard?.finish("finished");
         outputLimitStops = 0;
         const finished = streamingBubble;
         finished?.classList.remove("is-streaming");
@@ -4179,83 +4292,12 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    * edits the user made afterwards until they say so.
    */
   window.adcode.ai.onCheckpoint((checkpoint) => {
-    const card = document.createElement("section");
-    card.className = "chat-checkpoint";
-    card.dataset["checkpointId"] = checkpoint.id;
-    const icon = document.createElement("span");
-    icon.className = "chat-checkpoint-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = "✓";
-    const body = document.createElement("div");
-    body.className = "chat-checkpoint-body";
-    const heading = document.createElement("strong");
-    heading.className = "chat-checkpoint-title";
-    const count = checkpoint.files.length;
-    heading.textContent = count === 1 ? `Changed ${checkpoint.files[0]?.path ?? "1 file"}` : `Changed ${count} files`;
-    const list = document.createElement("div");
-    list.className = "chat-checkpoint-files";
-    for (const file of checkpoint.files.slice(0, 8)) {
-      const open = document.createElement("button");
-      open.type = "button";
-      open.className = "chat-checkpoint-file";
-      if (file.deleted === true) {
-        // Gone, so there is nothing to open - but Undo brings it back.
-        open.textContent = `− ${file.path}`;
-        open.title = `Deleted ${file.path} - Undo puts it back`;
-        open.disabled = true;
-        open.dataset["deleted"] = "true";
-      } else {
-        open.textContent = `${file.created ? "+ " : ""}${file.path}`;
-        open.title = `${file.created ? "Created" : "Changed"} ${file.path} - open it`;
-        open.addEventListener("click", () => deps.openExternalPath(file.path));
-      }
-      list.append(open);
-    }
-    if (count > 8) {
-      const more = document.createElement("span");
-      more.className = "chat-checkpoint-more";
-      more.textContent = `+${count - 8} more`;
-      list.append(more);
-    }
-    const status = document.createElement("p");
-    status.className = "chat-checkpoint-status";
-    status.setAttribute("role", "status");
-    status.hidden = true;
-    const undo = document.createElement("button");
-    undo.type = "button";
-    undo.className = "chat-checkpoint-undo";
-    undo.textContent = "Undo";
-    undo.title = "Put these files back as they were before this turn";
-    let force = false;
-    undo.addEventListener("click", () => {
-      undo.disabled = true;
-      void window.adcode.ai.undoCheckpoint(checkpoint.id, force).then((result) => {
-        status.hidden = false;
-        status.textContent = result.message;
-        if (result.ok) {
-          card.dataset["state"] = "undone";
-          undo.hidden = true;
-          heading.textContent = count === 1 ? `Undid the change to ${checkpoint.files[0]?.path ?? "1 file"}` : `Undid changes to ${count} files`;
-          return;
-        }
-        if (result.conflicts.length > 0) {
-          force = true;
-          undo.textContent = "Undo anyway";
-          undo.title = `Overwrite your later edits to ${result.conflicts.join(", ")}`;
-        }
-        undo.disabled = false;
-      }, () => {
-        status.hidden = false;
-        status.textContent = "Could not undo this turn. Try again.";
-        undo.disabled = false;
-      });
-    });
-    body.append(heading, list, status);
-    card.append(icon, body, undo);
-    transcript.append(card);
+    transcript.append(createEditSummary(checkpoint, {
+      openFile: path => deps.openExternalPath(path),
+      undo: (id, force) => window.adcode.ai.undoCheckpoint(id, force),
+    }));
     scrollToEnd();
   });
-
   /* ── Sending ──────────────────────────────────────────────────────────── */
 
   /**
@@ -4456,6 +4498,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    */
   function stopTurn(): void {
     if (sendButton.dataset["mode"] !== "stop") return;
+    waitingForIncludedLimit = false;
+    includedWaitGeneration += 1;
     // A person stepping in resets Keep going's count.
     keptGoing = 0;
     closeOpenMenu();
@@ -4677,6 +4721,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       });
 
       void refreshModelStatus();
+      refreshContextMeter();
+      usageMeters.setVisible(true);
       statusTimer = window.setInterval(() => { if (!document.hidden) void refreshModelStatus(); }, 5_000);
       void refreshWorkspaceTask();
       void paintFolderBanner();
@@ -4688,6 +4734,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     hidden(): void {
       if (!open) return;
       open = false;
+      usageMeters.setVisible(false);
       if (statusTimer !== null) window.clearInterval(statusTimer);
       statusTimer = null;
       announce();
@@ -4781,6 +4828,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     },
 
     setWorkspace(root: string | null): void {
+      if (root !== currentFolderRoot) {
+        waitingForIncludedLimit = false;
+        includedWaitGeneration += 1;
+        stopTurn();
+      }
       chatPreview.clear();
       previewCalls.clear();
       detailsDialog.close();

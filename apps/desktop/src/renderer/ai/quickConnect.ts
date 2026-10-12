@@ -27,7 +27,7 @@ import {
   preferredOllamaModel,
 } from "../../shared/quickConnect.ts";
 
-export type QuickConnectRoute = "free" | "local" | "key";
+export type QuickConnectRoute = "free" | "local" | "key" | "included";
 
 export interface QuickConnectDeps {
   /** A model is connected and selected. */
@@ -36,6 +36,8 @@ export interface QuickConnectDeps {
   openAllProviders(): void;
   /** Compact: fewer words, for the top of the full Connect screen. */
   readonly compact?: boolean;
+  /** The BYOK tab offers only routes that require a user's key. */
+  readonly includeKeyless?: boolean;
 }
 
 export interface QuickConnect {
@@ -212,7 +214,37 @@ export function createQuickConnect(deps: QuickConnectDeps): QuickConnect {
   more.type = "button";
   more.addEventListener("click", () => deps.openAllProviders());
 
-  root.append(gemini, local, own, more);
+  const included = el("article", "quick-connect-card");
+  included.hidden = true;
+  const includedStatus = el("p", "quick-connect-status");
+  includedStatus.setAttribute("role", "status");
+  const includedUse = el("button", "chat-send quick-connect-primary", "Use included AI");
+  includedUse.type = "button";
+  let includedModel = "";
+  included.append(el("strong", "quick-connect-title", "Included AI"), el("p", "quick-connect-text", "Included with a verified account. No API key needed. Sign in in Account, then chat within your daily allowance. Prompts and project context pass through ADCode's server to the selected provider."), includedUse, includedStatus);
+  includedUse.addEventListener("click", () => {
+    if (!includedModel) return;
+    includedUse.disabled = true;
+    void (async () => {
+      try {
+        await window.adcode.settings.write("adcode.ai.provider", "tagflow");
+        await window.adcode.settings.write("adcode.ai.model", includedModel);
+        deps.onConnected({ provider: "tagflow", model: includedModel, route: "included" });
+      } catch { includedStatus.textContent = "Could not select included AI. Try again."; }
+      finally { includedUse.disabled = false; }
+    })();
+  });
+  async function findIncluded(): Promise<void> {
+    try {
+      const status = await window.adcode.ai.status();
+      if (disposed) return;
+      const provider = status.providers.find((one) => one.id === "tagflow");
+      includedModel = provider?.models.find((one) => one.recommended)?.id ?? provider?.models[0]?.id ?? "";
+      included.hidden = deps.includeKeyless === false || includedModel === "";
+    } catch { included.hidden = true; }
+  }
+  root.append(included, gemini, local, own, more);
+  void findIncluded();
 
   async function connect(
     provider: string,
@@ -256,7 +288,7 @@ export function createQuickConnect(deps: QuickConnectDeps): QuickConnect {
     }
     if (disposed) return;
     localModel = preferredOllamaModel(found.models);
-    local.hidden = !found.running || localModel === null;
+    local.hidden = deps.includeKeyless === false || !found.running || localModel === null;
     if (localModel !== null) {
       localText.textContent = `Ollama is running with ${localModel}. Nothing leaves your machine; speed depends on your computer.`;
       localUse.textContent = `Use ${localModel}`;
@@ -268,6 +300,7 @@ export function createQuickConnect(deps: QuickConnectDeps): QuickConnect {
   return {
     element: root,
     refresh() {
+      void findIncluded();
       void findLocal();
       void checkClipboard();
     },

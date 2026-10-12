@@ -108,7 +108,11 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "ai.usage": {
     actions: [command("ai.showUsage", "Show usage")],
-    keywords: ["usage", "tokens", "token count", "cost", "spend", "spending", "billing", "how much", "price", "per model", "budget"],
+    keywords: ["usage", "tokens", "token count", "cost", "spend", "spending", "billing", "how much", "price", "per model", "budget", "activity", "streak", "heatmap", "calendar", "active days"],
+  },
+  "ai.tagflow": {
+    actions: [command("ai.tagflow", "Choose included AI")],
+    keywords: ["tagflow", "included ai", "no api key", "free models", "free allowance", "daily ai limit", "ai quota", "server providers", "admin models"],
   },
   "adcode.ai.designTaste": {
     keywords: ["taste skill", "design skill", "anti slop", "generic ai design", "better ui", "landing page", "frontend", "built-in skills", "leonxlnx"],
@@ -209,7 +213,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "ai.connect": {
     actions: [command("ai.connect", "Connect")],
-    keywords: ["api key", "provider", "model", "local ai", "NVIDIA NIM", "custom endpoint", "connections", "requests per minute", "RPM", "rate limit", "429"],
+    keywords: ["api key", "provider", "model", "free models", "BYOK", "bring your own key", "tabs", "local ai", "NVIDIA NIM", "custom endpoint", "connections", "requests per minute", "RPM", "rate limit", "429"],
   },
   "ai.freeKey": {
     actions: [command("ai.getFreeKey", "Get a free key")],

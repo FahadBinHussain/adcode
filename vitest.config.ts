@@ -12,6 +12,7 @@ const alias = {
   "react": resolve(import.meta.dirname, "node_modules/react"),
   "react-dom": resolve(import.meta.dirname, "node_modules/react-dom"),
   "next": resolve(import.meta.dirname, "node_modules/next"),
+  "@adcode/api": resolve(import.meta.dirname, "services/api"),
   "@adcode/ads": resolve(import.meta.dirname, "packages/ads/src/index.ts"),
   "@adcode/memory": resolve(import.meta.dirname, "packages/memory/src/index.ts"),
   "@adcode/settings": resolve(import.meta.dirname, "packages/settings/src/index.ts"),

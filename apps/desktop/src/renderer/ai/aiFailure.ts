@@ -11,21 +11,24 @@
  * Pure: no DOM, so every rule is tested against real provider wording.
  */
 
-export type AiFailureAction = "retry" | "models" | "new-conversation" | "report";
+export type AiFailureAction = "retry" | "models" | "usage" | "new-conversation" | "report";
 
 export interface AiFailure {
   readonly kind:
     | "rate-limit"
+    | "daily-limit"
     | "too-large"
     | "auth"
     | "no-key"
     | "model-missing"
     | "tool-format"
     | "no-tools"
+    | "no-images"
     | "credits"
     | "thinking-limit"
     | "output-limit"
     | "history"
+    | "edit-mismatch"
     | "network"
     | "server"
     | "unknown";
@@ -49,6 +52,13 @@ export const OUTPUT_LIMIT_AGAIN =
 
 /** What picks a stopped turn back up: the conversation already holds the request and the work so far. */
 export const CONTINUE_PROMPT = "Continue from where you stopped and finish the remaining steps.";
+export const RECOVER_EDIT_PROMPT = "Continue the original request. The previous edit could not match the file. First re-read the affected file using read_file with line_numbers: false and the recovery offset from the tool error. Use the current exact file text to correct old_string, then make the smallest necessary edit and verify it. Do not repeat the failed replacement or rewrite the entire file to bypass the mismatch.";
+
+export function retryAfterFailure(failure: AiFailure, request: string): string {
+  if (failure.kind === "edit-mismatch") return RECOVER_EDIT_PROMPT;
+  if (failure.kind === "tool-format" && /invalid (?:JSON )?tool arguments|cut off the tool arguments/i.test(failure.detail)) return "Continue the original request from the work already done. The last tool call had invalid arguments and did not run. Read the affected file first. Send one complete JSON tool call at a time with escaped newlines and quotes. Create a minimal complete new file (at most 40 lines), then extend it with small edit_file replacements. Do not repeat the failed full-file call. Verify the finished work.";
+  return request;
+}
 
 /** "Groq returned HTTP 429: ..." -> "Groq". Falls back to a neutral noun. */
 export function providerFrom(detail: string): string {
@@ -80,6 +90,23 @@ export function describeAiFailure(raw: string): AiFailure {
       ["models", "new-conversation"],
     );
   }
+  if (who === "Included AI" && /\bdaily-limit\b|daily included AI allowance/i.test(detail)) {
+    if (/cannot fit.*even after a reset/i.test(detail)) return make("daily-limit", "This request exceeds your free AI allowance", "The request is larger than your full daily allowance. Start a smaller conversation, choose another model, or ask an administrator to increase the allowance. A daily reset will not make this request fit.", ["usage", "new-conversation", "models"]);
+    return make("daily-limit", "Today's free AI allowance cannot cover this request", "Your remaining tokens, AI requests or service budget cannot cover this request and its reply. Check AI usage for your balance and reset time. Wait for the daily reset, or use your own connected model. All free models share this allowance.", ["usage", "models"]);
+  }
+  if (who === "Included AI" && /\b(?:rate|upstream-rate)-limit\b|HTTP 429/i.test(detail)) {
+    if (/per-minute AI request allowance is zero/i.test(detail)) return make("rate-limit", "Included AI requests are disabled", "An administrator set this account's request allowance to zero. Ask them to change the allowance before continuing.", ["usage", "models"]);
+    const upstream = /\bupstream-rate-limit\b/i.test(detail);
+    return make("rate-limit", upstream ? "This free model is temporarily busy" : "Too many AI requests in a minute", upstream
+      ? "The model provider has reached a temporary rate limit. Your daily allowance may still have tokens left. Try again shortly, or choose a different model."
+      : "Your account reached its per-minute request limit. Your daily allowance may still have tokens left. Wait about a minute, then try again. Chats and agents on all your devices share this limit.", ["retry", "usage", "models"]);
+  }
+  if (/invalid JSON tool arguments|invalid tool arguments|cut off the tool arguments/i.test(detail)) {
+    return make("tool-format", "The model could not finish an edit", "The failed call did not change your files. Earlier edits are still available below. Try again to continue with smaller edits, or switch model.", ["retry", "models", "report"]);
+  }
+  if (/old_string was not found|old_string matches \d+ places|identical failed calls to edit_file/i.test(detail)) {
+    return make("edit-mismatch", "The model could not match the file text", "The failed edit left the file unchanged. Try again to re-read the current text and make a corrected edit.", ["retry", "models", "report"]);
+  }
   // Before "Connect a model" below: this one names Connect as the fix, not as what is missing.
   if (/output allowance thinking/i.test(detail)) {
     return make(
@@ -91,6 +118,17 @@ export function describeAiFailure(raw: string): AiFailure {
   }
   if (/No API key|No address for the custom endpoint|Connect a model/i.test(detail)) {
     return make("no-key", "No model connected", "Add a provider and key in Connect a model - it takes about a minute.", ["models"]);
+  }
+  if (/\bimages-not-supported\b|cannot read image attachments/i.test(detail)) {
+    return make("no-images", "This model cannot read images", "Switch to a model that supports images, or start a fresh conversation without image attachments.", ["models", "new-conversation"]);
+  }
+  // Older included relays combined several unrelated validation failures into one message.
+  // Its mention of images does not establish that this request contained an image.
+  if (/Choose an offered model and send text within its context limit/i.test(detail)) {
+    return make("history", "Included AI rejected this request", "The included model could not accept this request. Try a fresh conversation or switch model. Details contain the server's response.", ["new-conversation", "models", "report"]);
+  }
+  if (/\binvalid-messages\b/i.test(detail)) {
+    return make("history", "This model cannot read this conversation", "Start a fresh conversation with the same request, or choose another model.", ["new-conversation", "models"]);
   }
   if (/thought_signature|thought signature|thinking block.*(?:signature|bound)|Invalid `?signature`?/i.test(detail)) {
     return make(
@@ -165,5 +203,6 @@ export function describeAiFailure(raw: string): AiFailure {
 export function resumeAfterModelSwitch(failure: AiFailure, request: string): string | null {
   if (!failure.actions.includes("models")) return null;
   if (failure.kind === "no-key") return request.trim().length > 0 ? request : null;
+  if (failure.kind === "edit-mismatch") return RECOVER_EDIT_PROMPT;
   return CONTINUE_PROMPT;
 }

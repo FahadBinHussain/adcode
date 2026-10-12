@@ -41,7 +41,7 @@ export interface FormModal {
   finish(): void;
 }
 
-export function openFormModal(className: string, titleText: string, settle: () => void): FormModal {
+export function openFormModal(className: string, titleText: string, settle: () => void, canDismiss: () => boolean = () => true): FormModal {
   const dialog = el("dialog", `result-dialog form-dialog ${className}`);
   const card = el("div", "result-card form-dialog-card");
   const title = el("h2", "result-title", titleText);
@@ -57,11 +57,12 @@ export function openFormModal(className: string, titleText: string, settle: () =
     settle();
   };
   const finish = (): void => {
+    if (!canDismiss()) return;
     done();
     if (dialog.open) dialog.close();
     dialog.remove();
   };
-  dialog.addEventListener("cancel", () => done());
+  dialog.addEventListener("cancel", event => { if (!canDismiss()) event.preventDefault(); else done(); });
   dialog.addEventListener("close", () => { done(); dialog.remove(); });
   bindBackdropDismissal(dialog, card, finish);
   return { dialog, card, title, finish };

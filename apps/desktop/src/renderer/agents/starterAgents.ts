@@ -9,13 +9,14 @@ import type { AgentProfile } from "../ai/agentProfiles.ts";
 /** Set in localStorage once the starters have been offered, so they are never re-added. */
 export const STARTERS_MARKER = "adcode.agents.starters.v1";
 
-export function starterAgents(route: { readonly provider: string; readonly model: string }): AgentProfile[] {
+export function starterAgents(route: { readonly provider: string; readonly model: string; readonly useCurrentModel?: boolean }): AgentProfile[] {
   const agent = (id: string, name: string, instructions: string, look: AgentProfile["mascot"], extra: Partial<AgentProfile> = {}): AgentProfile => ({
     id,
     name,
     instructions,
     provider: route.provider,
     model: route.model,
+    ...(route.useCurrentModel ? { useCurrentModel: true } : {}),
     ...(look === undefined ? {} : { mascot: look }),
     ...extra,
   });

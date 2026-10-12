@@ -4,6 +4,7 @@ import {
   BUILTIN_SKILL_TOOL_NAME,
   BUILTIN_SKILLS,
   builtinSkillGuidance,
+  frontmatter,
   readBuiltinSkill,
   withBuiltinSkills,
 } from "../src/main/builtinSkills.ts";
@@ -14,9 +15,18 @@ describe("the bundled skills", () => {
     expect(BUILTIN_SKILLS.map((skill) => skill.name)).toEqual([
       "design-taste-frontend",
       "full-output-enforcement",
+      "production-quality",
       "redesign-existing-projects",
     ]);
     for (const skill of BUILTIN_SKILLS) expect(skill.description.length).toBeGreaterThan(20);
+  });
+
+  it("reads a description from a Windows checkout, with CRLF line endings and a BOM", () => {
+    const lf = "---\nname: a\ndescription: Design guidance for interfaces.\n---\n\n# Body\n";
+    expect(frontmatter(lf, "description")).toBe("Design guidance for interfaces.");
+    expect(frontmatter(lf.replaceAll("\n", "\r\n"), "description")).toBe("Design guidance for interfaces.");
+    expect(frontmatter(`﻿${lf.replaceAll("\n", "\r\n")}`, "description")).toBe("Design guidance for interfaces.");
+    expect(frontmatter("# No front matter\ndescription: not this\n", "description")).toBe("");
   });
 
   it("keeps every file under the 64 KB a skill may be, so a model never loads a whole book", () => {
@@ -38,6 +48,18 @@ describe("the bundled skills", () => {
     for (const resource of design?.resources ?? []) expect(main).toContain(resource);
     expect(main).toContain("taste-skill");
     expect(main).toContain("MIT");
+  });
+
+  it("ships compact original product, motion and release guidance without false upstream attribution", () => {
+    const skill = readBuiltinSkill({ name: "production-quality" }, true);
+    expect(skill.content).toContain("inspect_project");
+    expect(skill.content).toContain("audit_page");
+    expect(skill.content).not.toContain("from taste-skill");
+    expect(skill.content.length).toBeLessThan(7000);
+    const motion = readBuiltinSkill({ name: "production-quality", resource: "references/motion.md" }, true);
+    expect(motion.content).toContain("prefers-reduced-motion");
+    const release = readBuiltinSkill({ name: "production-quality", resource: "references/release.md" }, true);
+    expect(release.content).toContain("unverified");
   });
 });
 
@@ -61,7 +83,7 @@ describe("the tool", () => {
   it("says the skills are off rather than reading them when the setting is off", () => {
     const off = readBuiltinSkill({ name: "design-taste-frontend" }, false);
     expect(off.isError).toBe(true);
-    expect(off.content).toContain("Design taste skill");
+    expect(off.content).toContain("Product design guidance");
   });
 
   it("routes only its own calls, leaving every other tool to the runner it wraps", async () => {

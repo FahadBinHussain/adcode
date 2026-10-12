@@ -1,9 +1,10 @@
 const { app, BrowserWindow } = require('electron');
-const { readFileSync, mkdtempSync, writeFileSync } = require('node:fs');
+const { readFileSync, mkdtempSync, writeFileSync, mkdirSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { resolve, join } = require('node:path');
 const ts = require('typescript');
-const output = mkdtempSync(join(tmpdir(), 'adcode-connect-review-'));
+const output = process.env.ADCODE_CONNECT_SCREENSHOTS && process.env.ADCODE_CONNECT_SCREENSHOTS !== '1' ? resolve(process.env.ADCODE_CONNECT_SCREENSHOTS) : mkdtempSync(join(tmpdir(), 'adcode-connect-review-'));
+mkdirSync(output, { recursive: true });
 app.setPath('userData', join(output, 'profile'));
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 1100, height: 850, webPreferences: { backgroundThrottling: false } });
@@ -36,10 +37,11 @@ app.whenReady().then(async () => {
         make('openai', 'OpenAI', true, true, [model('openai-default', 'Default model')]),
         make('local', 'Local models', false, false, [model('local-model', 'Local model')]),
       ], activeProvider: 'openai', activeModel: 'openai-default', ready: true, connections: [], customBaseUrl: '', catalogueTakenOn: '2026-09-12', catalogueIsLive: false };
-      let failLoad = true, keyAccepted = false, savedKeys = 0;
+      let failLoad = true, keyAccepted = false, savedKeys = 0, changed;
       const fixture = document.createElement('div'); fixture.className = 'fixture'; document.body.append(fixture);
       const result = {};
       const ui = exports.createConnectView({
+        onStatusChanged: listener => { changed = listener; return () => { changed = undefined; }; },
         status: async () => { if (failLoad) throw new Error('Providers could not be loaded'); return state; },
         checkKey: async () => ({ ok: keyAccepted, message: 'Key was rejected' }),
         setKey: async id => { savedKeys++; state = { ...state, providers: state.providers.map(p => p.id === id ? { ...p, hasKey: true } : p) }; return state; },
@@ -54,9 +56,12 @@ app.whenReady().then(async () => {
       const settle = () => new Promise(resolve => setTimeout(resolve, 70));
       const clickText = text => [...fixture.querySelectorAll('button')].find(button => button.textContent === text).click();
       await settle();
+      result.freeTabFirst = fixture.querySelector('[role="tab"][aria-selected="true"]').textContent === 'Free models';
+      result.freeTabFocus = document.activeElement === fixture.querySelector('[role="tab"][aria-selected="true"]');
       result.loadError = !!fixture.querySelector('[role=alert]');
       failLoad = false; clickText('Try again'); await settle();
-      result.retry = fixture.querySelectorAll('.connect-row').length === 3 && !fixture.querySelector('[role=alert]');
+      clickText('Your API key');
+      result.retry = fixture.querySelectorAll('.connect-row').length === 2 && !fixture.querySelector('[role=alert]');
       fixture.querySelector('.connect-row').click();
       result.providerFocus = document.activeElement.matches('.connect-row[aria-pressed=true]');
       const search = fixture.querySelector('.connect-model-search'); search.value = 'reasoning'; search.dispatchEvent(new Event('input'));
@@ -95,14 +100,45 @@ app.whenReady().then(async () => {
       }
       fixture.style.width = '980px';
       fixture.querySelector('.connect-detail').scrollTop = 0;
+      const unfinishedKey = fixture.querySelector('.connect-key-row input');
+      unfinishedKey.value = 'unfinished-fixture-key';
+      state = { ...state, providers: [...state.providers, make('tagflow', 'Tagflow AI (included)', true, false, [model('tagflow-coder', 'Included coder')])] };
+      changed(); await settle();
+      result.includedAppearsWithoutReopening = fixture.querySelector('.connect-free-panel').textContent.includes('Included coder');
+      result.discoveryKeepsUnfinishedKey = fixture.querySelector('.connect-key-row input') === unfinishedKey && unfinishedKey.value === 'unfinished-fixture-key';
+      result.includedPrivacy = fixture.querySelector('.connect-free-panel').textContent.includes('Messages and project context pass through ADCode');
+      result.includedNoKey = !fixture.querySelector('.connect-free-panel input') && ![...fixture.querySelectorAll('.connect-row')].some(row => row.textContent.includes('Tagflow AI'));
+      result.privacyCollapsed = !fixture.querySelector('.connect-free-disclosure').open && fixture.querySelector('.connect-free-disclosure summary').textContent === 'Usage & privacy';
+      clickText('Free models');
+      result.freeOnlyReadyModels = fixture.querySelector('.connect-free-panel').textContent.includes('Included coder') && !fixture.querySelector('.connect-free-panel').textContent.includes('OpenAI') && fixture.querySelectorAll('.connect-free-model').length === 1;
+      fixture.querySelector('.connect-free-model button').click(); await settle();
+      result.includedSelected = state.activeProvider === 'tagflow' && state.activeModel === 'tagflow-coder';
+      result.freeInUse = fixture.querySelector('.connect-free-model button').textContent === 'In use';
+      result.selectedCardVisible = fixture.querySelector('.connect-free-model').dataset.current === 'true';
+      const freeTab = fixture.querySelector('[role="tab"][aria-selected="true"]');
+      freeTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      result.keyboardTabs = fixture.querySelector('[role="tab"][aria-selected="true"]').textContent === 'Your API key' && fixture.querySelector('.connect-free-panel').hidden;
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      result.keyboardTabs &&= fixture.querySelector('[role="tab"][aria-selected="true"]').textContent === 'Free models';
+      fixture.style.width = '360px'; await settle();
+      result.freeResponsive = fixture.querySelector('.connect-panel').scrollWidth <= fixture.querySelector('.connect-panel').clientWidth + 1 && fixture.querySelector('.connect-free-panel').scrollWidth <= fixture.querySelector('.connect-free-panel').clientWidth + 1;
+      window.__connectScene = async () => {
+        state = { ...state, providers: [
+          { ...make('tagflow', 'Included AI', true, false, [{ ...model('tagflow-code-27b', 'Tagflow Code 27B'), recommended: true, contextWindow: 32768, note: 'Included with your account’s daily allowance.' }]) },
+          { ...make('ollama', 'Ollama', true, false, [{ ...model('qwen2.5-coder:7b-instruct-q4_K_M', 'qwen2.5-coder:7b-instruct-q4_K_M'), recommended: true }]), local: { installed: true, running: true, models: ['qwen2.5-coder:7b-instruct-q4_K_M'] } },
+        ], activeProvider: 'tagflow', activeModel: 'tagflow-code-27b' };
+        ui.shown(); await settle();
+      };
       ui.hidden();
       return result;
     })().catch(error => ({ fixtureError: error.stack }))`);
     if (results.fixtureError) throw new Error(results.fixtureError);
     if (process.env.ADCODE_CONNECT_SCREENSHOTS) {
-      for (const width of [980, 600, 360]) {
-        await win.webContents.executeJavaScript(`document.querySelector('.fixture').style.width = '${width}px'; document.querySelector('.connect-detail').scrollTop = 0;`);
-        await win.webContents.capturePage();
+      await win.webContents.executeJavaScript('window.__connectScene()');
+      win.setPosition(-4000, 0); win.showInactive();
+      for (const width of [860, 600, 360]) {
+        win.setContentSize(width + 40, 720);
+        await win.webContents.executeJavaScript(`document.querySelector('.fixture').style.width = '${width}px'; document.querySelector('.fixture').style.height = '660px'; document.querySelector('.connect-free-panel').scrollTop = 0;`);
         await new Promise(resolve => setTimeout(resolve, 180));
         writeFileSync(join(output, `connect-${width}.png`), (await win.webContents.capturePage()).toPNG());
       }

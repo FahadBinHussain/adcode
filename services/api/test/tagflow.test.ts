@@ -1,0 +1,398 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createFetchHandler } from "../src/fetchHandler.ts";
+import { createMemoryStore } from "../src/memoryStore.ts";
+import { DEFAULT_TAGFLOW_CONFIG, parseTagflowConfig } from "../src/tagflowConfig.ts";
+import type { TagflowConfig } from "../src/tagflowTypes.ts";
+import type { TokenVerifier } from "../src/auth.ts";
+import { createApiServer } from "../src/server.ts";
+import { INCLUDED_PROVIDERS } from "../src/includedProviders.ts";
+import { createTagflowMemoryStore } from "../src/tagflowMemoryStore.ts";
+
+const config: TagflowConfig = { ...DEFAULT_TAGFLOW_CONFIG, enabled: true, baseUrl: "https://api.tagflow-ai.com/v1", defaultModel: "coder", models: [{ id: "coder", name: "Coder", contextWindow: 65_536, maxOutput: 4096, inputPrice: 0.1, outputPrice: 0.2 }] };
+const body = { model: "coder", messages: [{ role: "user", content: "Hello" }], max_tokens: 100, stream: true };
+const verifier: TokenVerifier = {
+  async verify(token) {
+    if (token === "admin") return { uid: "admin-1", claims: { email: "admin@adcode.test", email_verified: true } };
+    if (token === "user" || token === "other") return { uid: token, claims: { email: `${token}@adcode.test`, email_verified: true } };
+    if (token === "anonymous") return { uid: "anonymous", claims: {} };
+    return null;
+  },
+};
+const event = (raw: unknown): string => `data: ${JSON.stringify(raw)}\n\n`;
+const reply = (): Response => new Response(event({ choices: [{ delta: { content: "Hello" }, finish_reason: "stop" }] }) + event({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 3 } }) + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+
+describe("included Tagflow AI", () => {
+  it("defaults to unlimited request counts while retaining token and cost reservations", async () => {
+    const memory = createTagflowMemoryStore();
+    const limits = DEFAULT_TAGFLOW_CONFIG.limits;
+    for (let index = 0; index < 1002; index++) {
+      expect(await memory.reserveTagflow({ id: `unlimited-${index}`, uid: "busy", day: "2026-10-11", minute: 1, tokens: 1, costMicros: 0, limits })).toBe("ok");
+    }
+    expect(await memory.getTagflowUsage("busy", "2026-10-11")).toMatchObject({ requests: 1002, reservedTokens: 1002 });
+    expect(await memory.reserveTagflow({ id: "token-overflow", uid: "busy", day: "2026-10-11", minute: 1, tokens: 1_000_000, costMicros: 0, limits })).toBe("daily-limit");
+    expect(await memory.reserveTagflow({ id: "cost-overflow", uid: "busy", day: "2026-10-11", minute: 1, tokens: 1, costMicros: 1_000_001, limits })).toBe("daily-limit");
+  });
+  let store: ReturnType<typeof createMemoryStore>;
+  let now: number;
+  let upstream: ReturnType<typeof vi.fn<typeof fetch>>;
+  let handle: ReturnType<typeof createFetchHandler>;
+  let pending: Response[];
+  const call = async (path: string, token?: string, data?: unknown, method = data === undefined ? "GET" : "POST") => {
+    const response = await handle(new Request(`https://adcode.test/v1${path}`, { method, headers: { "content-type": "application/json", ...(token === undefined ? {} : { authorization: `Bearer ${token}` }) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) }));
+    pending.push(response); return response;
+  };
+  const chat = (token = "user", data: unknown = body) => call("/ai/tagflow/chat/completions", token, data);
+  const usage = async (uid = "user") => store.getTagflowUsage(uid, new Date(now).toISOString().slice(0, 10));
+  const save = async (next: TagflowConfig) => store.putTagflowConfig({ config: next, updatedAt: now, updatedBy: "admin-1" });
+
+  beforeEach(async () => {
+    store = createMemoryStore(); now = Date.parse("2026-10-10T12:00:00Z"); pending = [];
+    await store.addAdmin({ email: "admin@adcode.test", addedBy: "setup", addedAt: 0 });
+    await save(structuredClone(config));
+    upstream = vi.fn<typeof fetch>().mockImplementation(async () => reply());
+    handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream } });
+  });
+  afterEach(async () => { for (const response of pending) if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined); vi.unstubAllEnvs(); });
+
+  it("uses the 256k window beyond the old 128k ceiling and reserves space for replies",async () => {
+    await save({ ...config,maxInputTokens:262144,models:[{ ...config.models[0]!,contextWindow:262144 }] });
+    const published = await (await call("/ai/tagflow/config")).json() as { models:{ contextWindow:number }[] };
+    expect(published.models[0]!.contextWindow).toBe(262144);
+    const accepted = await chat("user",{ ...body,messages:[{ role:"user",content:"x".repeat(450000) }] });
+    expect(accepted.status).toBe(200); await accepted.text(); expect(upstream).toHaveBeenCalledTimes(1);
+    const rejected = await chat("user",{ ...body,max_tokens:4096,messages:[{ role:"user",content:"x".repeat(780000) }] });
+    expect(rejected.status).toBe(413); expect(await rejected.json()).toMatchObject({ error:{ code:"context-length" } });
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives each account 1M daily tokens, enforces the cap and restores it next day", async () => {
+    expect(DEFAULT_TAGFLOW_CONFIG.limits.dailyTokens).toBe(1_000_000);
+    const day = new Date(now).toISOString().slice(0, 10);
+    const charge = async (id: string, tokens: number) => {
+      expect(await store.reserveTagflow({ id, uid: "user", day, minute: Math.floor(now / 60_000), tokens, costMicros: 0, limits: config.limits })).toBe("ok");
+      await store.settleTagflow(id, { inputTokens: tokens, outputTokens: 0, costMicros: 0, estimated: false, failed: false });
+    };
+    await charge("past-old-cap", 950_000);
+    const view = await (await call("/ai/tagflow/usage", "user")).json();
+    expect(view).toMatchObject({ limits: { dailyTokens: 1_000_000 }, usage: { inputTokens: 950_000 } });
+    await (await chat()).text();
+    await charge("fill-new-cap", 1_000_000 - (await usage())!.inputTokens - (await usage())!.outputTokens);
+    const limited = await chat();
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toMatchObject({ error: { code: "daily-limit", retryable:true,resetsAt:Date.parse(`${day}T00:00:00Z`)+86_400_000 } });
+    expect(upstream).toHaveBeenCalledTimes(1);
+    await (await chat("other")).text();
+    now = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
+    await (await chat()).text();
+    expect(upstream).toHaveBeenCalledTimes(3);
+  });
+
+  it("identifies an upstream rate limit without charging daily usage or exposing its response", async () => {
+    upstream.mockResolvedValue(new Response("server-secret private upstream limit", { status: 429 }));
+    const response = await chat();
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    const text = await response.text();
+    expect(text).toContain("upstream-rate-limit");
+    expect(text).not.toContain("server-secret");
+    expect(await usage()).toMatchObject({ requests: 0, inputTokens: 0, outputTokens: 0, reservedTokens: 0 });
+  });
+
+  it("publishes models without exposing the credential, upstream address or prices", async () => {
+    const response = await call("/ai/tagflow/config");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const text = await response.text();
+    expect(text).toContain('"available":true'); expect(text).toContain("coder");
+    expect(text).not.toContain("server-secret"); expect(text).not.toContain("api.tagflow"); expect(text).not.toContain("Price");
+  });
+  it("accepts the existing Cloudflare secret name and prefers the canonical name", async () => {
+    vi.stubEnv("TAGFLOW_API_KEY", undefined);
+    vi.stubEnv("tagflow-api", "existing-secret");
+    handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { fetchImpl: upstream } });
+    expect(await (await call("/admin/tagflow", "admin")).json()).toMatchObject({ keyConfigured: true });
+    await (await chat()).text();
+    expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer existing-secret");
+    vi.stubEnv("TAGFLOW_API_KEY", "canonical-secret");
+    await (await chat()).text();
+    expect(new Headers(upstream.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer canonical-secret");
+  });
+  it.each(INCLUDED_PROVIDERS.filter((provider) => provider.id !== "tagflow"))("routes $name models only to their approved endpoint with their own secret", async (provider) => {
+    vi.stubEnv(provider.secretName, `${provider.id}-private-key`);
+    const model = { ...config.models[0]!, id: "public-alias", upstreamModel: "provider-model-id", provider: provider.id };
+    await save({ ...config, baseUrl: "", defaultModel: model.id, models: [model] });
+    expect((await call("/admin/tagflow", "admin", (await store.getTagflowConfig())!.config)).status).toBe(200);
+    const response = await chat("user", { ...body, model: model.id }); expect(response.status).toBe(200); await response.text();
+    const [url, init] = upstream.mock.calls[0]!;
+    expect(url).toBe(`${provider.baseUrl}/chat/completions`);
+    expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${provider.id}-private-key`);
+    expect(init?.redirect).toBe("manual");
+    const sent = JSON.parse(init!.body as string);
+    expect(sent.model).toBe("provider-model-id");
+    expect(sent[provider.id === "openai" ? "max_completion_tokens" : "max_tokens"]).toBe(100);
+    expect(sent[provider.id === "openai" ? "max_tokens" : "max_completion_tokens"]).toBeUndefined();
+    const published = await (await call("/ai/tagflow/config")).text();
+    expect(published).toContain(provider.name); expect(published).not.toContain(provider.baseUrl);
+    expect(published).not.toContain("private-key"); expect(published).not.toContain("provider-model-id");
+    expect(await usage()).toMatchObject({ requests: 1, inputTokens: 12, outputTokens: 3 });
+  });
+  it("hides disconnected and disabled models, refuses them before charging, and shares quotas across providers", async () => {
+    vi.stubEnv("INCLUDED_AI_OPENAI_API_KEY", "openai-private-key");
+    vi.stubEnv("INCLUDED_AI_GROQ_API_KEY", undefined);
+    const openai = { ...config.models[0]!, id: "other-coder", provider: "openai" as const };
+    await save({ ...config, models: [...config.models, openai, { ...openai, id: "missing-key", provider: "groq" }, { ...openai, id: "hidden", enabled: false }], limits: { ...config.limits, dailyRequests: 1 } });
+    expect(await (await call("/ai/tagflow/config")).json()).toMatchObject({ models: [{ id: "coder" }, { id: "other-coder" }] });
+    expect((await chat("user", { ...body, model: "missing-key" })).status).toBe(503);
+    expect((await chat("user", { ...body, model: "hidden" })).status).toBe(400);
+    expect(await usage()).toBeNull(); expect(upstream).not.toHaveBeenCalled();
+    await (await chat()).text();
+    expect((await chat("user", { ...body, model: "other-coder" })).status).toBe(429);
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
+  it("requires the selected default's secret and never accepts arbitrary connections or secret names", async () => {
+    vi.stubEnv("INCLUDED_AI_OPENAI_API_KEY", undefined);
+    const other = { ...config.models[0]!, id: "other-coder", provider: "openai" as const };
+    const next = { ...config, models: [...config.models, other], defaultModel: other.id };
+    const missing = await call("/admin/tagflow", "admin", next);
+    expect(missing.status).toBe(409); expect(await missing.text()).toContain("INCLUDED_AI_OPENAI_API_KEY");
+    for (const extra of [{ provider: "attacker" }, { baseUrl: "https://attacker.test" }, { secretName: "SUPABASE_SERVICE_ROLE_KEY" }, { upstreamModel: "bad id" }, { enabled: "yes" }]) {
+      expect(parseTagflowConfig({ ...config, models: [{ ...config.models[0], ...extra }] })).toBeNull();
+    }
+    expect(parseTagflowConfig({ ...config, models: [{ ...config.models[0], enabled: false }] })).toBeNull();
+  });
+  it("falls back to a connected model when the default's key is removed without disclosing secrets in admin", async () => {
+    vi.stubEnv("INCLUDED_AI_OPENAI_API_KEY", undefined);
+    await save({ ...config, models: [...config.models, { ...config.models[0]!, id: "other", provider: "openai" }], defaultModel: "other" });
+    expect(await (await call("/ai/tagflow/config")).json()).toMatchObject({ defaultModel: "coder", models: [{ id: "coder" }] });
+    const text = await (await call("/admin/tagflow", "admin")).text();
+    expect(text).toContain('"configured":false'); expect(text).toContain("INCLUDED_AI_OPENAI_API_KEY"); expect(text).not.toContain("server-secret");
+  });
+  it("requires authentication, verifies account ownership and blocks banned users", async () => {
+    expect((await chat("")).status).toBe(401);
+    expect((await chat("anonymous")).status).toBe(403);
+    await store.putUser({ uid: "user", status: "banned", createdAt: now });
+    expect((await chat()).status).toBe(403); expect(upstream).not.toHaveBeenCalled();
+  });
+  it("trims pasted server keys and never logs a key-bearing network exception", async () => {
+    vi.stubEnv("INCLUDED_AI_OPENAI_API_KEY", "  private-key\n");
+    const model = { ...config.models[0]!, id: "other", provider: "openai" as const };
+    await save({ ...config, models: [model], defaultModel: model.id });
+    await (await chat("user", { ...body, model: model.id })).text();
+    expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer private-key");
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      upstream.mockRejectedValueOnce(new TypeError("Invalid header: private-key"));
+      const response = await chat("user", { ...body, model: model.id });
+      expect(await response.text()).not.toContain("private-key");
+      expect(warning).toHaveBeenCalledWith("Included AI connection failed", { provider: "openai", reason: "key-format" });
+      expect(JSON.stringify(warning.mock.calls)).not.toContain("private-key");
+    } finally { warning.mockRestore(); }
+  });
+  it("allows only admins to change configuration or another person's allowance", async () => {
+    expect((await call("/admin/tagflow", "user", config)).status).toBe(403);
+    expect((await call("/admin/tagflow/users/other", "user", { blocked: true, limits: null })).status).toBe(403);
+    expect((await call("/admin/tagflow", "admin", config)).status).toBe(200);
+    expect((await store.listAudit()).some((row) => row.action === "save-tagflow-config")).toBe(true);
+  });
+  it("restricts relay addresses to the authorized provider and refuses redirects", async () => {
+    for (const baseUrl of ["https://attacker.test/v1", "https://tagflow-ai.com.attacker.test/v1", "https://attacker-tagflow-ai.com/v1", "http://api.tagflow-ai.com/v1", "https://key@api.tagflow-ai.com/v1", "https://api.tagflow-ai.com/v1?key=secret"]) expect(parseTagflowConfig({ ...config, baseUrl })).toBeNull();
+    await (await chat()).text();
+    expect(upstream.mock.calls[0]?.[0]).toBe("https://api.tagflow-ai.com/v1/chat/completions");
+    expect(upstream.mock.calls[0]?.[1]?.redirect).toBe("manual");
+    expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer server-secret");
+  });
+  it("counts real streamed tokens and settles exactly once", async () => {
+    expect((await chat()).status).toBe(200);
+    // Read another request to completion: outstanding budgets are separate from real counts.
+    const response = await chat(); await response.text();
+    const row = await usage();
+    expect(row).toMatchObject({ requests: 2, inputTokens: 12, outputTokens: 3, costMicros: 2, estimatedRequests: 0 });
+    expect(row!.reservedTokens).toBeGreaterThan(0);
+    const reservation = { id: "test", uid: "other", day: "2026-10-10", minute: 1, tokens: 100, costMicros: 100, limits: config.limits };
+    await store.reserveTagflow(reservation);
+    const settlement = { inputTokens: 10, outputTokens: 5, costMicros: 10, estimated: false, failed: false };
+    await store.settleTagflow("test", settlement); await store.settleTagflow("test", settlement);
+    expect(await usage("other")).toMatchObject({ requests: 1, inputTokens: 10, outputTokens: 5, reservedTokens: 0 });
+  });
+  it("refuses an upstream redirect without forwarding a credential or charging a completed request", async () => {
+    upstream.mockImplementation(async () => new Response(null, { status: 307, headers: { location: "https://attacker.test/steal" } }));
+    expect((await chat()).status).toBe(502);
+    expect(upstream).toHaveBeenCalledTimes(1);
+    expect(upstream.mock.calls[0]?.[0]).toBe("https://api.tagflow-ai.com/v1/chat/completions");
+    expect(upstream.mock.calls[0]?.[1]?.redirect).toBe("manual");
+    expect(await usage()).toMatchObject({ requests: 0, reservedTokens: 0, costMicros: 0 });
+  });
+  it("delivers the first chunk before the provider finishes", async () => {
+    let finish: (() => void) | undefined;
+    upstream.mockImplementation(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(event({ choices: [{ delta: { content: "first" } }] }))); finish = () => { controller.enqueue(new TextEncoder().encode(event({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 1 } }) + "data: [DONE]\n\n")); controller.close(); }; } }), { headers: { "content-type": "text/event-stream" } }));
+    const response = await chat(); const reader = response.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("first");
+    expect((await usage())!.reservedTokens).toBeGreaterThan(0);
+    finish!(); while (!(await reader.read()).done) { /* Drain the stream. */ }
+    expect(await usage()).toMatchObject({ inputTokens: 10, outputTokens: 1, reservedTokens: 0 });
+  });
+  it("reserves atomically so concurrent requests cannot exceed one allowance", async () => {
+    await save({ ...config, limits: { ...config.limits, dailyRequests: 1 } });
+    const responses = await Promise.all(Array.from({ length: 10 }, () => chat()));
+    expect(responses.filter((response) => response.status === 200)).toHaveLength(1);
+    expect(responses.filter((response) => response.status === 429)).toHaveLength(9);
+    expect(upstream).toHaveBeenCalledTimes(1);
+    await responses.find((response) => response.ok)!.text();
+    expect((await chat("other")).status).toBe(200);
+  });
+  it("enforces token, cost and minute caps before any upstream request", async () => {
+    await save({ ...config, limits: { ...config.limits, dailyTokens: 1 } }); const impossible=await chat();expect(impossible.status).toBe(429);
+    expect(await impossible.json()).toMatchObject({error:{code:"daily-limit",retryable:false}});
+    await save({ ...config, limits: { ...config.limits, dailyCostMicros: 0 } }); expect((await chat()).status).toBe(429);
+    expect(upstream).not.toHaveBeenCalled();
+    await save({ ...config, limits: { ...config.limits, requestsPerMinute: 1 } }); await (await chat()).text();
+    const limited = await chat(); expect(limited.status).toBe(429); expect(limited.headers.get("retry-after")).toBe("60");
+    now += 60_000; expect((await chat()).status).toBe(200);
+  });
+  it("applies individual overrides and blocking, with null restoring current defaults", async () => {
+    await call("/ai/tagflow/usage", "user");
+    const path = "/admin/tagflow/users/user";
+    expect((await call(path, "admin", { blocked: true, limits: null })).status).toBe(200);
+    expect((await chat()).status).toBe(403);
+    await call(path, "admin", { blocked: false, limits: { ...config.limits, dailyRequests: 0 } }); expect((await chat()).status).toBe(429);
+    await call(path, "admin", { blocked: false, limits: null }); expect((await chat()).status).toBe(200);
+    expect((await call("/admin/tagflow/users/unknown", "admin", { blocked: false, limits: null })).status).toBe(404);
+  });
+  it("holds estimated input and reply tokens atomically across concurrent unlimited requests",async()=>{
+    await save({ ...config,limits:{ ...config.limits,dailyTokens:500 } });
+    const responses=await Promise.all(Array.from({length:10},()=>chat()));
+    expect(responses.filter(response=>response.ok)).toHaveLength(1);
+    expect(responses.filter(response=>response.status===429)).toHaveLength(9);
+    expect(upstream).toHaveBeenCalledTimes(1);
+    await responses.find(response=>response.ok)!.text();
+    expect(await usage()).toMatchObject({inputTokens:12,outputTokens:3,reservedTokens:0});
+    expect((await chat()).status).toBe(200);
+  });
+  it("resets allowance at midnight UTC and never trusts a caller-provided uid", async () => {
+    await save({ ...config, limits: { ...config.limits, dailyRequests: 1 } }); await (await chat()).text(); expect((await chat()).status).toBe(429);
+    now = Date.parse("2026-10-11T00:00:00Z"); expect((await chat()).status).toBe(200);
+    expect((await chat("user", { ...body, uid: "other" })).status).toBe(400);
+    const view = await (await call("/ai/tagflow/usage?uid=other", "user")).json() as { usage: { uid: string }; resetsAt: number };
+    expect(view.usage.uid).toBe("user"); expect(view.resetsAt).toBe(Date.parse("2026-10-12T00:00:00Z"));
+  });
+  it("charges the reserved maximum on cancellation so repeat cancellations cannot bypass limits", async () => {
+    upstream.mockImplementation(async()=>new Response(new ReadableStream({ start(controller){ controller.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:"partial"}}]}))); } }),{headers:{"content-type":"text/event-stream"}}));
+    const response = await chat(); await response.body!.cancel();
+    expect(await usage()).toMatchObject({ requests: 1, outputTokens: 100, reservedTokens: 0, estimatedRequests: 1 });
+  });
+  it("estimates missing counts and keeps upstream errors out of client responses", async () => {
+    upstream.mockImplementation(async () => new Response(event({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } }));
+    await (await chat()).text(); expect((await usage())!.estimatedRequests).toBe(1);
+    upstream.mockImplementation(async () => new Response("server-secret private provider error", { status: 401 }));
+    const response = await chat(); expect(response.status).toBe(502); expect(await response.text()).not.toContain("server-secret");
+    expect((await usage())!.requests).toBe(1);
+  });
+  it("rejects disallowed models, images, fan-out, output aliases and invalid limits", async () => {
+    for (const data of [{ ...body, model: "unoffered" }, { ...body, n: 10 }, { ...body, max_completion_tokens: 1 }, { ...body, max_tokens: -1 }, { ...body, messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "https://private.test" } }] }] }]) expect((await chat("user", data)).status).toBe(400);
+    expect(upstream).not.toHaveBeenCalled();
+    expect(parseTagflowConfig({ ...config, models: [...config.models, ...config.models] })).toBeNull();
+    expect(parseTagflowConfig({ ...config, limits: { ...config.limits, dailyRequests: -1 } })).toBeNull();
+    expect(parseTagflowConfig({ ...config, apiKey: "hidden" })).toBeNull();
+  });
+  it("allows a 26k estimated input with 73k left instead of reserving every byte as a token", async () => {
+    const day = new Date(now).toISOString().slice(0,10);
+    await store.reserveTagflow({ id:"earlier",uid:"user",day,minute:1,tokens:926827,costMicros:0,limits:config.limits });
+    await store.settleTagflow("earlier",{ inputTokens:919303,outputTokens:7524,costMicros:0,estimated:false,failed:false });
+    const response = await chat("user", { ...body,max_tokens:4096,messages:[{ role:"user",content:"a".repeat(78000) }] });
+    expect(response.status).toBe(200);
+    const held=(await usage())!.reservedTokens;
+    expect(held).toBeGreaterThan(26000); expect(held).toBeLessThan(31000);
+    await response.text();
+    expect(await usage()).toMatchObject({inputTokens:919315,outputTokens:7527,reservedTokens:0,estimatedRequests:0});
+  });
+  it("still reserves room for replies and refuses requests that really cannot fit", async () => {
+    await save({ ...config, limits:{ ...config.limits,dailyTokens:30000 } });
+    const response=await chat("user",{ ...body,max_tokens:4096,messages:[{ role:"user",content:"a".repeat(78000) }] });
+    expect(response.status).toBe(429); expect(upstream).not.toHaveBeenCalled();
+    expect(await usage()).toBeNull();
+  });
+  it("keeps missing-usage estimates independent of how many streaming chunks carry the text", async () => {
+    const output="abc".repeat(30);
+    const withoutUsage=(pieces:string[])=>new Response(pieces.map(content=>event({choices:[{delta:{content}}]})).join("")+event({choices:[{delta:{},finish_reason:"stop"}]})+"data: [DONE]\n\n",{headers:{"content-type":"text/event-stream"}});
+    upstream.mockImplementationOnce(async()=>withoutUsage([output]));
+    await (await chat()).text();
+    upstream.mockImplementationOnce(async()=>withoutUsage([...output]));
+    await (await chat("other")).text();
+    const first=await usage(); const second=await usage("other");
+    expect(first).toMatchObject({outputTokens:30,estimatedRequests:1,reservedTokens:0});
+    expect(second).toMatchObject({inputTokens:first!.inputTokens,outputTokens:30,estimatedRequests:1,reservedTokens:0});
+    expect(first!.inputTokens).toBeLessThan(330);
+  });
+  it("uses final provider counts already received if the consumer cancels before the stream closes",async()=>{
+    upstream.mockImplementation(async()=>new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:"ok"},finish_reason:"stop"}]})+event({choices:[],usage:{prompt_tokens:17,completion_tokens:2}})));}}),{headers:{"content-type":"text/event-stream"}}));
+    const response=await chat(); const reader=response.body!.getReader();
+    await reader.read(); await reader.cancel();
+    expect(await usage()).toMatchObject({inputTokens:17,outputTokens:2,reservedTokens:0,estimatedRequests:0});
+  });
+  it("accepts Groq's provider usage and does not add cached or reasoning token details again",async()=>{
+    upstream.mockImplementation(async()=>new Response(event({choices:[{delta:{content:"ok"},finish_reason:"stop"}],x_groq:{usage:{prompt_tokens:12,completion_tokens:3,prompt_tokens_details:{cached_tokens:8},completion_tokens_details:{reasoning_tokens:2}}}})+"data: [DONE]\n\n",{headers:{"content-type":"text/event-stream"}}));
+    await (await chat()).text();
+    expect(await usage()).toMatchObject({inputTokens:12,outputTokens:3,reservedTokens:0,estimatedRequests:0});
+  });
+  it("identifies actual context overflow without blaming image attachments or charging", async () => {
+    await save({ ...config, maxInputTokens: 1000 });
+    const response = await chat("user", { ...body, messages: [{ role: "user", content: "x".repeat(6000) }] });
+    expect(response.status).toBe(413);
+    const error = await response.json() as { error: { code: string; message: string } };
+    expect(error.error.code).toBe("context-length");
+    expect(error.error.message).toContain("Limit 1000");
+    expect(error.error.message).not.toContain("Image");
+    expect(upstream).not.toHaveBeenCalled();
+    expect(await usage()).toBeNull();
+  });
+  it("accepts larger context and reserves reply space within the configured model window", async () => {
+    await save({ ...config, models: [{ ...config.models[0]!, contextWindow: 131_072 }] });
+    expect(await (await call("/ai/tagflow/config")).json()).toMatchObject({ models: [{ contextWindow: 131_072 }] });
+    const larger = await chat("user", { ...body, messages: [{ role: "user", content: "text ".repeat(30_000) }] });
+    expect(larger.status).toBe(200); await larger.text();
+    const calls = upstream.mock.calls.length;
+    const oversized = await chat("user", { ...body, max_tokens: 4096, messages: [{ role: "user", content: "x".repeat(390_000) }] });
+    expect(oversized.status).toBe(413);
+    expect(await oversized.json()).toMatchObject({ error: { code: "context-length" } });
+    expect(upstream.mock.calls).toHaveLength(calls);
+  });
+  it("distinguishes unsupported images, unavailable models and invalid message history", async () => {
+    const image = await chat("user", { ...body, messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "https://private.test" } }] }] });
+    expect(await image.json()).toMatchObject({ error: { code: "images-not-supported" } });
+    const model = await chat("user", { ...body, model: "unoffered" });
+    expect(await model.json()).toMatchObject({ error: { code: "model-unavailable" } });
+    const history = await chat("user", { ...body, messages: [{ role: "assistant", content: 7 }] });
+    expect(await history.json()).toMatchObject({ error: { code: "invalid-messages" } });
+    expect(upstream).not.toHaveBeenCalled();
+    expect(await usage()).toBeNull();
+  });
+  it("clamps output and asks the provider for stream usage", async () => {
+    await (await chat("user", { ...body, max_tokens: 60_000 })).text();
+    const sent = JSON.parse(upstream.mock.calls[0]![1]!.body as string) as Record<string, unknown>;
+    expect(sent["max_tokens"]).toBe(4096); expect(sent["stream_options"]).toEqual({ include_usage: true });
+  });
+  it("reads split UTF-8 events and suppresses split upstream error events", async () => {
+    const split = (text: string): Response => {
+      const data = new TextEncoder().encode(text);
+      return new Response(new ReadableStream({ start(controller) { for (const byte of data) controller.enqueue(new Uint8Array([byte])); controller.close(); } }), { headers: { "content-type": "text/event-stream" } });
+    };
+    upstream.mockImplementation(async () => split(event({ choices: [{ delta: { content: "नमस्ते" }, finish_reason: "stop" }] }) + event({ choices: [], usage: { prompt_tokens: 5, completion_tokens: 6 } }) + "data: [DONE]\n\n"));
+    expect(await (await chat()).text()).toContain("नमस्ते"); expect((await usage())!.inputTokens).toBe(5);
+    upstream.mockImplementation(async () => split(event({ error: { message: "server-secret" } })));
+    await expect((await chat()).text()).rejects.toThrow("stream interrupted");
+    expect(await usage()).toMatchObject({ requests: 2, outputTokens: 106, reservedTokens: 0 });
+  });
+  it("supports non-stream replies and hides the feature when the server key is absent", async () => {
+    upstream.mockImplementation(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 2 } }), { headers: { "content-type": "application/json" } }));
+    expect((await chat("user", { ...body, stream: false })).status).toBe(200); expect(await usage()).toMatchObject({ inputTokens: 10, outputTokens: 2, reservedTokens: 0 });
+    handle = createFetchHandler({ store, verifier, tagflow: { apiKey: "", fetchImpl: upstream } });
+    expect(await (await call("/ai/tagflow/config")).json()).toMatchObject({ available: false, models: [] });
+    expect((await call("/admin/tagflow", "admin", config)).status).toBe(409);
+  });
+  it("serves the same relay over the Node transport", async () => {
+    const server = await createApiServer({ port: 0, store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream } });
+    try {
+      const response = await fetch(`${server.url}/v1/ai/tagflow/chat/completions`, { method: "POST", headers: { authorization: "Bearer user", "content-type": "application/json" }, body: JSON.stringify(body) });
+      expect(response.status).toBe(200); expect(await response.text()).toContain("Hello"); expect((await usage())!.inputTokens).toBe(12);
+    } finally { await server.close(); }
+  });
+});

@@ -16,6 +16,7 @@ export const READ_ONLY_TOOL_NAMES: readonly string[] = [
   "search",
   "glob_files",
   "get_outline",
+  "inspect_project",
   "project_context",
 ];
 

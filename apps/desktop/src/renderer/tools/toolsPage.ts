@@ -50,6 +50,7 @@ const GROUPS: readonly { readonly id: BuiltInToolGroup; readonly note: string }[
   { id: "Write", note: "Change files. Edits land or wait for review by your AI edit approval setting." },
   { id: "Run", note: "Run commands in the project folder, or keep a dev server running." },
   { id: "Preview", note: "See the app you are building, as a visitor would. Used by the chat." },
+  { id: "Quality", note: "Check code, accessible controls, responsive layouts and reduced motion before handing over a product." },
   { id: "Plan", note: "Show the steps of a bigger task as they get done. Used by the chat." },
   { id: "Web", note: "Read pages and APIs on the internet." },
   { id: "Memory", note: "Remember decisions and conventions. Used by the chat." },

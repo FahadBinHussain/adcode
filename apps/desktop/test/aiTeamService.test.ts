@@ -86,6 +86,48 @@ function configure(service: ReturnType<typeof createAiTeamService>) {
 }
 
 describe("AI Team child workspace allocation", () => {
+  it("requires a running agent to stop before deletion, then discards only its private work", async () => {
+    const real = workspaceService();
+    const service = createAiTeamService({ userDataDirectory: userData, workspaceService: real });
+    let team = await configure(service);
+    team = await service.startConfirmed(team.id);
+    await real.writeFromSandboxBase(team.childTaskIds["desktop"]!, "shared.txt", "private edit\n");
+    await expect(service.remove(team.id)).rejects.toThrow("Stop the agent");
+    expect(await service.read(team.id)).not.toBeNull();
+    await service.pause(team.id, "Waiting for a new model");
+    await expect(service.remove(team.id)).resolves.toBe(true);
+    await expect(createAiTeamService({ userDataDirectory: userData, workspaceService: real }).list(project)).resolves.toEqual([]);
+    expect((await real.read(team.childTaskIds["desktop"]!))?.state).toBe("discarded");
+    expect(await readFile(join(project, "shared.txt"), "utf8")).toBe("captured\n");
+  });
+
+  it.each([false, true])("deletes a reviewed run while preserving applied changes and Undo (applied=%s)", async (applied) => {
+    const real = workspaceService();
+    const service = createAiTeamService({ userDataDirectory: userData, workspaceService: real });
+    let team = await configure(service);
+    team = await service.startConfirmed(team.id);
+    for (const node of team.plan.nodes) {
+      await service.startNode(team.id, node.id);
+      const changedPaths = node.roleId === "desktop" ? ["shared.txt"] : [];
+      if (changedPaths.length) await real.writeFromSandboxBase(team.childTaskIds[node.roleId]!, "shared.txt", "agent edit\n");
+      await service.completeNode(team.id, { nodeId: node.id, summary: "Done", findings: [], decisions: [], changedPaths, tests: [], blockers: [], deadEnds: [], completedAt: Date.now() });
+    }
+    const review = await service.buildCombinedReview(team.id);
+    const taskId = review.merge.combinedTaskId!;
+    if (applied) {
+      expect((await real.apply(taskId, [{ path: "shared.txt", contents: "agent edit\n" }])).ok).toBe(true);
+      await service.completeReview(team.id, taskId);
+    }
+    await expect(service.remove(team.id)).resolves.toBe(true);
+    await expect(service.read(team.id)).resolves.toBeNull();
+    expect(await readFile(join(project, "shared.txt"), "utf8")).toBe(applied ? "agent edit\n" : "captured\n");
+    expect((await real.read(taskId))?.state).toBe(applied ? "applied" : "discarded");
+    if (applied) {
+      expect((await real.rollback(taskId)).ok).toBe(true);
+      expect(await readFile(join(project, "shared.txt"), "utf8")).toBe("captured\n");
+    }
+  });
+
   it("does not allocate or start an agent while a Team is only configured", async () => {
     const real = workspaceService();
     let starts = 0;
@@ -442,6 +484,8 @@ describe("AI Team child workspace allocation", () => {
 
     expect(await real.read(combinedId)).toMatchObject({ state: "review" });
     expect((await real.read(combinedId))?.checkpoint?.paths).toEqual(["shared.txt"]);
+    await service.remove(team.id);
+    expect(await real.read(combinedId)).toMatchObject({ state: "applied", changes: [] });
     expect((await real.rollback(combinedId)).ok).toBe(true);
     expect(await readFile(join(project, "shared.txt"), "utf8")).toBe("captured\n");
   });

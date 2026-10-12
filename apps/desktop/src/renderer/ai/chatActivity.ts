@@ -96,7 +96,10 @@ export function toolHeaderLabel(toolName: string): string {
   if (clean.length === 0) return "Working";
   if (clean === "discover_capabilities") return "Finding tools and skills";
   if (clean === "load_skill") return "Reading skill instructions";
-  if (clean === "load_builtin_skill") return "Reading the design guide";
+  if (clean === "load_builtin_skill") return "Reading product guidance";
+  if (clean === "inspect_project") return "Finding project checks";
+  if (clean === "run_project_checks") return "Checking the project";
+  if (clean === "audit_page") return "Checking layout and accessibility";
   if (clean === "call_mcp") return "Using an MCP tool";
   if (clean === "read_file") return "Reading files";
   if (clean === "edit_file" || clean === "propose_edit") return "Editing files";

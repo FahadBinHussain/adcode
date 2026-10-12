@@ -33,13 +33,14 @@ const ROOT_ALIASES = "Omit path, or pass an empty string, '.', or '/', for the w
 export const READ_FILE: ToolDefinition = {
   name: "read_file",
   description:
-    "Read a file from the open workspace. Prefer reading the code over asking the user about it. Returns the file's text with line numbers; use offset and limit to page through large files. An image file (png, jpg, gif, webp) comes back as the picture itself, so you can look at a mockup or a screenshot in the project.",
+    "Read a file from the open workspace. Returns bounded pages with line numbers; use offset and limit to continue. Pass line_numbers: false to copy exact text for edit_file. Read the file again after a failed edit, then correct the replacement rather than retrying the same call. An image file comes back as the picture itself.",
   inputSchema: {
     type: "object",
     properties: {
       path: path("Workspace-relative path, e.g. src/main.ts"),
       offset: { type: "integer", minimum: 1, description: "First line to return (1-based). Omit to start at the top." },
-      limit: { type: "integer", minimum: 1, maximum: 2000, description: "Most lines to return. Omit for the whole file." },
+      limit: { type: "integer", minimum: 1, maximum: 2000, description: "Most lines per page. Output is bounded; follow the returned offset for more." },
+      line_numbers: { type: "boolean", description: "Include line numbers (default true). Pass false when copying exact text into edit_file." },
     },
     required: ["path"],
   },
@@ -87,7 +88,7 @@ export const SEARCH: ToolDefinition = {
 export const PROPOSE_EDIT: ToolDefinition = {
   name: "propose_edit",
   description:
-    "Write a complete file: create a new one or rewrite a short one. Send the whole new contents, not a patch; parent directories are created as needed. To change part of an existing file, use edit_file instead.",
+    "Write a complete file: create a new one or rewrite a short one. Send the whole new contents as a JSON string with escaped newlines and quotes, not a patch; parent directories are created as needed. Keep new files small and complete, then extend them with edit_file in small steps. To change part of an existing file, use edit_file instead. Never repeat a malformed or truncated full-file call.",
   inputSchema: {
     type: "object",
     properties: {
@@ -109,7 +110,7 @@ const replacement = {
 export const EDIT_FILE: ToolDefinition = {
   name: "edit_file",
   description:
-    "Change part of an existing file by exact text replacement - prefer this to propose_edit for any existing file: it sends only what changes, so it is faster and cannot drop the rest of the file. old_string must match the file, and be unique unless replace_all is true; when it differs only in indentation or trailing spaces, the one block that matches line by line is used and the result says so. For several changes to one file, pass edits; they apply in order and all must succeed.",
+    "Change part of an existing file by exact text replacement. old_string must match and be unique unless replace_all is true; a unique indentation-only mismatch is accepted and reported. For multiple edits all must succeed. On a mismatch, nothing changes: the error supplies current file text and a read_file recovery call. Read it without line numbers and correct old_string before retrying; never repeat a failed replacement or rewrite a large file to bypass it.",
   inputSchema: {
     type: "object",
     properties: {
@@ -311,8 +312,43 @@ export const VIEW_PAGE: ToolDefinition = {
       actions: { type: "array", maxItems: 20, description: "Steps to take before the report, in order", items: pageAction },
       screenshot: { type: "boolean", description: "Include a screenshot (default true). Pass false for text only." },
       full_page: { type: "boolean", description: "Screenshot the whole scrolling page rather than the visible part." },
+      reduced_motion: { type: "boolean", description: "Emulate prefers-reduced-motion: reduce (default false); check that controls still work with motion reduced." },
     },
   },
+  mutating: false,
+};
+
+export const INSPECT_PROJECT: ToolDefinition = {
+  name: "inspect_project",
+  description: "Discover the project's manifests, dependencies, package manager and existing type, lint, test and build scripts without executing anything. Use first to choose the correct stack and verification commands; missing checks are unverified. Pass cwd for a subproject.",
+  inputSchema: { type: "object", properties: { cwd: { type: "string", description: "Workspace-relative folder (default project root)" } }, additionalProperties: false },
+  mutating: false,
+  concurrent: true,
+};
+
+export const RUN_PROJECT_CHECKS: ToolDefinition = {
+  name: "run_project_checks",
+  description: "Run 1–4 existing package.json check scripts in the active workspace, non-interactively, and return each real exit code, failure output and missing check categories. Read inspect_project first: scripts execute exactly as written. Omit scripts to choose the existing typecheck, lint, test and build scripts. Adds no tooling and issues no separate install or deploy commands. The timeout is shared by the whole batch. Run native commands with run_command for projects without package.json. Report failed, cancelled, missing and unrun checks honestly.",
+  inputSchema: { type: "object", properties: {
+    cwd: { type: "string", description: "Workspace-relative folder (default project root)" },
+    scripts: { type: "array", minItems: 1, maxItems: 4, items: { type: "string" }, description: "Existing script names, e.g. typecheck, lint, test:ci, build" },
+    timeout_seconds: { type: "integer", minimum: 1, maximum: 600, description: "Total time for all scripts combined (default 120 seconds)" },
+  }, additionalProperties: false },
+  mutating: true,
+};
+
+export const AUDIT_PAGE: ToolDefinition = {
+  name: "audit_page",
+  description: "Audit a local running page at phone, tablet and desktop sizes. Reports axe-core accessibility violations (including contrast and accessible names), layout overflow, broken images, runtime/network errors and active motion with reduced motion emulated by default. Pass viewports to customize (at most 3) and actions to reach a UI state at each size. Each viewport reloads the starting page, so actions repeat; use harmless flows. Text only by default; view_page supplies visual screenshots. Automated findings need fixes; a clean scan still needs keyboard, screen-reader and visual review. Use the sandbox dev-server url to audit staged changes; path uses the applied project's live preview.",
+  inputSchema: { type: "object", properties: {
+    path: { type: "string", description: "Page of the live preview" },
+    url: { type: "string", description: "Local dev-server URL instead of path" },
+    viewports: { type: "array", minItems: 1, maxItems: 3, items: { type: "object", properties: {
+      width: { type: "integer", minimum: 240, maximum: 3840 }, height: { type: "integer", minimum: 240, maximum: 2400 },
+    }, required: ["width", "height"], additionalProperties: false } },
+    actions: { type: "array", maxItems: 20, items: pageAction },
+    reduced_motion: { type: "boolean", description: "Emulate reduced motion (default true)" },
+  }, additionalProperties: false },
   mutating: false,
 };
 
@@ -436,6 +472,9 @@ export const BUILT_IN_TOOLS: readonly ToolDefinition[] = [
   STOP_COMMAND,
   OPEN_PREVIEW,
   VIEW_PAGE,
+  AUDIT_PAGE,
+  INSPECT_PROJECT,
+  RUN_PROJECT_CHECKS,
   FETCH_URL,
   UPDATE_PLAN,
   PROJECT_CONTEXT,
@@ -465,5 +504,7 @@ export const AGENT_RUN_TOOLS: readonly ToolDefinition[] = [
   EDIT_FILE,
   PROPOSE_EDIT,
   RUN_COMMAND_FOREGROUND,
+  INSPECT_PROJECT,
+  RUN_PROJECT_CHECKS,
   FETCH_URL,
 ];

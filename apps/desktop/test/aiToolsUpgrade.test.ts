@@ -151,6 +151,19 @@ describe("edit_file forgives whitespace", () => {
     const applied = applyReplacements("a\nb\n", [{ oldString: "b", newString: "c", replaceAll: false }], "x.ts");
     expect(applied).toEqual({ ok: true, text: "a\nc\n", notes: [] });
   });
+  it("returns current unnumbered text and a bounded recovery read after a semantic mismatch", async () => {
+    const { runner } = direct();
+    const failed = await runner.run(call("edit_file", { path: "src/app.ts", old_string: 'export function greet() {\n  return "wrong";\n}', new_string: 'export function greet() {\n  return "hello";\n}' }), signal());
+    expect(failed.isError).toBe(true);
+    expect(failed.content).toContain('"line_numbers":false');
+    expect(failed.content).toContain('    return "hi";');
+    expect(failed.content).toContain("do not repeat");
+    expect(await readFile(join(root, "src/app.ts"), "utf8")).toContain('return "hi"');
+    const raw = await runner.run(call("read_file", { path: "src/app.ts", line_numbers: false }), signal());
+    const repaired = await runner.run(call("edit_file", { path: "src/app.ts", old_string: raw.content, new_string: raw.content.replace('"hi"', '"hello"') }), signal());
+    expect(repaired.isError).toBe(false);
+    expect(await readFile(join(root, "src/app.ts"), "utf8")).toContain('return "hello"');
+  });
 });
 
 describe("read_file", () => {
@@ -169,7 +182,8 @@ describe("read_file", () => {
     const { runner } = direct();
     const result = await runner.run(call("read_file", { path: "big.log" }), signal());
     expect(result.isError).toBe(false);
-    expect(result.content).toContain("Showing lines 1-2000 of 30000");
+    expect(result.content).toMatch(/Showing lines 1-\d+ of 30000/);
+    expect(result.content.length).toBeLessThan(24_500);
     const later = await runner.run(call("read_file", { path: "big.log", offset: 29_999 }), signal());
     expect(later.content).toContain("30000 line 30000");
   });

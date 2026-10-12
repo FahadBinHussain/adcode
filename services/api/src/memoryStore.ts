@@ -7,6 +7,7 @@
  * more permissive than production tests nothing worth testing.
  */
 import { planBudgetMove } from "./campaignBudget.ts";
+import { createTagflowMemoryStore } from "./tagflowMemoryStore.ts";
 import { utcDay } from "./day.ts";
 import { countDevelopers, sightings, summarizeGrowth, type MilestoneRow, type PresenceRow } from "./growth.ts";
 import { applyEntry, EMPTY_BALANCE, type Balance, type LedgerEntry } from "./ledger.ts";
@@ -82,6 +83,7 @@ export const DEFAULT_CONFIG: ServingConfig = {
 };
 
 export function createMemoryStore(): Store & { reset(): void } {
+  const tagflow = createTagflowMemoryStore();
   let users = new Map<string, UserRecord>();
   let advertisers = new Map<string, AdvertiserRecord>();
   let campaigns = new Map<string, CampaignRecord>();
@@ -137,7 +139,9 @@ export function createMemoryStore(): Store & { reset(): void } {
   const attributionKey = (kind: string, subjectId: string): string => `${kind}\u0000${subjectId}`;
 
   return {
+    ...tagflow,
     reset() {
+      tagflow.resetTagflow();
       users = new Map();
       advertisers = new Map();
       campaigns = new Map();

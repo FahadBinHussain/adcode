@@ -281,7 +281,7 @@ export function stripImages(messages: Message[]): boolean {
  * images" - so this is only ever asked about a request that actually carried one.
  */
 export function isImageUnsupported(detail: string): boolean {
-  return /image[_ ]?(?:url|input|content|part)s?\b.*(?:not|only|unsupported|support)|(?:not|n't|only) (?:be )?support(?:s|ed)? (?:for )?(?:image|vision|multimodal)|support (?:image|vision)|does not support images?|vision|multimodal|unknown variant `?image|content must be a string|images? (?:is|are) not (?:supported|allowed)/i.test(detail);
+  return /\bimages-not-supported\b|\bcannot read images?\b|image[_ ]?(?:url|input|content|part|attachment)s?\b.*(?:not|only|unsupported|support)|(?:not|n't|only) (?:be )?support(?:s|ed)? (?:for )?(?:image|vision|multimodal)|support (?:image|vision)|does not support images?|vision|multimodal|unknown variant `?image|content must be a string|images? (?:is|are) not (?:supported|allowed)/i.test(detail);
 }
 
 /** Extra turns input beyond the text. Everything optional, so old callers keep working. */
@@ -384,6 +384,8 @@ export function createAgent(deps: AgentDeps): Agent {
     const signal = controller.signal;
     const externalSignal = options?.signal;
     const failures = new Map<string, number>();
+    let invalidCalls = 0;
+    let smallerEdits = false;
     let compactionFailed = false;
     let justCompacted = false;
     let reactiveTried = false;
@@ -428,7 +430,9 @@ export function createAgent(deps: AgentDeps): Agent {
 
       try {
         const lean = shrunk || deps.lean?.() === true;
-        const system = [deps.system ?? (lean ? LEAN_SYSTEM : DEFAULT_SYSTEM), await deps.context?.()].filter(Boolean).join("\n\n");
+        const system = [deps.system ?? (lean ? LEAN_SYSTEM : DEFAULT_SYSTEM), await deps.context?.(),
+          smallerEdits ? "The previous tool arguments were malformed or incomplete. Recover without repeating that call: send exactly one tool call per response, as a complete JSON object with escaped newlines and quotes. Keep each file write to at most 40 lines. Create a short complete new file with propose_edit, then extend it with small edit_file replacements. Read the current file before changing it. Finish and verify the original request." : "",
+        ].filter(Boolean).join("\n\n");
         const tools = lean ? leanTools(deps.tools) : deps.tools;
         lastSystem = system;
         lastTools = tools;
@@ -561,7 +565,7 @@ export function createAgent(deps: AgentDeps): Agent {
         }
         // §9: the provider being down costs the user an answer, never the editor.
         failed = true;
-        yield { kind: "error", detail };
+        if (!signal.aborted) yield { kind: "error", detail };
       }
 
       // A request the provider refused outright cost nothing; one that answered, even in
@@ -649,6 +653,7 @@ export function createAgent(deps: AgentDeps): Agent {
       const results: ContentBlock[] = [];
       const pictures: ContentBlock[] = [];
       let repeatedFailure: string | null = null;
+      let repeatedFailureDetail = "";
       for (const [index, call] of pendingCalls.entries()) {
         // Three identical failures indicate no progress. Avoid spending an entire
         // turn budget on retries, or repeating external operations indefinitely.
@@ -658,11 +663,27 @@ export function createAgent(deps: AgentDeps): Agent {
           : repeatedFailure === null
             ? await runTool(call, signal)
             : { content: "Skipped because this turn repeatedly failed. Review the previous error before retrying.", isError: true };
-        if (result.isError) {
+        if (call.inputError !== undefined && /invalid JSON tool arguments|response limit cut off the tool arguments/i.test(call.inputError)) {
+          // Invalid arguments all have input={}, so they are not identical workspace
+          // operations. Give the next request explicit recovery instructions, bounded
+          // independently from the guard for repeated failures of real tool calls.
+          smallerEdits = true;
+          invalidCalls += 1;
+          if (invalidCalls >= 3) {
+            repeatedFailure = call.name;
+            repeatedFailureDetail = result.content.slice(0, 1800);
+          } else yield { kind: "status", text: "The model sent an incomplete edit — retrying with smaller calls" };
+        } else if (result.isError) {
           const count = (failures.get(signature) ?? 0) + 1;
           failures.set(signature, count);
-          if (count >= 3) repeatedFailure = call.name;
-        } else failures.delete(signature);
+          if (count >= 3) {
+            repeatedFailure = call.name;
+            repeatedFailureDetail = result.content.slice(0, 1800);
+          }
+        } else {
+          failures.delete(signature);
+          invalidCalls = 0;
+        }
         const images = (result.images ?? []).slice(0, MAX_TOOL_IMAGES);
         results.push({
           type: "tool-result" as const,
@@ -696,7 +717,7 @@ export function createAgent(deps: AgentDeps): Agent {
       retireToolImages(messages);
       messages.push({ role: "user", content: [...results, ...pictures] });
       if (repeatedFailure !== null) {
-        yield { kind: "error", detail: `Stopped after three identical failed calls to ${repeatedFailure}. Review the tool error, connection, or permissions before retrying.` };
+        yield { kind: "error", detail: `${invalidCalls >= 3 ? "The model repeatedly sent invalid tool arguments, even after retrying with smaller edits." : `Stopped after three identical failed calls to ${repeatedFailure}.`}\n${repeatedFailureDetail}` };
         return;
       }
     }

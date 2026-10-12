@@ -52,7 +52,8 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     items: [
       { href: "/admin", label: "Overview", hint: "Every queue, at a glance", icon: "grid" },
       { href: "/admin/analytics", label: "Analytics", hint: "Website traffic and conversions", icon: "globe" },
-      { href: "/admin/models", label: "AI models", hint: "What the model picker offers, and how each does", icon: "list" },
+      { href: "/admin/models", label: "BYOK models", hint: "New models, recommendations and visibility", icon: "list" },
+      { href: "/admin/tagflow", label: "Free models", hint: "Server connections, models, allowances and usage", icon: "bubble" },
     ],
   },
   {

@@ -128,10 +128,12 @@ interface BoxEntry {
   readonly evidence: HTMLElement;
   readonly warnings: HTMLElement;
   readonly actions: HTMLElement;
+  readonly management: HTMLElement;
   mascotList: AgentMascot[];
   lookKey: string;
   actionKey: string;
   evidenceKey: string;
+  managementKey: string;
 }
 
 export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
@@ -166,7 +168,7 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
 
   const connectBanner = el("div", "agents-banner");
   connectBanner.hidden = true;
-  const connectText = el("p", "", "Connect a model to run agents. Your key stays on this computer.");
+  const connectText = el("p", "", "Choose a free model or connect your own provider to run agents.");
   const connectButton = el("button", "agents-secondary", "Connect a model");
   connectButton.type = "button";
   connectButton.addEventListener("click", () => deps.openConnect());
@@ -251,6 +253,8 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
   /* ── State ─────────────────────────────────────────────────────────────── */
   let profiles: AgentProfile[] = [];
   const teams = new Map<string, AiTeamView>();
+  const removedRuns = new Set<string>();
+  const removingRuns = new Set<string>();
   let tasks: readonly AiWorkspaceTaskView[] = [];
   let status: AiStatus | null = null;
   let hasFolder = true;
@@ -338,12 +342,13 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
     evidence.setAttribute("aria-label", "Proof of work");
     const warnings = el("ul", "agent-box-warnings");
     const actions = el("div", "agent-box-actions");
-    li.append(open, evidence, warnings, actions);
+    const management = el("div", "agent-box-management");
+    li.append(open, evidence, warnings, actions, management);
     open.addEventListener("click", () => {
       const box = findBox(id);
       if (box !== null) openDetail(box);
     });
-    const entry: BoxEntry = { li, open, mascots, title: titleNode, who, status: statusNode, meta, race, evidence, warnings, actions, mascotList: [], lookKey: "", actionKey: "", evidenceKey: "" };
+    const entry: BoxEntry = { li, open, mascots, title: titleNode, who, status: statusNode, meta, race, evidence, warnings, actions, management, mascotList: [], lookKey: "", actionKey: "", evidenceKey: "", managementKey: "" };
     entries.set(id, entry);
     return entry;
   }
@@ -369,6 +374,9 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
     entry.title.textContent = box.title;
     entry.who.textContent = [box.agentLabel, box.modelLabel].filter(Boolean).join(" · ");
     entry.status.textContent = box.statusText;
+    entry.title.title = box.title;
+    entry.who.title = entry.who.textContent;
+    entry.status.title = box.statusText;
     const running = box.column === "working";
     entry.meta.textContent = [
       box.files > 0 ? `${box.files} file${box.files === 1 ? "" : "s"}` : "",
@@ -407,6 +415,35 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
         return control;
       }));
     }
+    const managementKey = JSON.stringify([box.kind, box.column, box.roleIds.map((id) => profileFor(id)?.name)]);
+    if (managementKey !== entry.managementKey) {
+      entry.managementKey = managementKey;
+      entry.management.replaceChildren();
+      if (box.kind !== "chat") {
+        const add = (label: string, action: string, run: (current: BoxModel) => void, danger = false): HTMLButtonElement => {
+          const control = el("button", `agent-box-manage${danger ? " agent-box-action-danger" : ""}`, label);
+          control.type = "button";
+          control.dataset["manage"] = action;
+          control.setAttribute("aria-label", `${label}: ${box.title}`);
+          control.addEventListener("click", () => {
+            const current = findBox(box.id);
+            if (current !== null) run(current);
+          });
+          entry.management.append(control);
+          return control;
+        };
+        if (box.kind === "solo") {
+          const edit = add("Edit run", "edit", (current) => void editRun(current));
+          edit.disabled = running;
+          edit.title = running ? "Stop this run to change its task or model" : "Change the task, model and tools for a new attempt";
+        }
+        const agent = box.kind === "solo" ? profileFor(box.roleIds[0]) : null;
+        if (agent !== null) add("Edit agent", "agent", () => void editAgent(agent));
+        const remove = add("Delete run", "delete", (current) => void deleteRun(current), true);
+        remove.disabled = running;
+        remove.title = running ? "Stop this run before deleting it" : "Remove this run from the board";
+      }
+    }
   }
 
   function findBox(id: string): BoxModel | null {
@@ -438,8 +475,11 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
       const text = el("div", "agent-card-text");
       const access = agent.toolAccess === undefined || agent.toolAccess === "all"
         ? "All tools"
-        : agent.toolAccess === "read-only" ? "Read-only" : `${agent.toolAccess.length} tool${agent.toolAccess.length === 1 ? "" : "s"}`;
-      text.append(el("strong", "agent-card-name", agent.name), el("span", "agent-card-model", `${agent.model} · ${access}`), el("p", "agent-card-instructions", agent.instructions));
+        : agent.toolAccess === "read-only" ? "Read-only tools" : `${agent.toolAccess.length} tool${agent.toolAccess.length === 1 ? "" : "s"}`;
+      const model = el("span", "agent-card-model", agent.useCurrentModel ? "Current model" : agent.model);
+      model.title = agent.useCurrentModel ? "Uses your currently selected model" : agent.model;
+      const accessLabel = el("span", "agent-card-access", access);
+      text.append(el("strong", "agent-card-name", agent.name), model, accessLabel, el("p", "agent-card-instructions", agent.instructions));
       const actions = el("div", "agent-card-actions");
       if (selecting) {
         const pick = el("label", "agent-card-pick");
@@ -474,7 +514,7 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
         copy.addEventListener("click", () => void duplicateAgent(agent));
         // On the card, not only inside the editor: removing an agent should not take
         // opening it first to find the button.
-        const remove = el("button", "agent-box-action agent-box-action-danger", "Delete");
+        const remove = el("button", "agent-box-action agent-box-action-danger agent-card-delete", "Delete");
         remove.type = "button";
         remove.setAttribute("aria-label", `Delete ${agent.name}`);
         remove.addEventListener("click", () => void deleteAgent(agent));
@@ -520,26 +560,36 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
 
   /* ── Data ──────────────────────────────────────────────────────────────── */
   function upsert(team: AiTeamView): void {
+    if (removedRuns.has(team.id)) return;
     teams.set(team.id, team);
     scheduleRender();
   }
 
-  async function refresh(): Promise<void> {
+  let refreshInFlight: Promise<void> | null = null;
+  function refresh(): Promise<void> {
+    if (refreshInFlight !== null) return refreshInFlight;
+    refreshInFlight = load().finally(() => { refreshInFlight = null; });
+    return refreshInFlight;
+  }
+
+  async function load(): Promise<void> {
     try {
-      const [values, list, taskList, aiStatus, current] = await Promise.all([
-        window.adcode.settings.read(),
+      const board = Promise.all([
         window.adcode.aiTeam.list().catch(() => [] as readonly AiTeamView[]),
         window.adcode.aiWorkspace.list().catch(() => [] as readonly AiWorkspaceTaskView[]),
         window.adcode.ai.status().catch(() => null),
         window.adcode.workspace.current().catch(() => null),
       ]);
+      const values = await window.adcode.settings.read();
+      profiles = parseAgentProfiles(values[AGENT_PROFILES_SETTING]);
+      await seedStarters();
+      renderLibrary();
+      const [list, taskList, aiStatus, current] = await board;
       status = aiStatus;
       hasFolder = current !== null && typeof current === "object" && "root" in current;
       teams.clear();
-      for (const team of list) teams.set(team.id, team);
+      for (const team of list) if (!removedRuns.has(team.id)) teams.set(team.id, team);
       tasks = taskList;
-      profiles = parseAgentProfiles(values[AGENT_PROFILES_SETTING]);
-      await seedStarters();
       renderLibrary();
       render();
     } catch (error) {
@@ -549,14 +599,16 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
 
   /** Five ready-made agents, once, so the page is useful before anyone configures anything. */
   async function seedStarters(): Promise<void> {
-    if (profiles.length > 0 || status === null || !status.activeProvider) return;
+    if (profiles.length > 0) return;
     let seeded = false;
     try { seeded = localStorage.getItem(STARTERS_MARKER) === "done"; } catch { seeded = false; }
     if (seeded) return;
-    try { localStorage.setItem(STARTERS_MARKER, "done"); } catch { /* Optional storage: worst case they are offered again. */ }
-    const starters = starterAgents({ provider: status.activeProvider, model: status.activeModel });
+    const starters = starterAgents({ provider: "", model: "", useCurrentModel: true });
     const values = await window.adcode.settings.write(AGENT_PROFILES_SETTING, JSON.stringify(starters));
     profiles = parseAgentProfiles(values[AGENT_PROFILES_SETTING]);
+    if (profiles.length > 0) {
+      try { localStorage.setItem(STARTERS_MARKER, "done"); } catch { /* Optional storage: saved agents still prevent duplicates. */ }
+    }
   }
 
   async function persistProfiles(next: AgentProfile[]): Promise<void> {
@@ -575,6 +627,12 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
   }
 
   window.adcode.aiTeam.onChanged((team) => upsert(team));
+  window.adcode.aiTeam.onRemoved((id) => {
+    removedRuns.add(id);
+    teams.delete(id);
+    evidence.delete(id);
+    scheduleRender();
+  });
   window.adcode.aiWorkspace.onChanged(() => scheduleTaskRefresh());
   window.adcode.settings.onChanged((values) => {
     const next = parseAgentProfiles(values[AGENT_PROFILES_SETTING]);
@@ -604,7 +662,8 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
   async function startRun(prompt: string, agent: AgentProfile | null, capDollars?: number, group?: string): Promise<void> {
     try {
       await deps.saveAllOpenFiles();
-      const input = buildSoloRun(prompt, agent, { ...(capDollars === undefined ? {} : { capDollars }), ...(group === undefined ? {} : { group }) });
+      const cap = capDollars ?? agent?.capDollars;
+      const input = buildSoloRun(prompt, agent, { ...(cap === undefined ? {} : { capDollars: cap }), ...(group === undefined ? {} : { group }) });
       const configured = await window.adcode.aiTeam.configure(input);
       upsert(configured);
       try {
@@ -682,6 +741,65 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
   }
 
   /* ── Box actions ───────────────────────────────────────────────────────── */
+  function runAgent(team: AiTeamView): AgentProfile | null {
+    const role = team.roles[0];
+    if (role === undefined) return null;
+    const saved = profileFor(role.id);
+    const cap = team.budget.costMicrosLimit / 1_000_000;
+    return {
+      id: role.id.length <= 48 ? role.id : `agent-${crypto.randomUUID()}`,
+      name: role.label.slice(0, 80),
+      instructions: role.objective.slice(0, 2_000),
+      provider: role.route?.provider ?? status?.activeProvider ?? "",
+      model: role.route?.model ?? status?.activeModel ?? "",
+      ...(role.route === undefined ? { useCurrentModel: true } : {}),
+      ...(role.toolAccess === undefined ? {} : { toolAccess: role.toolAccess }),
+      ...(saved?.mascot === undefined ? {} : { mascot: saved.mascot }),
+      ...(cap >= 0.05 && cap <= 1_000 ? { capDollars: cap } : {}),
+    };
+  }
+
+  async function editRun(box: BoxModel): Promise<void> {
+    const team = teams.get(box.id);
+    if (team === undefined || box.kind !== "solo" || box.column === "working") return;
+    const aiStatus = await window.adcode.ai.status().catch(() => status);
+    if (aiStatus !== null) status = aiStatus;
+    const agent = runAgent(team);
+    const result = await openAgentEditorDialog({
+      agent,
+      run: { prompt: team.prompt },
+      providers: aiStatus?.providers ?? [],
+      activeProvider: aiStatus?.activeProvider ?? "",
+      activeModel: aiStatus?.activeModel ?? "",
+      validate,
+    });
+    if (result?.kind !== "save" || result.prompt === undefined) return;
+    await startRun(result.prompt, result.agent, result.agent.capDollars);
+  }
+
+  async function deleteRun(box: BoxModel): Promise<void> {
+    if (box.kind === "chat" || box.column === "working" || removingRuns.has(box.id)) return;
+    removingRuns.add(box.id);
+    try {
+      const pending = box.status === "ready" || box.status === "conflict" || box.status === "paused" || box.status === "budget";
+      if (!await askThemed({ title: "Delete this run?", body: `Remove “${box.title}” from the board.${pending ? " Unapplied work from this run will be discarded." : ""} Applied project changes are kept.`, confirmLabel: "Delete run", danger: true })) return;
+      if (!await window.adcode.aiTeam.remove(box.id)) {
+        say("This run could not be deleted. Refresh and try again.");
+        return;
+      }
+      removedRuns.add(box.id);
+      teams.delete(box.id);
+      evidence.delete(box.id);
+      scheduleTaskRefresh();
+      scheduleRender();
+      say("Run deleted.");
+    } catch (error) {
+      say(errorText(error, "Could not delete the run."));
+    } finally {
+      removingRuns.delete(box.id);
+    }
+  }
+
   function combinedTask(box: BoxModel): AiWorkspaceTaskView | null {
     return box.combinedTaskId === null ? null : (tasks.find((task) => task.id === box.combinedTaskId) ?? null);
   }
@@ -764,14 +882,14 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
         case "rethink": {
           if (team === undefined) return;
           const reason = team.nodes.find((node) => node.failure !== null)?.failure ?? "it got stuck";
-          await startRun(`${team.prompt}\n\nA previous attempt at this task was stopped - ${reason}. Do not repeat that approach: step back, check the assumption that kept failing, and try a different way.`, profileFor(box.roleIds[0]));
+          await startRun(`${team.prompt}\n\nA previous attempt at this task was stopped - ${reason}. Do not repeat that approach: step back, check the assumption that kept failing, and try a different way.`, runAgent(team));
           return;
         }
         case "compare":
           openCompare(box);
           return;
         case "retry":
-          if (team !== undefined) await startRun(team.prompt, profileFor(box.roleIds[0]));
+          if (team !== undefined) await startRun(team.prompt, runAgent(team));
           return;
         case "raise-cap": {
           if (team === undefined) return;
@@ -781,7 +899,7 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
           const dollars = Number(answer);
           if (!Number.isFinite(dollars) || dollars <= 0) { say("A cost cap is an amount above zero, like 2 or 5.50."); return; }
           if (team.state !== "cancelled") await window.adcode.aiTeam.cancel(team.id).catch(() => undefined);
-          await startRun(team.prompt, profileFor(box.roleIds[0]), dollars);
+          await startRun(team.prompt, runAgent(team), dollars);
           return;
         }
       }
@@ -842,6 +960,14 @@ export function createAgentsPage(deps: AgentsPageDeps): AgentsPage {
       loadTraces: () => window.adcode.aiTeam.traces(box.id),
       mascot: mascots,
       evidence: evidence.get(box.id) ?? null,
+      management: [
+        ...(box.kind === "solo" && box.column !== "working" ? [{ label: "Edit run", run: () => void editRun(box) }] : []),
+        ...box.roleIds.flatMap((id) => {
+          const agent = profileFor(id);
+          return agent === null ? [] : [{ label: `Edit ${agent.name}`, run: () => void editAgent(agent) }];
+        }),
+        ...(box.column !== "working" ? [{ label: "Delete run", danger: true, run: () => void deleteRun(box) }] : []),
+      ],
       actions: [
         ...agentBoxActions(box.status, box.kind === "team" ? "team" : "solo")
           .filter((action) => action !== "open-chat")

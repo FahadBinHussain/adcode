@@ -116,6 +116,13 @@ describe("pruneSessions", () => {
 });
 
 describe("validateSession", () => {
+  it("keeps owned-response feedback references across restore without adding them to AI context", () => {
+    const id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const restored = validateSession({ id:"report-feedback",messages:[{role:"assistant",text:"Answer",at:1,includedRequestId:id},{role:"assistant",text:"Old answer",at:2,includedRequestId:"bad"}] })!;
+    expect(restored.messages[0]!.includedRequestId).toBe(id);
+    expect(restored.messages[1]!.includedRequestId).toBeUndefined();
+    expect(JSON.stringify(restoreHistory(restored))).not.toContain(id);
+  });
   it("reads a well-formed session", () => {
     const read = validateSession({
       id: "s1",

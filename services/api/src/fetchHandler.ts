@@ -24,6 +24,8 @@
 import { Buffer } from "node:buffer";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createRequestHandler, type ApiOptions } from "./server.ts";
+import { createMemoryStore } from "./memoryStore.ts";
+import { createTagflowHandler } from "./tagflow.ts";
 
 /** Just enough of `IncomingMessage` for the handler, including the body iteration. */
 class ShimRequest {
@@ -107,9 +109,14 @@ function toBodyInit(body: string | Uint8Array | null): string | ArrayBuffer | nu
 export function createFetchHandler(
   options: Omit<ApiOptions, "port"> = {},
 ): (request: Request) => Promise<Response> {
-  const handle = createRequestHandler(options);
+  const store = options.store ?? createMemoryStore();
+  const handle = createRequestHandler({ ...options, store });
+  const tagflow = createTagflowHandler({ store, verifier: options.verifier!, clock: options.clock ?? { now: () => Date.now() }, ...options.tagflow });
 
   return async (request: Request): Promise<Response> => {
+    // This response owns a live upstream stream and must bypass the buffering shim.
+    const relayed = await tagflow(request);
+    if (relayed !== null) return relayed;
     const url = new URL(request.url);
 
     // The handler parses `req.url` against a dummy origin, exactly as Node hands it over:

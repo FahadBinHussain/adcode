@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { filterToolsByAccess, parseToolAccess, READ_ONLY_TOOL_NAMES } from "../src/toolAccess.ts";
 
-const tools = ["read_file", "list_files", "search", "propose_edit", "edit_file", "glob_files", "get_outline", "run_command", "fetch_url", "project_context"].map((name) => ({ name }));
+const tools = ["read_file", "list_files", "search", "propose_edit", "edit_file", "glob_files", "get_outline", "inspect_project", "run_project_checks", "audit_page", "run_command", "fetch_url", "project_context"].map((name) => ({ name }));
 
 describe("tool access", () => {
   it("keeps every tool for all", () => {
@@ -16,9 +16,11 @@ describe("tool access", () => {
 
   it("drops anything that writes, runs or fetches for read-only", () => {
     const names = filterToolsByAccess(tools, "read-only").tools.map((tool) => tool.name);
-    expect(names).toEqual(["read_file", "list_files", "search", "glob_files", "get_outline", "project_context"]);
+    expect(names).toEqual(["read_file", "list_files", "search", "glob_files", "get_outline", "inspect_project", "project_context"]);
     expect(names).not.toContain("edit_file");
     expect(names).not.toContain("run_command");
+    expect(names).not.toContain("run_project_checks");
+    expect(names).not.toContain("audit_page");
     expect(READ_ONLY_TOOL_NAMES).not.toContain("propose_edit");
   });
 

@@ -55,6 +55,7 @@ export interface AiWorkspaceAllocator {
     change: Parameters<AiWorkspaceService["importChange"]>[1],
   ): ReturnType<AiWorkspaceService["importChange"]>;
   discard(taskId: string): ReturnType<AiWorkspaceService["discard"]>;
+  reject(taskId: string, path: string): ReturnType<AiWorkspaceService["reject"]>;
 }
 
 export interface AiTeamServiceOptions {
@@ -90,6 +91,7 @@ export interface AiTeamService {
   pause(id: string, reason: string): Promise<AiTeamRecord>;
   fail(id: string, reason: string): Promise<AiTeamRecord>;
   cancel(id: string): Promise<AiTeamRecord>;
+  remove(id: string): Promise<boolean>;
   buildCombinedReview(id: string): Promise<AiTeamRecord>;
   completeReview(id: string, combinedTaskId: string): Promise<AiTeamRecord>;
   traces(id: string): ReturnType<AiTeamStore["traces"]>;
@@ -458,6 +460,29 @@ export function createAiTeamService(options: AiTeamServiceOptions): AiTeamServic
       await store.save(team);
       await trace(team, "Team cancelled", "blocked");
       return cleanPrivateResources(team, true);
+    },
+
+    async remove(id): Promise<boolean> {
+      const team = await store.read(id);
+      if (team === null) return false;
+      if (["preparing", "running", "merging"].includes(team.state)) {
+        throw new Error("Stop the agent before deleting its run.");
+      }
+      const taskIds = new Set(Object.values(team.childTaskIds));
+      if (team.merge.combinedTaskId !== null) taskIds.add(team.merge.combinedTaskId);
+      for (const taskId of taskIds) {
+        const task = await options.workspaceService.read(taskId);
+        // Keep applied edits and their Undo checkpoint in the project task history.
+        if (task === null) continue;
+        if (task.checkpoint !== null) {
+          if (task.state === "review") {
+            for (const change of task.changes) await options.workspaceService.reject(taskId, change.path);
+          }
+          continue;
+        }
+        await options.workspaceService.discard(taskId);
+      }
+      return store.remove(id);
     },
 
     async buildCombinedReview(id): Promise<AiTeamRecord> {

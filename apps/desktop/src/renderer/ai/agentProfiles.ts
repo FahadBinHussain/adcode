@@ -10,6 +10,8 @@ export interface AgentProfile {
   readonly instructions: string;
   readonly provider: string;
   readonly model: string;
+  /** Follow the current chat connection rather than pinning a provider and model. */
+  readonly useCurrentModel?: boolean;
   readonly runAfterTeammates?: boolean;
   /** Its look on the Agents board. Absent: a stable default from its id. */
   readonly mascot?: MascotLook;
@@ -34,6 +36,14 @@ function profile(value: unknown): AgentProfile {
   if (raw["runAfterTeammates"] !== undefined && typeof raw["runAfterTeammates"] !== "boolean") {
     throw new Error("Invalid agent execution order.");
   }
+  if (raw["useCurrentModel"] !== undefined && typeof raw["useCurrentModel"] !== "boolean") throw new Error("Invalid agent model selection.");
+  const useCurrentModel = raw["useCurrentModel"] === true;
+  const routeField = (key: string, max: number): string => {
+    if (!useCurrentModel) return field(key, max);
+    const text = raw[key];
+    if (typeof text !== "string" || text.trim().length > max || text.includes("\u0000")) throw new Error("Invalid agent model route.");
+    return text.trim();
+  };
   // Tool access is a safety boundary, so a value this build cannot read rejects the agent
   // rather than quietly widening it to every tool. A look is cosmetic: an unknown one falls
   // back to the default.
@@ -47,8 +57,9 @@ function profile(value: unknown): AgentProfile {
     id,
     name: field("name", 80),
     instructions: field("instructions", 2_000),
-    provider: field("provider", 128),
-    model: field("model", 256),
+    provider: routeField("provider", 128),
+    model: routeField("model", 256),
+    ...(useCurrentModel ? { useCurrentModel: true } : {}),
     ...(raw["runAfterTeammates"] === true ? { runAfterTeammates: true } : {}),
     ...(mascot === null ? {} : { mascot }),
     ...(toolAccess === undefined ? {} : { toolAccess }),
@@ -97,7 +108,7 @@ export function buildNamedAgentTeam(prompt: string, profiles: readonly AgentProf
       id: agent.id,
       label: agent.name,
       objective: agent.instructions,
-      route: { provider: agent.provider, model: agent.model },
+      ...(agent.useCurrentModel ? {} : { route: { provider: agent.provider, model: agent.model } }),
     })),
     nodes: agents.map(agent => ({
       id: agent.id,
@@ -145,7 +156,7 @@ export function buildSoloRun(
       id: roleId,
       label: profiled?.name ?? "Default agent",
       objective: profiled?.instructions ?? "Complete the task carefully and verify your work where you can.",
-      ...(profiled === null ? {} : { route: { provider: profiled.provider, model: profiled.model } }),
+      ...(profiled === null || profiled.useCurrentModel ? {} : { route: { provider: profiled.provider, model: profiled.model } }),
       ...(profiled?.toolAccess === undefined ? {} : { toolAccess: profiled.toolAccess }),
     }],
     nodes: [{
