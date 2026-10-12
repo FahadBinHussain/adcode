@@ -19,6 +19,7 @@
  */
 import { effortFor } from "../effort.ts";
 import { allowedOutputSize } from "../outputSize.ts";
+import { localToolCalls } from "./localToolCalls.ts";
 import type {
   Provider,
   ProviderEvent,
@@ -301,11 +302,22 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
         // found", "insufficient credits", "does not support tool use"). A bare
         // status leaves the user with nothing to act on.
         let detail = "";
+        let limitMetadata: { code?: string; retryable?: boolean; resetsAt?: number } = {};
         try {
           const text = (await response.text()).trim().slice(0, 2000);
           if (text.length > 0) {
             try {
-              detail = providerErrorMessage(JSON.parse(text) as unknown) ?? text.slice(0, 500);
+              const parsed: unknown = JSON.parse(text);
+              detail = providerErrorMessage(parsed) ?? text.slice(0, 500);
+              const rawError = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>)["error"] : undefined;
+              if (typeof rawError === "object" && rawError !== null) {
+                const fields = rawError as Record<string, unknown>;
+                limitMetadata = {
+                  ...(typeof fields["code"] === "string" ? { code: fields["code"] } : {}),
+                  ...(typeof fields["retryable"] === "boolean" ? { retryable: fields["retryable"] } : {}),
+                  ...(typeof fields["resetsAt"] === "number" && Number.isSafeInteger(fields["resetsAt"]) ? { resetsAt: fields["resetsAt"] } : {}),
+                };
+              }
             } catch {
               detail = text.slice(0, 500);
             }
@@ -324,7 +336,7 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
 
         throw Object.assign(
           new Error(`${deps.displayName} returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`),
-          { status: response.status, retryAfter: response.headers.get("retry-after") },
+          { status: response.status, retryAfter: response.headers.get("retry-after"), ...limitMetadata },
         );
       }
 
@@ -333,6 +345,11 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
       const pending = new Map<number, ToolCallAccumulator>();
       const details = createDetailMerger();
       let reasoningText = "";
+      // Hold a possible local call until its whole envelope is known. Ordinary prose
+      // streams immediately; structured tool_calls always take precedence.
+      const recoverLocalCalls = deps.id === "ollama" && request.tools.length > 0;
+      let localText = "";
+      let localTextMode: "undecided" | "candidate" | "text" = recoverLocalCalls ? "undecided" : "text";
 
       let buffer = "";
       let finish: string | null = null;
@@ -406,7 +423,19 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
           if (delta === undefined) continue;
 
           if (typeof delta["content"] === "string" && delta["content"].length > 0) {
-            yield { kind: "text", text: delta["content"] };
+            if (localTextMode === "text") {
+              yield { kind: "text", text: delta["content"] };
+            } else {
+              localText += delta["content"];
+              const start = localText.trimStart();
+              if (localTextMode === "undecided" && start.length > 0) {
+                localTextMode = /^[{[<]/.test(start) ? "candidate" : "text";
+                if (localTextMode === "text") {
+                  yield { kind: "text", text: localText };
+                  localText = "";
+                }
+              }
+            }
           }
 
           // Reasoning arrives as `reasoning_content` (DeepSeek, Qwen, many local servers) or
@@ -441,6 +470,16 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
       }
 
       if (signal.aborted) return;
+
+      const recovered = pending.size === 0 && finish !== "length" && finish !== "content_filter" && localText.length > 0
+        ? localToolCalls(localText, request.tools, `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`)
+        : null;
+      if (recovered !== null) {
+        yield { kind: "status", text: "Recovering the local model's tool call" };
+        for (const call of recovered) yield { kind: "tool-call", call };
+      } else if (localText.length > 0) {
+        yield { kind: "text", text: localText };
+      }
 
       const reasoning: ProviderReasoning | undefined =
         profile.echo === "reasoning_details" && details.items().length > 0
@@ -490,7 +529,7 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
         yield { kind: "stop", reason: "max-tokens" };
       } else if (finish === "content_filter") {
         yield { kind: "stop", reason: "refusal", detail: "declined (content filter)" };
-      } else if (finish === "tool_calls" || pending.size > 0) {
+      } else if (finish === "tool_calls" || pending.size > 0 || recovered !== null) {
         yield { kind: "stop", reason: "tool-use" };
       } else {
         yield { kind: "stop", reason: "end-turn" };

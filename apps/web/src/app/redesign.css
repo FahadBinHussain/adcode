@@ -62,6 +62,11 @@ button, input, select, textarea { font-family: inherit; }
 .glass-nav-link, .glass-auth-control { color: var(--muted); font-size: 12px; font-weight: 500; padding-inline: 10px; }
 .glass-nav-link:hover, .glass-nav-link[aria-current="page"], .glass-auth-control:hover { color: var(--text); background: var(--control); }
 .glass-auth-control { color: var(--text); box-shadow: none; }
+.glass-nav-link.nav-team { color: var(--text); border: 1px solid var(--hairline); white-space: nowrap; }
+.glass-nav-link.nav-team:hover { border-color: var(--border-strong); }
+.marketplace-nav-inner { gap: 24px; }
+@media (max-width: 1240px) { .glass-nav-secondary { display: none; } .glass-nav-mobile { display: block; } }
+@media (max-width: 680px) { .nav-team-action { display: none; } }
 .glass-portal-rail { background: transparent; border: 0; box-shadow: none; backdrop-filter: none; padding: 0; gap: 8px; }
 .glass-portal-button { color: var(--text); border: 1px solid var(--hairline); border-radius: 999px; font-weight: 550; box-shadow: none; }
 .glass-portal-button:hover { color: var(--text); background: var(--control); transform: none; }
@@ -93,6 +98,8 @@ button, input, select, textarea { font-family: inherit; }
 .studio-hero h1 { color: var(--text); font-size: clamp(36px, 4.2vw, 62px); font-weight: 520; letter-spacing: -.055em; line-height: 1.1; text-shadow: none; }
 .studio-hero h1 > span { color: var(--muted); }
 .studio-hero .marketplace-hero-copy > p { max-width: 550px; margin: 24px 0 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
+.studio-hero .marketplace-hero-copy > .hero-team-note { margin-top: 18px; font-size: 12px; line-height: 1.8; }
+.hero-team-note a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .studio-hero .marketplace-hero-copy > small { color: var(--faint); font-size: 11px; margin-top: 18px; }
 .studio-hero .marketplace-hero-actions { justify-content: flex-start; margin-top: 26px; gap: 10px; }
 .marketplace-primary, .marketplace-secondary { min-height: 46px; padding: 12px 21px; border-radius: 999px; font-size: 13px; font-weight: 550; gap: 20px; }

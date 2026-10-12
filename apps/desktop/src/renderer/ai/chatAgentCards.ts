@@ -39,6 +39,8 @@ export function planSummary(steps: readonly PlanStepView[]): string {
 export interface PlanCard {
   readonly element: HTMLElement;
   update(steps: readonly PlanStepView[]): void;
+  /** End the live indicator without pretending unfinished steps were completed. */
+  finish(outcome: "failed" | "stopped" | "finished"): void;
 }
 
 export function createPlanCard(): PlanCard {
@@ -56,27 +58,40 @@ export function createPlanCard(): PlanCard {
   const list = document.createElement("ol");
   list.className = "chat-plan-steps";
   element.append(heading, list);
+  let lastSteps: readonly PlanStepView[] = [];
+  const paint = (steps: readonly PlanStepView[]): void => {
+    lastSteps = steps;
+    summary.textContent = planSummary(steps);
+    element.dataset["complete"] = String(steps.every((step) => step.status === "done"));
+    list.replaceChildren(...steps.map((step) => {
+      const item = document.createElement("li");
+      item.className = "chat-plan-step";
+      item.dataset["status"] = step.status;
+      const mark = document.createElement("span");
+      mark.className = "chat-plan-mark";
+      mark.setAttribute("aria-hidden", "true");
+      mark.textContent = step.status === "done" ? "✓" : "";
+      const text = document.createElement("span");
+      text.className = "chat-plan-text";
+      text.textContent = step.step;
+      item.append(mark, text);
+      item.setAttribute("aria-label", `${step.step}: ${step.status === "done" ? "done" : step.status === "in_progress" ? "in progress" : "to do"}`);
+      return item;
+    }));
+  };
 
   return {
     element,
     update(steps) {
-      summary.textContent = planSummary(steps);
-      element.dataset["complete"] = String(steps.every((step) => step.status === "done"));
-      list.replaceChildren(...steps.map((step) => {
-        const item = document.createElement("li");
-        item.className = "chat-plan-step";
-        item.dataset["status"] = step.status;
-        const mark = document.createElement("span");
-        mark.className = "chat-plan-mark";
-        mark.setAttribute("aria-hidden", "true");
-        mark.textContent = step.status === "done" ? "✓" : "";
-        const text = document.createElement("span");
-        text.className = "chat-plan-text";
-        text.textContent = step.step;
-        item.append(mark, text);
-        item.setAttribute("aria-label", `${step.step}: ${step.status === "done" ? "done" : step.status === "in_progress" ? "in progress" : "to do"}`);
-        return item;
-      }));
+      delete element.dataset["outcome"];
+      paint(steps);
+    },
+    finish(outcome) {
+      if (element.dataset["outcome"] !== undefined) return;
+      const unfinished = lastSteps.some((step) => step.status !== "done");
+      paint(lastSteps.map((step) => step.status === "in_progress" ? { ...step, status: "pending" } : step));
+      element.dataset["outcome"] = outcome;
+      if (unfinished) summary.textContent = `${outcome === "failed" ? "Failed" : outcome === "stopped" ? "Stopped" : "Turn ended"} · ${planSummary(lastSteps)}`;
     },
   };
 }

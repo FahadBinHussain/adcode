@@ -56,6 +56,12 @@ function tokenCount(tokens: number): string {
   return `${String(Math.round(tokens / 1000))}K`;
 }
 
+function modelName(model: AiModelInfo, local: boolean): string {
+  return local && model.name === model.id && model.id.includes(":")
+    ? model.id.split(":")[0]!.replace(/[-_]/g, " ").replace(/([a-z])(\d)/gi, "$1 $2").replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+    : model.name;
+}
+
 /** "$2", "$0.15", "$10": a price per million tokens, as short as it stays exact. */
 function price(dollars: number): string {
   return `$${dollars >= 10 ? dollars.toFixed(0) : dollars >= 1 ? dollars.toFixed(2).replace(/\.00$/, "") : dollars.toFixed(2)}`;
@@ -89,6 +95,8 @@ function localDescription(local: LocalModelsView): string {
   return "Runs on your computer: free, private, and as fast as your machine. No API key needed.";
 }
 
+let connectViewSequence = 0;
+
 export function createConnectView(deps: ConnectViewDeps): ConnectView {
   let open = false;
   let status: AiStatus | null = null;
@@ -97,6 +105,10 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
   let polling: ReturnType<typeof setInterval> | undefined;
   let activityPending = false;
   let unsubscribeStatus: (() => void) | undefined;
+  let activeTab: "free" | "all" = "free";
+  let freeSelecting = false;
+  let freeError = "";
+  const tabPrefix = `connect-models-${++connectViewSequence}`;
 
   const element = document.createElement("section");
   element.className = "connect-view";
@@ -122,7 +134,7 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
   const headingGroup = document.createElement("div");
   headingGroup.className = "connect-heading-group";
   const subtitle = document.createElement("p");
-  subtitle.textContent = "Your assistant. Your choice of model.";
+  subtitle.textContent = "Choose what powers your assistant.";
   headingGroup.append(title, subtitle);
   header.append(headingGroup, done);
 
@@ -246,6 +258,7 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     }
     if (quick === null) {
       quick = createQuickConnect({
+        includeKeyless: false,
         compact: true,
         onConnected: () => void load(),
         openAllProviders: () => search.focus(),
@@ -259,7 +272,164 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     }
   }
 
-  panel.append(header, steps, progress, lede, quickHost, toolbar, body, footer);
+  const tabs = document.createElement("div");
+  tabs.className = "connect-tabs";
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("aria-label", "Model connection options");
+  const freePanel = document.createElement("section");
+  freePanel.className = "connect-free-panel";
+  freePanel.id = `${tabPrefix}-free-panel`;
+  freePanel.setAttribute("role", "tabpanel");
+  freePanel.setAttribute("aria-labelledby", `${tabPrefix}-free-tab`);
+  const allPanel = document.createElement("div");
+  allPanel.className = "connect-all-panel";
+  allPanel.id = `${tabPrefix}-all-panel`;
+  allPanel.setAttribute("role", "tabpanel");
+  allPanel.setAttribute("aria-labelledby", `${tabPrefix}-all-tab`);
+  allPanel.append(steps, progress, lede, quickHost, toolbar, body);
+  const tabButtons = (["free", "all"] as const).map((mode) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "connect-tab";
+    button.id = `${tabPrefix}-${mode}-tab`;
+    button.textContent = mode === "free" ? "Free models" : "Your API key";
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-controls", `${tabPrefix}-${mode}-panel`);
+    button.addEventListener("click", () => selectTab(mode));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      selectTab(event.key === "Home" ? "free" : event.key === "End" ? "all" : activeTab === "free" ? "all" : "free", true);
+    });
+    tabs.append(button);
+    return button;
+  });
+  function selectTab(mode: "free" | "all", focus = false): void {
+    activeTab = mode;
+    element.dataset["tab"] = mode;
+    freePanel.hidden = mode !== "free";
+    allPanel.hidden = mode !== "all";
+    tabButtons.forEach((button, index) => {
+      const selected = mode === (index === 0 ? "free" : "all");
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      if (selected && focus) button.focus();
+    });
+  }
+  function renderFreeModels(): void {
+    freePanel.replaceChildren();
+    const note = document.createElement("p");
+    note.className = "connect-free-intro";
+    note.textContent = "No API key needed. Pick a model to get started.";
+    freePanel.append(note);
+    if (freeError) {
+      const error = document.createElement("p");
+      error.className = "connect-result";
+      error.setAttribute("role", "alert");
+      error.textContent = freeError;
+      const retry = document.createElement("button");
+      retry.type = "button"; retry.className = "ad-btn"; retry.textContent = "Try again";
+      retry.addEventListener("click", () => { void load(); });
+      freePanel.append(error, retry);
+    }
+    if (status === null) {
+      if (!freeError) { const loading = document.createElement("p"); loading.className = "connect-free-note"; loading.textContent = "Checking available models…"; loading.setAttribute("role", "status"); freePanel.append(loading); }
+      return;
+    }
+    const providers = status.providers.filter((provider) => !provider.needsKey && provider.hasKey && provider.models.length > 0 && (provider.local === undefined || provider.local.running));
+    if (providers.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "empty-hint";
+      empty.textContent = "No free models available yet.";
+      const browse = document.createElement("button"); browse.type = "button"; browse.className = "ad-btn"; browse.textContent = "Connect with an API key";
+      browse.addEventListener("click", () => selectTab("all", true));
+      freePanel.append(empty, browse);
+    }
+    for (const provider of providers) {
+      const group = document.createElement("section"); group.className = "connect-free-group";
+      const local = provider.local !== undefined;
+      group.dataset["source"] = local ? "local" : "included";
+      const head = document.createElement("div"); head.className = "connect-free-group-head";
+      const avatar = document.createElement("span"); avatar.className = "connect-free-avatar";
+      avatar.textContent = local ? "O" : "AD";
+      avatar.setAttribute("aria-hidden", "true");
+      const heading = document.createElement("div"); heading.className = "connect-free-group-copy";
+      const title = document.createElement("h2"); title.textContent = local ? "On this computer" : "Included with ADCode";
+      const description = document.createElement("p"); description.className = "connect-free-note";
+      description.textContent = local ? "Ollama · runs locally" : "Your account’s daily allowance";
+      heading.append(title, description);
+      const badge = document.createElement("span"); badge.className = "connect-source-badge";
+      badge.textContent = local ? "Local" : "No key";
+      head.append(avatar, heading, badge);
+      group.append(head);
+      for (const model of provider.models) {
+        const row = document.createElement("article"); row.className = "connect-free-model";
+        const copy = document.createElement("div"); copy.className = "connect-free-model-copy";
+        const name = document.createElement("strong");
+        name.textContent = modelName(model, local);
+        name.title = model.id;
+        const facts = document.createElement("div"); facts.className = "connect-free-facts";
+        const tags: string[] = [];
+        if (model.recommended) tags.push("Recommended");
+        if (typeof model.contextWindow === "number" && model.contextWindow > 0) tags.push(`${tokenCount(model.contextWindow)} context`);
+        if (local) {
+          const size = model.id.split(":")[1]?.match(/^\d+(?:\.\d+)?b/i)?.[0];
+          if (size) tags.push(size.toUpperCase());
+        }
+        if (model.toolCall) tags.push("Tools");
+        for (const text of tags) {
+          const tag = document.createElement("span"); tag.textContent = text;
+          if (text === "Recommended") tag.className = "connect-free-recommended";
+          facts.append(tag);
+        }
+        copy.append(name, facts);
+        const use = document.createElement("button"); use.type = "button"; use.className = "ad-btn";
+        const current = status.ready && status.activeProvider === provider.id && status.activeModel === model.id;
+        row.dataset["current"] = String(current);
+        use.textContent = current ? "In use" : "Use model";
+        use.setAttribute("aria-label", `${current ? "In use" : "Use model"}: ${model.name}`);
+        use.disabled = current || freeSelecting;
+        use.addEventListener("click", () => {
+          freeSelecting = true; freeError = ""; renderFreeModels();
+          void (async () => {
+            try {
+              await deps.write("adcode.ai.provider", provider.id);
+              await deps.write("adcode.ai.model", model.id);
+              status = await deps.status();
+              renderProviders(); renderDetail(); paintQuick(status.ready);
+            } catch (error) { freeError = error instanceof Error ? error.message : "Could not select this model. Try again."; }
+            finally { freeSelecting = false; if (open) renderFreeModels(); }
+          })();
+        });
+        row.append(copy, use); group.append(row);
+      }
+      const details = document.createElement("details"); details.className = "connect-free-disclosure";
+      const summary = document.createElement("summary"); summary.textContent = local ? "About local models" : "Usage & privacy";
+      const privacy = document.createElement("p");
+      privacy.textContent = local
+        ? "Requests stay on this computer. Speed depends on your hardware."
+        : "Sign in with a verified account to use your daily allowance. Messages and project context pass through ADCode to the chosen provider.";
+      details.append(summary, privacy);
+      for (const model of provider.models) {
+        if (!model.note) continue;
+        const explanation = document.createElement("p"); explanation.textContent = `${model.name}: ${model.note}`;
+        details.append(explanation);
+      }
+      group.append(details);
+      freePanel.append(group);
+    }
+    const local = status.providers.find((provider) => provider.local !== undefined)?.local;
+    if (local !== undefined && (!local.running || local.models.length === 0)) {
+      const group = document.createElement("section"); group.className = "connect-free-group";
+      const title = document.createElement("h3"); title.textContent = "Models on this computer";
+      const help = document.createElement("p"); help.className = "connect-free-note";
+      help.textContent = local.running ? "Install a model in Ollama, then check again. Local requests stay on your computer." : "Start Ollama to use local models without an API key.";
+      group.append(title, help, localActions(local)); freePanel.append(group);
+    }
+  }
+  panel.append(header, tabs, freePanel, allPanel, footer);
+  selectTab("free");
+  renderFreeModels();
   element.append(panel);
 
   // Detail entrance replays only when the user moves somewhere new - a model
@@ -419,7 +589,7 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     const rank = new Map(PINNED_PROVIDERS.map((id, index) => [id, index]));
     const fallback = PINNED_PROVIDERS.length;
     return status.providers
-      .filter(matches)
+      .filter((provider) => provider.needsKey && matches(provider))
       .sort(
         (a, b) =>
           (rank.get(a.id) ?? fallback) - (rank.get(b.id) ?? fallback) ||
@@ -431,11 +601,13 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     list.replaceChildren();
     if (status === null) return;
     renderSteps();
-    providerCount.textContent = String(status.providers.filter(matches).length);
+    providerCount.textContent = String(status.providers.filter((provider) => provider.needsKey && matches(provider)).length);
     const current = status.providers.find((provider) => provider.id === status?.activeProvider);
+    const currentModel = current?.models.find((model) => model.id === status?.activeModel);
     connectionStatus.textContent = status.ready
-      ? `${current?.displayName ?? status.activeProvider} · ${status.activeModel || "Default model"}`
-      : "Choose a provider to get started";
+      ? `Using ${currentModel ? modelName(currentModel, current?.local !== undefined) : status.activeModel || "default model"}`
+      : "No model selected";
+    connectionStatus.title = `${current?.displayName ?? status.activeProvider} · ${status.activeModel}`;
     connectionStatus.dataset["ready"] = String(status.ready);
     catalogueStatus.textContent = status.catalogueIsLive ? "Live model catalogue" : "Bundled model catalogue";
     catalogueStatus.title = `Catalogue updated ${status.catalogueTakenOn}`;
@@ -524,7 +696,9 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     detail.append(heading);
     const description = document.createElement("p");
     description.className = "connect-detail-description";
-    description.textContent = provider.transport === "unsupported"
+    description.textContent = provider.id === "tagflow"
+      ? "Included AI for your verified account, with a daily allowance. No API key needed. Prompts and project context pass through ADCode's server to the selected provider. View your allowance in AI usage. Sign in in Account before your first message."
+      : provider.transport === "unsupported"
       ? "Add an API connection with this provider's endpoint to get started."
       : provider.local !== undefined
         ? localDescription(provider.local)
@@ -1051,6 +1225,7 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
         renderProviders();
         renderDetail();
       });
+      renderFreeModels();
     };
 
     if (!local.installed) {
@@ -1109,7 +1284,19 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     activityPending = true;
     try {
       const next = await deps.status();
-      if (open) { status = next; renderActivity(); }
+      if (open) {
+        const providersChanged = JSON.stringify(status?.providers) !== JSON.stringify(next.providers);
+        const selectionChanged = status?.activeProvider !== next.activeProvider ||
+          status?.activeModel !== next.activeModel || status?.ready !== next.ready;
+        status = next;
+        renderActivity();
+        if (providersChanged || selectionChanged) {
+          // Refresh newly discovered providers without clearing an unfinished connection form.
+          renderProviders();
+          paintQuick(next.ready);
+          renderFreeModels();
+        }
+      }
     } catch { /* Keep the last usable status during a transient error. */ }
     finally { activityPending = false; }
   }
@@ -1141,15 +1328,21 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     try {
       status = await deps.status();
       if (!open) return;
-      selected ??= status.activeProvider;
+      freeError = "";
+      if (!status.providers.some((provider) => provider.id === selected && provider.needsKey) && !status.connections?.some((connection) => connection.id === selected)) {
+        selected = status.providers.find((provider) => provider.id === status?.activeProvider && provider.needsKey)?.id ?? status.providers.find((provider) => provider.needsKey)?.id ?? null;
+      }
 
       lede.textContent = "Choose the model your assistant uses. Connect a provider or add your own API endpoint.";
       paintQuick(status.ready);
 
       renderDetail();
       renderProviders();
+      renderFreeModels();
     } catch (error) {
       if (!open) return;
+      freeError = error instanceof Error ? error.message : "Could not load models.";
+      renderFreeModels();
       detail.replaceChildren();
       const message = document.createElement("p");
       message.className = "connect-result";
@@ -1183,7 +1376,8 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
       polling = setInterval(() => { void refreshActivityStatus(); }, 3000);
 
       requestAnimationFrame(() => {
-        search.focus();
+        if (activeTab === "free") tabButtons[0]?.focus();
+        else search.focus();
       });
     },
 

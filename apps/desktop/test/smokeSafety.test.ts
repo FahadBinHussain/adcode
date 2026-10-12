@@ -120,6 +120,6 @@ describe("packaged smoke safety", () => {
   it("resolves packaged ad smoke artifacts through the shared release policy", () => {
     const source = readFileSync(resolve(import.meta.dirname, "../../../scripts/smoke-ads.mjs"), "utf8");
     expect(source).toContain('import { releaseDirectory } from "./release-directory.mjs"');
-    expect(source).toContain('join(releaseDirectory(REPO), "win-unpacked", "ADCode.exe")');
+    expect(source).toContain('join(releaseDirectory(REPO), process.platform === "win32" ? "win-unpacked" : "linux-unpacked", process.platform === "win32" ? "ADCode.exe" : "ADCode")');
   });
 });

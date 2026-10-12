@@ -62,6 +62,7 @@ import {
   withSummary,
   summaryCoverage,
   restoreHistory,
+  historyForModelSwitch,
   estimateTokens,
   type AgentCompaction,
   type CatalogueProvider,
@@ -145,6 +146,7 @@ import { createAiAutomationService, type AiAutomationService } from "./aiAutomat
 import { toAiAutomationView } from "./aiAutomationViews.ts";
 import { askOllama, localModels, startOllama } from "./localModels.ts";
 import { apiBaseUrl } from "./backend.ts";
+import { buildTagflowProvider, refreshTagflowModels, tagflowCatalogue, tagflowDefaultModel } from "./tagflowAi.ts";
 import { recordModelOutcome } from "./modelOutcomes.ts";
 import { outcomeOfError } from "../shared/modelOutcomes.ts";
 import { preferredOllamaModel } from "../shared/quickConnect.ts";
@@ -159,10 +161,10 @@ function connections() { try { return parseConnections(currentSettings()["adcode
 /**
  * The providers that need no key.
  *
- * Only the local one: it talks to a model on the user's own machine, and asking for a
- * credential to reach `127.0.0.1` would be theatre.
+ * Ollama runs locally. Included Tagflow uses the signed-in account through our relay;
+ * its provider credential is held only by the server.
  */
-const KEYLESS = new Set(["ollama"]);
+const KEYLESS = new Set(["ollama", "tagflow"]);
 
 /**
  * The catalogue, live where a fetch has succeeded and bundled otherwise.
@@ -187,7 +189,9 @@ let preferences = preferencesWith(EMPTY_OVERRIDES);
 const overridesFile = (): string => join(app.getPath("userData"), "model-overrides.json");
 
 function adoptCatalogue(): void {
-  catalogue = applyOverrides(baseCatalogue, overrides);
+  const included = tagflowCatalogue();
+  const direct = applyOverrides(baseCatalogue.filter((provider) => provider.id !== "tagflow"), overrides);
+  catalogue = included === null ? direct : [included, ...direct];
   preferences = preferencesWith(overrides);
 }
 
@@ -214,8 +218,37 @@ async function refreshModelOverrides(): Promise<void> {
  * Both lists, on launch, in the background: models.dev for what exists, the admin panel for
  * what to recommend and hide. Neither is waited on; the bundled snapshot is usable at once.
  */
+let refreshingIncludedAi: Promise<void> | null = null;
+
+/** Publish included AI as soon as it arrives, independently of the larger model catalogue. */
+function refreshIncludedAi(force = false): Promise<void> {
+  if (refreshingIncludedAi !== null) return refreshingIncludedAi;
+  refreshingIncludedAi = (async () => {
+    const before = tagflowCatalogue();
+    await refreshTagflowModels(force);
+    adoptCatalogue();
+    let selectedIncluded = false;
+    // Older settings contain the old model default even when no AI was ever connected.
+    const model = currentSettings()["adcode.ai.model"];
+    if (tagflowCatalogue() !== null && activeProvider() === "anthropic" &&
+        (!model || model === DEFAULT_ANTHROPIC_MODEL) && !await keys.has("anthropic")) {
+      // Recheck after the keychain read so a concurrent user selection wins.
+      if (activeProvider() === "anthropic" && currentSettings()["adcode.ai.model"] === model) {
+        await writeSetting("adcode.ai.provider", "tagflow");
+        await writeSetting("adcode.ai.model", "");
+        invalidateChatAgent();
+        selectedIncluded = true;
+      }
+    }
+    if (before !== tagflowCatalogue() || selectedIncluded) broadcast(CHANNELS.aiProvidersChanged, null);
+  })().finally(() => { refreshingIncludedAi = null; });
+  return refreshingIncludedAi;
+}
+
 export async function refreshModelLists(): Promise<void> {
-  await Promise.all([refreshCatalogue(), refreshModelOverrides()]);
+  await Promise.all([refreshCatalogue(), refreshModelOverrides(), refreshIncludedAi(true)]);
+  adoptCatalogue();
+  broadcast(CHANNELS.aiProvidersChanged, null);
 }
 
 export async function refreshCatalogue(): Promise<void> {
@@ -672,7 +705,9 @@ export async function aiResumeSession(id: string): Promise<ChatSession | null> {
 
   session = found;
   // The agent's own history belongs to the previous conversation.
+  agent?.cancel();
   agent = null;
+  rebuildChatAgent = false;
   activeTaskId = null;
   return found;
 }
@@ -686,6 +721,18 @@ let agent: Agent | null = null;
 let agentProvider: string | null = null;
 let agentModel: string | null = null;
 let agentEndpoint: string | null = null;
+let rebuildChatAgent = false;
+
+/** Retain the live history until the next model has taken it, including completed tools. */
+function invalidateChatAgent(): void {
+  agent?.cancel();
+  rebuildChatAgent = true;
+}
+
+/** Stop a previous model's pending request or limit wait when the user switches routes. */
+export function aiModelSettingsChanged(): void {
+  if (agent !== null && (agentProvider !== activeProvider() || agentModel !== activeModel(activeProvider()) || agentEndpoint !== baseUrlOf(activeProvider()))) invalidateChatAgent();
+}
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -724,7 +771,7 @@ function broadcastLive(source: LiveSourceView, event: LiveEventView): void {
 
 function activeProvider(): string {
   const value = currentSettings()["adcode.ai.provider"];
-  return typeof value === "string" && value.length > 0 ? value : "anthropic";
+  return typeof value === "string" && value.length > 0 ? value : "tagflow";
 }
 
 /**
@@ -738,6 +785,7 @@ function activeModel(provider: string): string {
   const connection = connections().find(item => item.id === provider);
   if (connection) return connection.model;
   const value = currentSettings()["adcode.ai.model"];
+  if (provider === "tagflow") return typeof value === "string" && tagflowCatalogue()?.models.some((model) => model.id === value) ? value : tagflowDefaultModel();
   if (typeof value === "string" && value.trim().length > 0) return value.trim();
 
   // The provider's recommended model, not whatever upstream happened to list first - for
@@ -768,7 +816,11 @@ function outputBudget(providerId: string, model: string): { maxTokens: number; m
  * That is what makes hundreds of providers reachable without hundreds of adapters, and it
  * is the same mechanism the custom endpoint uses.
  */
-export async function buildProvider(id: string, offeredKey?: string): Promise<Provider | null> {
+export async function buildProvider(id: string, offeredKey?: string, source = "unknown", roleId?: string): Promise<Provider | null> {
+  if (id === "tagflow") return buildTagflowProvider(source,source === "chat" ? requestId => {
+    includedChatRequestId = requestId;
+    broadcast(CHANNELS.aiEvent,{ kind: "included-request", requestId });
+  } : undefined,roleId);
   const key = offeredKey ?? (KEYLESS.has(id) ? "" : ((await keys.get(id)) ?? ""));
   const paced = (provider: Provider) => requestScheduler.wrap(provider, id, () => connections().find(item => item.id === id)?.rpm ?? 6000);
   if (!KEYLESS.has(id) && key.length === 0 && id !== "custom") return null;
@@ -799,6 +851,8 @@ const chatCommands = createCommandRunner();
 
 /** Stop what the assistant left running: the folder changed, or the app is quitting. */
 export function aiStopToolProcesses(): void {
+  // A task waiting for tomorrow's allowance still belongs to this folder.
+  agent?.cancel();
   chatCommands.stopAll();
   closeAgentBrowser();
 }
@@ -879,13 +933,14 @@ function toolRunner() {
 }
 
 export async function aiStatus(): Promise<AiStatus> {
-  const provider = activeProvider();
+  void refreshIncludedAi();
+  adoptCatalogue();
 
   const providers: AiProviderInfo[] = [];
 
   for (const known of catalogue) {
     const needsKey = !KEYLESS.has(known.id);
-    const recommended = recommendedModel(catalogue, known.id, preferences);
+    const recommended = known.id === "tagflow" ? tagflowDefaultModel() : recommendedModel(catalogue, known.id, preferences);
 
     providers.push({
       id: known.id,
@@ -896,7 +951,7 @@ export async function aiStatus(): Promise<AiStatus> {
         .map((model) => modelInfo(known.id, model, recommended)),
       hasKey: needsKey ? await keys.has(known.id) : true,
       needsKey,
-      transport: transportFor(known.id),
+      transport: known.id === "tagflow" ? "openai-compatible" : transportFor(known.id),
       doc: known.doc,
     });
   }
@@ -944,6 +999,9 @@ export async function aiStatus(): Promise<AiStatus> {
   for (const item of connections()) {
     providers.unshift({id:item.id,displayName:item.name,models:[{id:item.model,name:item.model,toolCall:true,reasoning:false}],hasKey:await keys.has(item.id),needsKey:true,transport:"openai-compatible",doc:null});
   }
+  // Discovery and keychain reads can finish after a migration or user selection. Read the
+  // active route together with its model now, rather than returning the earlier provider.
+  const provider = activeProvider();
   const active = providers.find((one) => one.id === provider);
 
   return {
@@ -966,9 +1024,9 @@ export async function aiStatus(): Promise<AiStatus> {
 }
 
 export async function setProviderKey(provider: string, key: string): Promise<AiStatus> {
-  if (provider.length > 0 && key.trim().length > 0) {
+  if (provider !== "tagflow" && provider.length > 0 && key.trim().length > 0) {
     await keys.set(provider, key.trim());
-    agent = null;
+    if (provider === agentProvider) invalidateChatAgent();
   }
   return aiStatus();
 }
@@ -976,7 +1034,7 @@ export async function setProviderKey(provider: string, key: string): Promise<AiS
 export async function clearProviderKey(provider: string): Promise<AiStatus> {
   if (provider.length > 0) {
     await keys.clear(provider);
-    agent = null;
+    if (provider === agentProvider) invalidateChatAgent();
   }
   return aiStatus();
 }
@@ -1020,8 +1078,7 @@ export async function checkProviderKey(providerId: string, key: string): Promise
       message: error instanceof Error ? error.message : "that key was not accepted",
     };
   } finally {
-
-    agent = null;
+    rebuildChatAgent = true;
   }
 }
 
@@ -1061,13 +1118,13 @@ export async function aiQuickConnect(providerId: string, key: string, model: str
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "that key was not accepted" };
   } finally {
-    agent = null;
+    rebuildChatAgent = true;
   }
 
   if (!KEYLESS.has(providerId)) await keys.set(providerId, trimmed);
   await writeSetting("adcode.ai.provider", providerId);
   await writeSetting("adcode.ai.model", chosen);
-  agent = null;
+  invalidateChatAgent();
   return { ok: true, provider: providerId, model: chosen, status: await aiStatus() };
 }
 
@@ -1199,17 +1256,16 @@ function compactionFor(providerId: string, model: string): AgentCompaction {
 /**
  * The chat's agent: the one it has, or a new one when there is none or the model changed.
  *
- * A new agent is never a blank one. A different model on the same provider takes the
- * history exactly as it stands, tool steps included. Anything else - a reopened
- * conversation, a restart, a changed key, another provider - is given the saved
- * conversation: its summary and the messages after it, which every provider can read.
+ * A new model or provider takes the current history, including its summary and tool
+ * steps. Provider-specific reasoning is removed. A reopened conversation or restart
+ * starts from the saved summary and messages.
  * Returns what to tell the user when no agent can be built.
  */
 async function ensureChatAgent(providerId: string, model: string): Promise<Agent | string> {
-  if (agent !== null && agentProvider === providerId && agentModel === model && agentEndpoint === baseUrlOf(providerId)) {
+  if (!rebuildChatAgent && agent !== null && agentProvider === providerId && agentModel === model && agentEndpoint === baseUrlOf(providerId)) {
     return agent;
   }
-  const provider = await buildProvider(providerId);
+  const provider = await buildProvider(providerId,undefined,"chat");
 
   if (provider === null) {
     const name = providerIn(catalogue, providerId)?.name ?? providerId;
@@ -1219,7 +1275,7 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
       : `No API key for ${name}. Add one in Connect a model.`;
   }
 
-  const carried = agent !== null && agentProvider === providerId ? [...agent.history()] : null;
+  const carried = agent === null ? null : historyForModelSwitch(agent.history());
   const built = createAgent({
     provider,
     model,
@@ -1255,6 +1311,7 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
     },
   });
   agent = built;
+  rebuildChatAgent = false;
   agentProvider = providerId;
   agentModel = model;
   agentEndpoint = baseUrlOf(providerId);
@@ -1308,7 +1365,7 @@ export function aiContextUsage(): AiContextUsageView {
   const settings = currentSettings();
   const live = agent !== null && agentProvider === providerId && agentModel === model ? agent.contextUsage() : null;
   return {
-    tokens: live?.tokens ?? (session === null ? 0 : estimateTokens("", restoreHistory(session), chatTools())),
+    tokens: live?.tokens ?? estimateTokens("", agent === null ? session === null ? [] : restoreHistory(session) : historyForModelSwitch(agent.history()), chatTools()),
     contextWindow: contextWindowFor(catalogue, providerId, model),
     thresholdPercent: compactThreshold({ ...settings, "adcode.ai.autoCompact": true }) ?? 80,
     autoCompact: settings["adcode.ai.autoCompact"] !== false,
@@ -1317,6 +1374,7 @@ export function aiContextUsage(): AiContextUsageView {
 
 /** What the user was looking at when they last sent; folded into every round-trip of that turn. */
 let editorContext: AiEditorContextView | null = null;
+let includedChatRequestId: string | undefined;
 
 export async function aiSend(
   text: string,
@@ -1326,6 +1384,7 @@ export async function aiSend(
   if (sendInFlight) throw new Error("The built-in assistant is already handling a message");
   sendInFlight = true;
   editorContext = editor;
+  includedChatRequestId = undefined;
   currentTaskPrompt = text.slice(0, 200);
   try {
     const providerId = activeProvider();
@@ -1350,6 +1409,7 @@ export async function aiSend(
 
     session ??= startSession();
     session = withMessage(session, { role: "user", text: recordedText, at: Date.now() });
+    let turnSession = session;
 
     let answer = "";
     let paragraphBreak = false;
@@ -1372,7 +1432,10 @@ export async function aiSend(
       }
       chatEvents.push(event);
       if (event.kind === "tool-draft") continue;
-      if (event.kind === "compacted") await recordCompaction(ready, event);
+      if (event.kind === "compacted" && session?.id === turnSession.id) {
+        await recordCompaction(ready, event);
+        if (session?.id === turnSession.id) turnSession = session;
+      }
       // What the debug log keeps of a turn: which tools failed and why, and how it ended.
       // Never the prompt, the answer, or a file's contents.
       if (event.kind === "tool-call") toolCalls += 1;
@@ -1456,11 +1519,14 @@ export async function aiSend(
      * nothing to say rather than as something having gone wrong.
      */
     if (answer.length > 0) {
-      session = withMessage(session, { role: "assistant", text: answer, at: Date.now() });
+      turnSession = withMessage(session?.id === turnSession.id ? session : turnSession, { role: "assistant", text: answer, at: Date.now(),...(includedChatRequestId === undefined ? {} : { includedRequestId: includedChatRequestId }) });
     }
 
-    await writeSession(currentWorkspace()?.root ?? null, session);
-    broadcast(CHANNELS.aiSessionChanged, session);
+    await writeSession(turnRoot, turnSession);
+    if (session?.id === turnSession.id) {
+      session = turnSession;
+      broadcast(CHANNELS.aiSessionChanged, session);
+    }
     const checkpoint = await checkpoints.finish().catch(() => null);
     if (checkpoint !== null) {
       broadcast(CHANNELS.aiCheckpoint, {
@@ -1545,7 +1611,7 @@ export async function aiCompletion(input: AiCompletionInputView): Promise<string
 
   try {
     const providerId = activeProvider();
-    const provider = await buildProvider(providerId);
+    const provider = await buildProvider(providerId,undefined,"completion");
     if (provider === null || controller.signal.aborted) return null;
 
     const request = {
@@ -1610,7 +1676,7 @@ export async function aiInlineEdit(input: AiInlineEditInputView): Promise<AiInli
   inlineEditInFlight = controller;
   try {
     const providerId = activeProvider();
-    const provider = await buildProvider(providerId);
+    const provider = await buildProvider(providerId,undefined,"edit");
     if (provider === null) return { ok: false, error: "Connect a model first: AI, then Connect a Model." };
     const request = buildInlineEditRequest(activeModel(providerId), input, 8192);
     let answer = "";
@@ -1653,7 +1719,7 @@ export function aiCancelCompletion(requestId: number): void {
  */
 export function createBuiltInAiTeamNodeRunner(): AiTeamNodeRunner {
   return async (input) => {
-    const provider = await buildProvider(input.route.providerId);
+    const provider = await buildProvider(input.route.providerId,undefined,"agent",input.context.role.id);
     if (provider === null) throw new Error(`No connection for ${input.route.providerId}`);
     const service = await readyAiWorkspaceService();
     const task = await service.read(input.childTaskId);
@@ -1879,6 +1945,7 @@ async function readyAiTeamCoordinator(): Promise<AiTeamCoordinator> {
 }
 
 const agentSlots = createSlotPool(() => Number(currentSettings()["adcode.ai.parallelAgents"]) || 3);
+const soloSettlements = new Map<string, Promise<void>>();
 
 /**
  * A finished board run follows the same edit setting as the chat: with Apply automatically it
@@ -1964,7 +2031,12 @@ export async function aiTeamStart(id: string): Promise<AiTeamView> {
   const coordinator = await readyAiTeamCoordinator();
   const started =
     team.state === "paused" ? await coordinator.resume(id) : await coordinator.startConfirmed(id);
-  if (started.plan.kind === "solo") void settleSoloRun(id, coordinator);
+  if (started.plan.kind === "solo") {
+    const settling = settleSoloRun(id, coordinator).finally(() => {
+      if (soloSettlements.get(id) === settling) soloSettlements.delete(id);
+    });
+    soloSettlements.set(id, settling);
+  }
   return teamView(started);
 }
 
@@ -1973,6 +2045,31 @@ export async function aiTeamCancel(id: string): Promise<AiTeamView> {
     throw new Error("That Team does not belong to the open workspace");
   }
   return teamView(await (await readyAiTeamCoordinator()).cancel(id));
+}
+
+export async function aiTeamRemove(id: string): Promise<boolean> {
+  const team = await currentTeam(id);
+  if (team === null) {
+    throw new Error("That agent run does not belong to the open workspace");
+  }
+  if (["preparing", "running", "merging"].includes(team.state)) {
+    throw new Error("Stop the agent before deleting its run.");
+  }
+  await soloSettlements.get(id);
+  const removed = await (await readyAiTeamCoordinator()).remove(id);
+  if (removed) {
+    const timer = activityTimers.get(id);
+    if (timer !== undefined) clearTimeout(timer);
+    activityTimers.delete(id);
+    teamActivity.delete(id);
+    teamTouched.delete(id);
+    teamHolds.delete(id);
+    teamMailbox.clear(id);
+    teamOverlaps.clear(id);
+    broadcast(CHANNELS.aiTeamRemoved, id);
+    broadcast(CHANNELS.aiWorkspaceChanged, null);
+  }
+  return removed;
 }
 
 export async function aiTeamTraces(id: string): Promise<AiTeamTraceView[]> {
@@ -2034,6 +2131,8 @@ export function aiReset(): void {
   completionInFlight?.controller.abort();
   completionInFlight = null;
   agent?.reset();
+  agent = null;
+  rebuildChatAgent = false;
   if (activeTaskId !== null) {
     const taskId = activeTaskId;
     void readyAiWorkspaceService()

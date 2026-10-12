@@ -51,9 +51,14 @@ describe.skipIf(process.platform !== "win32")("Windows installer checksum verifi
     const target = join(directory, "installer.exe");
     writeFileSync(target, "installer fixture");
     try {
+      // A PowerShell 7 parent passes its Core module path to Windows PowerShell.
+      // Normalise the casing too: Node selects one of duplicate Windows env keys.
+      const env: NodeJS.ProcessEnv = { ...process.env, TEST_DIGEST: digest, TEST_TARGET: target };
+      for (const key of Object.keys(env)) if (key.toLowerCase() === "psmodulepath") delete env[key];
+      env["PSModulePath"] = join(process.env["SystemRoot"] ?? "C:/Windows", "System32/WindowsPowerShell/v1.0/Modules");
       return spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
         `$ErrorActionPreference = 'Stop'; function Fail($message) { throw $message }; $asset = @{ digest = $env:TEST_DIGEST }; $target = $env:TEST_TARGET; ${block}`],
-      { encoding: "utf8", env: { ...process.env, TEST_DIGEST: digest, TEST_TARGET: target } });
+      { encoding: "utf8", env });
     } finally { rmSync(directory, { recursive: true, force: true }); }
   }
   it("verifies the selected asset's digest", () => {

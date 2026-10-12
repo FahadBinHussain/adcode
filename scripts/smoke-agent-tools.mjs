@@ -3,7 +3,7 @@
  *
  *   npm run desktop:build && node scripts/smoke-agent-tools.mjs
  *
- * Two turns, each scripted the way a real model would call the tools:
+ * Three turns, each scripted the way a real model would call the tools:
  *
  * 1. It looks at a page: a plan, `view_page` at phone size with a click, `open_preview` on
  *    that exact page. Checks the report the model received (the click landed, the console
@@ -13,6 +13,8 @@
  * 2. It reorganises files and runs a server: `move_file`, `delete_file`, a background
  *    `run_command` serving a page, `view_page` on that server's address, `stop_command`.
  *    Checks the files moved, the Undo card lists the deletion, and Undo puts everything back.
+ * 3. It loads production guidance, discovers and runs real project scripts, then audits the
+ *    page at three sizes with reduced motion. Missing check categories remain unverified.
  *
  * Prints `agentToolsEvidence: {...}` - read the values, not just the exit code.
  * ADCODE_AGENT_SMOKE_PORT picks the DevTools port (default 9461).
@@ -24,6 +26,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import assert from "node:assert/strict";
+import { releaseDirectory } from "./release-directory.mjs";
 
 const root = process.cwd();
 const require = createRequire(join(root, "package.json"));
@@ -36,6 +39,8 @@ await Promise.all([mkdir(workspace), mkdir(userData), mkdir(artifacts, { recursi
 await writeFile(join(workspace, "index.html"), '<!doctype html><html><head><title>Home smoke</title></head><body><h1>Home</h1><a href="about.html">About</a></body></html>');
 await writeFile(join(workspace, "about.html"), '<!doctype html><html><head><title>About smoke</title><meta name="viewport" content="width=device-width"></head><body><h1>About us</h1><img src="missing-photo.png" alt="Team"><button id="go" onclick="document.querySelector(\'h1\').textContent = \'Clicked through\'">Go</button><script>console.error("smoke console error")</script></body></html>');
 await writeFile(join(workspace, "old-notes.txt"), "notes to delete\n");
+await writeFile(join(workspace, "package.json"), JSON.stringify({ name: "agent-quality-fixture", scripts: { "test:ci": "node checks.cjs", build: "node --check checks.cjs" } }));
+await writeFile(join(workspace, "checks.cjs"), "const fs = require('node:fs'); require('node:assert/strict')(fs.readFileSync('about.html', 'utf8').includes('About us')); console.log('fixture verified');\n");
 await writeFile(join(userData, "session.json"), JSON.stringify({ state: { root: workspace, openFiles: [join(workspace, "index.html")], activeFile: join(workspace, "index.html") } }));
 await writeFile(join(userData, "onboarding.json"), JSON.stringify({ completed: true, at: Date.now() }));
 
@@ -67,6 +72,7 @@ const fake = createServer(async (req, res) => {
   let delta = { content: "ok" };
   const look = progress(request, "look-smoke");
   const files = progress(request, "files-smoke");
+  const quality = progress(request, "quality-smoke");
   if (look !== null) {
     delta = look.answered === 0
       ? { tool_calls: [call(0, "plan-1", "update_plan", steps("in_progress")), call(1, "look-1", "view_page", { path: "about.html", width: 390, height: 844, actions: [{ type: "click", text: "Go" }] })] }
@@ -83,6 +89,14 @@ const fake = createServer(async (req, res) => {
           : files.answered === 4
             ? { tool_calls: [call(0, "stop-1", "stop_command", { id: "cmd-1" })] }
             : { content: "Moved, deleted, served and stopped." };
+  } else if (quality !== null) {
+    const actions = [
+      call(0, "quality-guide", "load_builtin_skill", { name: "production-quality" }),
+      call(0, "quality-inspect", "inspect_project", {}),
+      call(0, "quality-check", "run_project_checks", { timeout_seconds: 30 }),
+      call(0, "quality-audit", "audit_page", { path: "about.html" }),
+    ];
+    delta = quality.answered < actions.length ? { tool_calls: [actions[quality.answered]] } : { content: "Quality checks finished; the page findings need review." };
   }
   res.end(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: delta.tool_calls ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`);
 });
@@ -96,7 +110,9 @@ const endpoint = `http://127.0.0.1:${fake.address().port}/v1`;
 const env = { ...process.env, ADCODE_AD_SERVER: "http://127.0.0.1:9" };
 delete env.ELECTRON_RUN_AS_NODE;
 const port = Number(process.env.ADCODE_AGENT_SMOKE_PORT ?? 9461);
-const child = spawn(require("electron"), ["apps/desktop", `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
+const packaged = process.argv.includes("--packaged");
+const electronPath = packaged ? join(releaseDirectory(root), process.platform === "win32" ? "win-unpacked" : "linux-unpacked", process.platform === "win32" ? "ADCode.exe" : "ADCode") : require("electron");
+const child = spawn(electronPath, [...(packaged ? [] : ["apps/desktop"]), `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
   cwd: root, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
 });
 let log = "";
@@ -249,9 +265,24 @@ try {
   await waitFor("document.querySelector('.chat-checkpoint')?.dataset.state === 'undone'", 20_000);
   files.undoRestored = (await exists("about.html")) && !(await exists("pages/about.html")) && (await readFile(join(workspace, "old-notes.txt"), "utf8")) === "notes to delete\n";
 
-  const evidence = { look, files };
+  /* 3. The production guide, actual project scripts and a responsive browser audit. */
+  await evaluate("document.querySelector('[aria-label=\"Start a new conversation\"]')?.click()");
+  await sleep(300);
+  await turn("quality-smoke", "Quality checks finished");
+  await writeFile(join(artifacts, "quality-audit.txt"), toolResult("quality-audit"));
+  const quality = {
+    guideLoaded: toolResult("quality-guide").includes("Production quality") && toolResult("quality-guide").includes("references/motion.md"),
+    inspectedScripts: toolResult("quality-inspect").includes("test:ci: node checks.cjs"),
+    realChecksPassed: toolResult("quality-check").includes("2/2 passed") && toolResult("quality-check").includes("fixture verified"),
+    missingChecksHonest: toolResult("quality-check").includes("Unconfigured standard checks: types, lint"),
+    browserAudit: toolResult("quality-audit").includes("Accessibility:") && toolResult("quality-audit").includes("Broken image"),
+    allViewportSizes: ["390×844", "768×1024", "1440×900"].every(size => toolResult("quality-audit").includes(size)),
+    reducedMotion: toolResult("quality-audit").includes("Reduced motion: emulated"),
+    toolsOffered: requests.some(request => ["inspect_project", "run_project_checks", "audit_page"].every(name => request.tools?.some(tool => tool.function?.name === name))),
+  };
+  const evidence = { look, files, quality };
   process.stdout.write(`agentToolsEvidence: ${JSON.stringify(evidence)}\n`);
-  for (const [name, value] of Object.entries({ ...look, ...Object.fromEntries(Object.entries(files).map(([key, item]) => [`files.${key}`, item])) })) {
+  for (const [name, value] of Object.entries({ ...look, ...Object.fromEntries(Object.entries(files).map(([key, item]) => [`files.${key}`, item])), ...Object.fromEntries(Object.entries(quality).map(([key, item]) => [`quality.${key}`, item])) })) {
     if (name === "mostMascotsWhileWorking" || name === "files.mostMascotsWhileWorking") assert.ok(value <= 1, `${name}: at most one mascot while working, saw ${value}`);
     else if (name === "mascotsAfter") assert.equal(value, 0, "No mascot is left once the turn is over");
     else if (name === "settledMarks") assert.ok(value >= 1, "Finished blocks show their mark");
@@ -260,7 +291,7 @@ try {
     else if (name === "agentViewVerdict") assert.match(value, /problems? found/);
     else assert.equal(value, true, name);
   }
-  process.stdout.write("PASS: the assistant looks at pages in its own browser, opens the exact page, keeps a plan, moves and deletes with Undo, and runs a server in the background.\n");
+  process.stdout.write("PASS: page interaction, preview, plans, file Undo, background commands, production guidance, project checks and responsive accessibility audits.\n");
 } catch (error) {
   failed = true;
   await globalThis.__smokeShot?.("failure").catch(() => undefined);

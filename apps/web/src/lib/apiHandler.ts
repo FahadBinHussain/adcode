@@ -24,8 +24,10 @@ import { createSupabaseStore } from "@adcode/api/adapters/supabaseStore.ts";
 import { createFirebaseJwksVerifier } from "@adcode/api/adapters/firebaseJwks.ts";
 import { createDodoProvider } from "@adcode/api/adapters/dodoPayments.ts";
 import { createWebsiteAnalyticsStore } from "@adcode/api/adapters/websiteAnalyticsStore.ts";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const handleApiRequest = createFetchHandler({
+  tagflow: { country: () => getCloudflareContext().cf?.country },
   websiteAnalytics: createWebsiteAnalyticsStore(),
   store: createSupabaseStore(),
   verifier: createFirebaseJwksVerifier(),

@@ -18,9 +18,10 @@
  * for a Google password is indistinguishable from a phishing page, and teaching people to
  * type credentials into an app's own chrome is a bad habit to spread.
  */
-import { createServer } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
 import { shell } from "electron";
+import { resultPage, RESULT_PAGE_HEADERS } from "./oauthResultPage.ts";
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────
@@ -100,72 +101,13 @@ export function cancelSignIn(): boolean {
   return true;
 }
 
-/**
- * The page the browser lands on when the flow is over.
- *
- * It is the last thing a person sees before coming back to the editor, and for a moment it
- * is the whole product - so it says what happened, and what to do next, rather than leaving
- * a blank tab and a question. Self-contained: no fonts, no images, nothing to fetch from a
- * local server that is about to close.
- */
-function resultPage(heading: string, detail: string, _ok: boolean): string {
-  /*
-   * The mark, path for path from `brandMark.ts` and `build/icon.svg`, drawn in the current
-   * colour so it inverts with the theme rather than carrying a palette of its own.
-   */
-  const mark = `<svg viewBox="0 0 1024 1024" width="52" height="52" fill="none"
-    stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M320 348L140 512L320 676" stroke-width="96"/>
-    <path d="M704 348L884 512L704 676" stroke-width="96"/>
-    <path d="M512 296V388" stroke-width="64"/>
-    <path d="M512 636V728" stroke-width="64"/>
-    <path d="M584 405C563 374 531 356 494 356C446 356 413 383 413 423C413 463 444 484 505 500C569 517 606 541 606 590C606 641 565 671 511 671C466 671 429 651 405 619" stroke-width="92"/>
-    <path d="M128 478L128 546L198 512Z" fill="#000" opacity=".32" stroke="none"/>
-    <path d="M896 478L896 546L826 512Z" fill="#000" opacity=".32" stroke="none"/>
-    <path d="M292 358L164 474" stroke="#fff" stroke-width="20" opacity=".26"/>
-    <path d="M732 358L860 474" stroke="#fff" stroke-width="20" opacity=".26"/>
-    <path d="M164 550L292 666" stroke="#000" stroke-width="20" opacity=".2"/>
-    <path d="M860 550L732 666" stroke="#000" stroke-width="20" opacity=".2"/>
-    <path d="M480 340L544 340L522 394L498 394Z" fill="#000" opacity=".3" stroke="none"/>
-    <path d="M480 630L544 630L522 684L498 684Z" fill="#000" opacity=".3" stroke="none"/>
-    <path d="M492 512Q560 536 512 576" stroke="#000" stroke-width="32" opacity=".22"/>
-    <path d="M440 400Q450 375 490 368" stroke="#fff" stroke-width="15" opacity=".24"/>
-  </svg>`;
-
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ADCode</title>
-<style>
-  :root { color-scheme: light dark; --ink: #000; --paper: #fff; --quiet: #6b6b6b; }
-  @media (prefers-color-scheme: dark) {
-    :root { --ink: #fff; --paper: #000; --quiet: #9a9a9a; }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 2rem;
-    background: var(--paper); color: var(--ink);
-    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  main { max-width: 24rem; text-align: center; }
-  svg { margin-bottom: 1.75rem; }
-  h1 { margin: 0 0 .5rem; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; }
-  p  { margin: 0; color: var(--quiet); }
-</style></head>
-<body><main>
-  ${mark}
-  <h1>${heading}</h1>
-  <p>${detail}</p>
-</main></body></html>`;
-}
-
 const base64url = (buffer: Buffer): string =>
   buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /* ── Google ─────────────────────────────────────────────────────────────── */
 
 export async function linkWithGoogle(): Promise<OAuthResult> {
+  if (cancelActive !== null) return { ok: false, reason: "Another sign-in is open. Finish or cancel it first." };
   const clientId = GOOGLE_CLIENT_ID;
   if (clientId.length === 0 || GOOGLE_CLIENT_SECRET.length === 0) {
     return { ok: false, reason: "Google sign-in isn't configured in this build." };
@@ -177,11 +119,18 @@ export async function linkWithGoogle(): Promise<OAuthResult> {
 
   return new Promise<OAuthResult>((resolve) => {
     let settled = false;
+    let callbackResponse: ServerResponse | null = null;
+    const controller = new AbortController();
     const finish = (result: OAuthResult): void => {
       if (settled) return;
       settled = true;
       cancelActive = null;
       clearTimeout(timer);
+      controller.abort();
+      if (callbackResponse !== null && !callbackResponse.writableEnded) {
+        callbackResponse.writeHead(result.ok ? 200 : 400, RESULT_PAGE_HEADERS);
+        callbackResponse.end(resultPage(result.ok ? "Sign-in approved" : "Sign-in didn't finish", result.ok ? "Google approved your sign-in. Return to ADCode to finish connecting your account." : result.reason, result.ok));
+      }
       server.close();
       resolve(result);
     };
@@ -206,37 +155,41 @@ export async function linkWithGoogle(): Promise<OAuthResult> {
         return;
       }
 
-      // Google sends `error=access_denied` when the person declines. That is a decision,
-      // not a fault, and it should not be described as one.
-      const denied = url.searchParams.get("error");
-      if (denied !== null) {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(resultPage("Sign-in cancelled", "Nothing has changed. You can try again from ADCode.", false));
-        finish({ ok: false, reason: "Sign-in was cancelled." });
-        return;
-      }
-
       // Compared before the code is used: without it, any page the user visits could
       // hand us a code from an attacker's account.
       if (url.searchParams.get("state") !== state) {
-        res.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+        res.writeHead(400, RESULT_PAGE_HEADERS);
         res.end(resultPage("Couldn't verify that sign-in", "The response didn't match the request this app started. Try again from ADCode.", false));
         finish({ ok: false, reason: "The sign-in response could not be verified." });
         return;
       }
 
+      if (callbackResponse !== null) {
+        res.writeHead(409, RESULT_PAGE_HEADERS);
+        res.end(resultPage("Sign-in is finishing", "Return to ADCode to check your connection.", false));
+        return;
+      }
+
+      // Cancellation callbacks must match the request too.
+      const denied = url.searchParams.get("error");
+      if (denied !== null) {
+        res.writeHead(200, RESULT_PAGE_HEADERS);
+        res.end(resultPage("Sign-in cancelled", "Nothing has changed. You can try again from ADCode.", false));
+        finish({ ok: false, reason: "Sign-in was cancelled." });
+        return;
+      }
+
       const code = url.searchParams.get("code");
       if (code === null) {
-        res.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+        res.writeHead(400, RESULT_PAGE_HEADERS);
         res.end(resultPage("Sign-in didn't finish", "Google didn't send anything to sign in with. Try again from ADCode.", false));
         finish({ ok: false, reason: "Sign-in was cancelled." });
         return;
       }
 
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(resultPage("Signed in", "ADCode has your account. Go back to the editor to carry on.", true));
-
-      void exchangeGoogleCode(clientId, code, verifier, port).then(finish);
+      // Wait for the token exchange before claiming the provider approved sign-in.
+      callbackResponse = res;
+      void exchangeGoogleCode(clientId, code, verifier, port, controller.signal).then(finish);
     });
 
     const timer = setTimeout(
@@ -258,7 +211,7 @@ export async function linkWithGoogle(): Promise<OAuthResult> {
       authorize.searchParams.set("code_challenge_method", "S256");
       authorize.searchParams.set("state", state);
 
-      void shell.openExternal(authorize.toString());
+      void shell.openExternal(authorize.toString()).catch(() => finish({ ok: false, reason: "Could not open your browser. Try again from ADCode." }));
     });
 
     server.on("error", () => finish({ ok: false, reason: "Could not start the sign-in listener." }));
@@ -270,6 +223,7 @@ async function exchangeGoogleCode(
   code: string,
   verifier: string,
   port: number,
+  signal: AbortSignal,
 ): Promise<OAuthResult> {
   try {
     const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -283,7 +237,7 @@ async function exchangeGoogleCode(
         redirect_uri: `http://127.0.0.1:${port}`,
         ...(GOOGLE_CLIENT_SECRET.length > 0 ? { client_secret: GOOGLE_CLIENT_SECRET } : {}),
       }),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
     });
 
     if (!response.ok) {
@@ -304,7 +258,7 @@ async function exchangeGoogleCode(
     }
 
     const body = (await response.json()) as { id_token?: unknown };
-    return typeof body.id_token === "string"
+  return typeof body.id_token === "string" && body.id_token.trim().length > 0
       ? { ok: true, provider: "google.com", idToken: body.id_token }
       : { ok: false, reason: "Google's response was missing an identity token." };
   } catch {
@@ -326,6 +280,7 @@ export interface DeviceCode {
  * begins. `onCode` fires as soon as GitHub issues it.
  */
 export async function linkWithGitHub(onCode: (code: DeviceCode) => void): Promise<OAuthResult> {
+  if (cancelActive !== null) return { ok: false, reason: "Another sign-in is open. Finish or cancel it first." };
   const clientId = GITHUB_CLIENT_ID;
   if (clientId.length === 0) {
     return { ok: false, reason: "GitHub sign-in isn't configured in this build." };
@@ -333,53 +288,66 @@ export async function linkWithGitHub(onCode: (code: DeviceCode) => void): Promis
 
   let deviceCode: string;
   let interval: number;
+  let expiresIn = FLOW_TIMEOUT_MS;
+  const controller = new AbortController();
+  let wake: (() => void) | null = null;
+  const cancel = () => { controller.abort(); wake?.(); };
+  cancelActive = cancel;
 
   try {
-    const response = await fetch("https://github.com/login/device/code", {
-      method: "POST",
-      headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ client_id: clientId, scope: "read:user user:email" }),
-      signal: AbortSignal.timeout(20_000),
-    });
+    try {
+      const response = await fetch("https://github.com/login/device/code", {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: clientId, scope: "read:user user:email" }),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
+      });
 
-    if (!response.ok) return { ok: false, reason: "GitHub wouldn't start the sign-in." };
+      if (!response.ok) return { ok: false, reason: "GitHub wouldn't start the sign-in." };
 
-    const body = (await response.json()) as Record<string, unknown>;
-    const user = body["user_code"];
-    const uri = body["verification_uri"];
-    const device = body["device_code"];
+      const body = (await response.json()) as Record<string, unknown>;
+      const user = body["user_code"];
+      const uri = body["verification_uri"];
+      const device = body["device_code"];
 
-    if (typeof user !== "string" || typeof uri !== "string" || typeof device !== "string") {
-      return { ok: false, reason: "GitHub's response was malformed." };
+      if (typeof user !== "string" || !user.trim() || typeof uri !== "string" || typeof device !== "string" || !device.trim()) {
+        return { ok: false, reason: "GitHub's response was malformed." };
+      }
+
+      const verification = new URL(uri);
+      if (verification.protocol !== "https:" || verification.hostname !== "github.com" || verification.port || verification.username || verification.password || verification.pathname !== "/login/device" || verification.search || verification.hash) {
+        return { ok: false, reason: "GitHub's verification address was unexpected. Try again." };
+      }
+
+      deviceCode = device;
+      // GitHub asks for at least this gap between polls and rejects faster ones.
+      interval = typeof body["interval"] === "number" ? body["interval"] : 5;
+      if (!Number.isSafeInteger(interval) || interval < 1 || interval > 60) return { ok: false, reason: "GitHub's response was malformed." };
+      if (typeof body["expires_in"] === "number") {
+        if (!Number.isSafeInteger(body["expires_in"]) || body["expires_in"] < 1) return { ok: false, reason: "GitHub's response was malformed." };
+        expiresIn = Math.min(FLOW_TIMEOUT_MS, body["expires_in"] * 1000);
+      }
+      if (controller.signal.aborted) return { ok: false, reason: "Sign-in cancelled." };
+      onCode({ userCode: user, verificationUri: uri });
+      try { await shell.openExternal(uri); }
+      catch { return { ok: false, reason: "Could not open your browser. Try again from ADCode." }; }
+    } catch {
+      return { ok: false, reason: controller.signal.aborted ? "Sign-in cancelled." : "Couldn't reach GitHub. Check your connection." };
     }
 
-    deviceCode = device;
-    // GitHub asks for at least this gap between polls and rejects faster ones.
-    interval = typeof body["interval"] === "number" ? body["interval"] : 5;
-    onCode({ userCode: user, verificationUri: uri });
-    void shell.openExternal(uri);
-  } catch {
-    return { ok: false, reason: "Couldn't reach GitHub. Check your connection." };
-  }
+    const deadline = Date.now() + expiresIn;
 
-  const deadline = Date.now() + FLOW_TIMEOUT_MS;
-
-  // Cancellation has to interrupt the wait, not just the check after it: polling every five
-  // seconds means pressing Cancel would otherwise appear to do nothing for five seconds.
-  let cancelled = false;
-  let wake: (() => void) | null = null;
-  cancelActive = () => {
-    cancelled = true;
-    wake?.();
-  };
-
-  try {
+    // Cancellation has to interrupt the wait, not just the check after it: polling every five
+    // seconds means pressing Cancel would otherwise appear to do nothing for five seconds.
     while (Date.now() < deadline) {
+      if (controller.signal.aborted) return { ok: false, reason: "Sign-in cancelled." };
       await new Promise<void>((resolve) => {
-        wake = resolve;
-        setTimeout(resolve, interval * 1000);
+        const timer = setTimeout(resolve, Math.min(interval * 1000, deadline - Date.now()));
+        wake = () => { clearTimeout(timer); resolve(); };
       });
-      if (cancelled) return { ok: false, reason: "Sign-in cancelled." };
+      wake = null;
+      if (controller.signal.aborted) return { ok: false, reason: "Sign-in cancelled." };
+      if (Date.now() >= deadline) break;
 
       try {
         const response = await fetch("https://github.com/login/oauth/access_token", {
@@ -390,12 +358,13 @@ export async function linkWithGitHub(onCode: (code: DeviceCode) => void): Promis
             device_code: deviceCode,
             grant_type: "urn:ietf:params:oauth:grant-type:device_code",
           }),
-          signal: AbortSignal.timeout(20_000),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
         });
 
         const body = (await response.json()) as Record<string, unknown>;
+        if (controller.signal.aborted) return { ok: false, reason: "Sign-in cancelled." };
         const token = body["access_token"];
-        if (typeof token === "string") return { ok: true, provider: "github.com", accessToken: token };
+        if (response.ok && typeof token === "string" && token.trim().length > 0) return { ok: true, provider: "github.com", accessToken: token };
 
         const error = body["error"];
         // `authorization_pending` is the normal state while the user is still typing.
@@ -406,12 +375,34 @@ export async function linkWithGitHub(onCode: (code: DeviceCode) => void): Promis
           return { ok: false, reason: "GitHub refused the sign-in." };
         }
       } catch {
+        if (controller.signal.aborted) return { ok: false, reason: "Sign-in cancelled." };
         // A single failed poll is not a failed flow; keep waiting until the deadline.
       }
     }
 
     return { ok: false, reason: "Sign-in timed out. Try again." };
   } finally {
-    cancelActive = null;
+    if (cancelActive === cancel) cancelActive = null;
   }
+}
+
+/** A completion page for GitHub's device flow, after ADCode linked the account. */
+export function openGitHubCompletionPage(): Promise<void> {
+  return new Promise(resolve => {
+    const server = createServer((request, response) => {
+      if (request.method !== "GET" || request.url !== "/") { response.writeHead(404).end(); return; }
+      response.writeHead(200, RESULT_PAGE_HEADERS);
+      response.end(resultPage("You're connected", "Your GitHub account is connected. Return to ADCode to carry on.", true, "GitHub"));
+    });
+    const timer = setTimeout(() => { server.closeAllConnections(); server.close(); }, 60_000);
+    timer.unref();
+    server.unref();
+    const failed = () => { clearTimeout(timer); server.close(); resolve(); };
+    server.on("error", failed);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") { failed(); return; }
+      void shell.openExternal(`http://127.0.0.1:${address.port}/`).then(() => resolve(), failed);
+    });
+  });
 }

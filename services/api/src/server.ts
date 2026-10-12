@@ -7,6 +7,8 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { once } from "node:events";
+import { createTagflowHandler, isTagflowPath } from "./tagflow.ts";
 import { authenticate, type TokenVerifier } from "./auth.ts";
 import { handleServe } from "./serve.ts";
 import { handleReceipts } from "./receipts.ts";
@@ -250,6 +252,7 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 }
 
 export interface ApiOptions {
+  tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined };
   websiteAnalytics?: WebsiteAnalyticsStore;
   port?: number;
   store?: Store;
@@ -279,6 +282,7 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
 
   const store = options.store ?? createMemoryStore();
   const clock = options.clock ?? { now: () => Date.now() };
+  const tagflow = createTagflowHandler({ store, verifier, clock, ...options.tagflow });
 
   let counter = 0;
   const ids = options.ids ?? { next: (prefix: string) => `${prefix}-${++counter}-${Date.now()}` };
@@ -314,6 +318,35 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     const path = url.pathname;
     const cors = corsHeaders(req.headers.origin);
+
+    if (isTagflowPath(path)) {
+      const controller = new AbortController();
+      const closed = (): void => controller.abort();
+      res.on("close", closed);
+      try {
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(req.headers)) if (value !== undefined) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+        const method = req.method ?? "GET";
+        const response = await tagflow(new Request(url, { method, headers, signal: controller.signal, ...(method === "GET" || method === "HEAD" ? {} : { body: await readBody(req) }) }));
+        if (response === null) throw new Error("Missing Tagflow response");
+        res.writeHead(response.status, Object.fromEntries(response.headers));
+        const reader = response.body?.getReader();
+        if (reader !== undefined) {
+          try {
+            for (;;) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              if (!res.write(chunk.value)) await once(res, "drain", { signal: controller.signal });
+            }
+          } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+        }
+        res.end();
+      } catch {
+        if (!res.headersSent) send(res, 503, { error: { message: "Included AI is unavailable." } }, cors);
+        else res.destroy();
+      } finally { res.removeListener("close", closed); }
+      return;
+    }
 
     // Preflight is answered before authentication: a browser sends OPTIONS without the
     // Authorization header, so requiring a token here would fail every cross-origin call.

@@ -19,6 +19,8 @@ export interface ChatMessage {
   readonly role: ChatRole;
   readonly text: string;
   readonly at: number;
+  /** Opaque included-AI request ID for voluntary feedback, never sent as model context. */
+  readonly includedRequestId?: string;
 }
 
 export interface ChatSession {
@@ -136,7 +138,9 @@ export function validateSession(raw: unknown): ChatSession | null {
       if (typeof text !== "string") continue;
 
       const at = message["at"];
-      messages.push({ role, text, at: typeof at === "number" ? at : 0 });
+      const requestId = message["includedRequestId"];
+      messages.push({ role, text, at: typeof at === "number" ? at : 0,
+        ...(role === "assistant" && typeof requestId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId) ? { includedRequestId: requestId } : {}) });
     }
   }
 

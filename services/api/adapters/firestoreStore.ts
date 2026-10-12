@@ -12,6 +12,7 @@
  */
 import { applyEntry, EMPTY_BALANCE, type Balance, type LedgerEntry } from "../src/ledger.ts";
 import { planBudgetMove } from "../src/campaignBudget.ts";
+import { tagflowUnavailable } from "../src/tagflowUnavailable.ts";
 import { utcDay } from "../src/day.ts";
 import { countDevelopers, sightings, summarizeGrowth, type ActivityRow, type MilestoneRow, type PresenceRow } from "../src/growth.ts";
 import {
@@ -1485,6 +1486,7 @@ export function createFirestoreStore(injected?: Firestore, injectedPayoutKey?: s
       });
     },
 
+    ...tagflowUnavailable,
     async getModelCatalog() {
       const snap = await (await lazy()).collection("config").doc("modelCatalog").get();
       const raw = snap.data();

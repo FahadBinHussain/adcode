@@ -1,0 +1,424 @@
+/** Streaming relay to approved providers, with atomic account allowances. */
+import { randomUUID } from "node:crypto";
+import { Buffer } from "node:buffer";
+import { authenticate, type TokenVerifier } from "./auth.ts";
+import { corsHeaders } from "./cors.ts";
+import { DEFAULT_TAGFLOW_CONFIG, isTagflowUrl, parseTagflowConfig, parseTagflowLimits, tagflowCost } from "./tagflowConfig.ts";
+import type { Clock, Store } from "./store.ts";
+import type { TagflowConfig, TagflowModel, TagflowSettlement } from "./tagflowTypes.ts";
+import { INCLUDED_PROVIDERS, includedProvider, modelProvider, type IncludedProviderId } from "./includedProviders.ts";
+import { MODEL_FEEDBACK_CATEGORIES, type ModelRequestOutcome, type ModelRequestRecord, type ModelRequestSource } from "./tagflowReportTypes.ts";
+import { completeModelReport, parseReportRange } from "./tagflowReports.ts";
+import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, AI_PERSONAS, audienceChoice, audienceCountry, observedUse, type ModelAudienceProfile } from "./modelAudience.ts";
+
+export interface TagflowOptions {
+  store: Store;
+  verifier: TokenVerifier;
+  clock: Clock;
+  apiKey?: string;
+  fetchImpl?: typeof fetch;
+  country?: (request: Request) => string | undefined;
+}
+
+export function isTagflowPath(path: string): boolean {
+  return path === "/v1/ai/tagflow/config" || path === "/v1/ai/tagflow/usage" || path === "/v1/ai/tagflow/chat/completions" ||
+    path === "/v1/ai/tagflow/feedback" || path === "/v1/ai/tagflow/audience" || path === "/v1/admin/tagflow/reports" ||
+    path === "/v1/admin/tagflow" || path === "/v1/admin/tagflow/usage" || /^\/v1\/admin\/tagflow\/users\/[^/]+$/.test(path);
+}
+
+const isRecord = (raw: unknown): raw is Record<string, unknown> => typeof raw === "object" && raw !== null && !Array.isArray(raw);
+const count = (raw: unknown): raw is number => typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0 && raw <= 100_000_000;
+const bytes = (text: string): number => Buffer.byteLength(text, "utf8");
+
+async function readJson(request: Request): Promise<unknown> {
+  if (Number(request.headers.get("content-length")) > 1_000_000) throw new Error("body-too-large");
+  const reader = request.body?.getReader();
+  if (reader === undefined) throw new SyntaxError("missing-body");
+  let size = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > 1_000_000) { await reader.cancel(); throw new Error("body-too-large"); }
+      chunks.push(chunk.value);
+    }
+  } finally { reader.releaseLock(); }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+}
+
+/** Unknown options cannot bypass pricing with n, images or token-limit aliases. */
+type ChatBody = { body: Record<string, unknown>; model: TagflowModel; input: number; output: number; contextInput: number }
+  | { error: { status: number; code: string; message: string } };
+
+function chatBody(raw: unknown, config: TagflowConfig): ChatBody {
+  const invalid = (code: string, message: string, status = 400): ChatBody => ({ error: { status, code, message } });
+  if (!isRecord(raw) || Object.keys(raw).some((key) => !["model", "messages", "tools", "tool_choice", "stream", "stream_options", "max_tokens", "max_completion_tokens", "reasoning_effort"].includes(key))) return invalid("bad-request", "Send a supported chat request.");
+  const model = config.models.find((one) => one.id === raw["model"] && one.enabled !== false);
+  if (model === undefined) return invalid("model-unavailable", "This model is not available in included AI. Choose another offered model.");
+  if (Array.isArray(raw["messages"]) && raw["messages"].some((message) => isRecord(message) && Array.isArray(message["content"]) && message["content"].some((part) => isRecord(part) && (part["type"] === "image_url" || part["type"] === "image")))) {
+    return invalid("images-not-supported", "Included AI cannot read image attachments. Choose a model that supports images, or start a text-only conversation.");
+  }
+  if (!Array.isArray(raw["messages"]) || raw["messages"].length === 0 || raw["messages"].length > 1000 ||
+      !raw["messages"].every((message) => isRecord(message) && ["system", "user", "assistant", "tool"].includes(String(message["role"])) &&
+        (typeof message["content"] === "string" || message["role"] === "assistant" && message["content"] === null))) return invalid("invalid-messages", "Included AI could not read this conversation's message format. Start a fresh conversation, or switch model.");
+  if (raw["tools"] !== undefined && (!Array.isArray(raw["tools"]) || raw["tools"].length > 100)) return invalid("bad-request", "Send a supported tool list.");
+  if (raw["stream"] !== undefined && typeof raw["stream"] !== "boolean") return invalid("bad-request", "Send a valid stream option.");
+  if (raw["max_tokens"] !== undefined && raw["max_completion_tokens"] !== undefined) return invalid("bad-request", "Send one output token limit.");
+  const requested = raw["max_tokens"] ?? raw["max_completion_tokens"] ?? config.maxOutputTokens;
+  if (!count(requested) || requested === 0) return invalid("bad-request", "Choose a positive output token limit.");
+  const output = Math.min(requested, config.maxOutputTokens, model.maxOutput);
+  const inputBytes = bytes(JSON.stringify({ messages: raw["messages"], tools: raw["tools"] ?? [] }));
+  const framing = raw["messages"].length * 16 + 256;
+  // Use the same token estimate for context checks and allowance reservations.
+  // UTF-8 bytes account for non-ASCII text; bytes themselves are not tokens.
+  // Provider-reported counts replace this estimate when the request finishes.
+  const contextInput = Math.ceil(inputBytes / 3) + framing;
+  const inputLimit = Math.max(0, Math.min(config.maxInputTokens, model.contextWindow - output));
+  if (contextInput > inputLimit) return invalid("context-length", `This request is too large for included AI. Estimated input tokens: Limit ${inputLimit}, Requested ${contextInput}. Compact the conversation, start fresh, or choose a model with more room.`, 413);
+  const input = contextInput;
+  const body: Record<string, unknown> = { ...raw, max_tokens: output, stream: raw["stream"] !== false };
+  delete body["max_completion_tokens"];
+  if (body["stream"]) body["stream_options"] = { include_usage: true };
+  else delete body["stream_options"];
+  return { body, model, input, output, contextInput };
+}
+
+/** Observe counts in bounded memory; never persist prompt or response text. */
+class UsageObserver {
+  private readonly onOutput: () => void;
+  constructor(onOutput: () => void = () => undefined) { this.onOutput = onOutput; }
+  private pending = "";
+  private readonly decoder = new TextDecoder();
+  reported: { input: number; output: number } | null = null;
+  outputBytes = 0;
+  completed = false;
+  finishReason: string | null = null;
+  readonly toolCalls = new Set<string>();
+  push(chunk: Uint8Array): Uint8Array | null {
+    this.pending += this.decoder.decode(chunk, { stream: true });
+    let output = "";
+    let boundary: RegExpMatchArray | null;
+    while ((boundary = /\r?\n\r?\n/.exec(this.pending)) !== null) {
+      const frame = this.pending.slice(0, boundary.index);
+      this.pending = this.pending.slice(boundary.index! + boundary[0].length);
+      const data = frame.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+      if (data === "[DONE]") this.completed = true;
+      else if (data !== "") {
+        if (bytes(data) > 1_000_000) throw new Error("upstream-event-too-large");
+        // Wait for a complete event before forwarding; an upstream error must never leak
+        // credentials even if its JSON arrives in several network chunks.
+        let raw: unknown;
+        try { raw = JSON.parse(data); } catch { throw new Error("Invalid Tagflow event"); }
+        if (!isRecord(raw) || raw["error"] !== undefined) throw new Error("Tagflow stream error");
+        this.observe(raw);
+      }
+      output += `${frame}\n\n`;
+    }
+    if (this.pending.length > 1_000_000) throw new Error("upstream-event-too-large");
+    return output === "" ? null : new TextEncoder().encode(output);
+  }
+  observe(raw: unknown): void {
+    if (!isRecord(raw)) return;
+    const groq = raw["x_groq"];
+    const usage = raw["usage"] ?? (isRecord(groq) ? groq["usage"] : undefined);
+    if (isRecord(usage) && count(usage["prompt_tokens"]) && count(usage["completion_tokens"])) this.reported = { input: usage["prompt_tokens"], output: usage["completion_tokens"] };
+    if (Array.isArray(raw["choices"])) for (const choice of raw["choices"]) {
+      if (!isRecord(choice)) continue;
+      if (choice["finish_reason"] !== undefined && choice["finish_reason"] !== null) {
+        this.completed = true;
+        const reason = choice["finish_reason"];
+        this.finishReason = reason === "content_filter" ? "refusal" : ["stop", "length", "tool_calls", "function_call", "refusal"].includes(String(reason)) ? String(reason) : null;
+      }
+      const delta = choice["delta"] ?? choice["message"];
+      if (isRecord(delta)) {
+        // Count generated text, not SSE/JSON envelopes repeated on every chunk.
+        for (const field of ["content", "reasoning_content", "reasoning"]) {
+          if (typeof delta[field] === "string") this.outputBytes += bytes(delta[field]);
+        }
+        const calls = delta["tool_calls"];
+        if (typeof delta["content"] === "string" && delta["content"].length > 0 || Array.isArray(calls) && calls.length > 0 || isRecord(delta["function_call"])) this.onOutput();
+        if (Array.isArray(calls)) for (const call of calls) if (isRecord(call)) {
+          this.toolCalls.add(`${String(choice["index"] ?? 0)}:${String(call["index"] ?? call["id"] ?? 0)}`);
+          this.observeFunction(call["function"]);
+        }
+        if (isRecord(delta["function_call"])) { this.toolCalls.add("legacy-function"); this.observeFunction(delta["function_call"]); }
+      }
+    }
+  }
+  private observeFunction(raw: unknown): void {
+    if (!isRecord(raw)) return;
+    for (const field of ["name", "arguments"]) if (typeof raw[field] === "string") this.outputBytes += bytes(raw[field]);
+  }
+}
+
+export function createTagflowHandler(deps: TagflowOptions): (request: Request) => Promise<Response | null> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const providerKey = (id: IncludedProviderId): string => (id === "tagflow"
+    ? deps.apiKey ?? process.env["TAGFLOW_API_KEY"] ?? process.env["tagflow-api"] ?? ""
+    : process.env[includedProvider(id).secretName] ?? "").trim();
+  const connections = () => INCLUDED_PROVIDERS.map((provider) => ({ ...provider, configured: providerKey(provider.id).length > 0 }));
+  const defaultKeyConfigured = (config: TagflowConfig): boolean => {
+    const model = config.models.find((one) => one.id === config.defaultModel);
+    return model !== undefined && providerKey(modelProvider(model)).length > 0;
+  };
+  return async (request) => {
+    const url = new URL(request.url);
+    if (!isTagflowPath(url.pathname)) return null;
+    const headers: Record<string,string> = { ...corsHeaders(request.headers.get("origin") ?? undefined), "cache-control": "no-store" };
+    const json = (status: number, value: unknown, extra: Record<string, string> = {}): Response => new Response(JSON.stringify(value), { status, headers: { ...headers, "content-type": "application/json", ...extra } });
+    const fail = (status: number, code: string, message: string, extra: Record<string, string> = {}, recovery: { retryable: boolean; resetsAt?: number } | null = null): Response => json(status, { error: { code, message, ...recovery } }, extra);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+    let metric: ModelRequestRecord | null = null;
+    let metricFinished = false;
+    const writeMetric = async (): Promise<void> => {
+      if (metric === null) return;
+      try { await deps.store.putModelRequest({ ...metric }); }
+      catch { console.warn("Included AI telemetry write failed"); }
+    };
+    const finishMetric = async (outcome: ModelRequestOutcome, code: string | null = null): Promise<void> => {
+      if (metric === null || metricFinished) return;
+      metricFinished = true;
+      metric.finishedAt ??= deps.clock.now();
+      metric.outcome = outcome; metric.errorCode = code;
+      metric.durationMs = metric.providerStartedAt === null ? null : Math.max(0,metric.finishedAt-metric.providerStartedAt);
+      await writeMetric();
+    };
+    try {
+      const saved = await deps.store.getTagflowConfig();
+      const config = parseTagflowConfig(saved?.config ?? DEFAULT_TAGFLOW_CONFIG);
+      if (config === null) return fail(503, "unavailable", "Included AI is unavailable. Try another connected model.");
+      const offeredModels = config.models.filter((model) => model.enabled !== false && providerKey(modelProvider(model)).length > 0);
+      const available = config.enabled && offeredModels.length > 0;
+      const day = new Date(deps.clock.now()).toISOString().slice(0, 10);
+      const resetsAt = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
+      const remainingDay = { "retry-after": String(Math.max(1, Math.ceil((resetsAt - deps.clock.now()) / 1000))) };
+      if (url.pathname === "/v1/ai/tagflow/config" && request.method === "GET") {
+        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model)).name, contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens) })) : [], requiresVerifiedAccount: true });
+      }
+      const auth = await authenticate(deps, request.headers.get("authorization") ?? undefined);
+      if (!auth.ok) return fail(auth.failure === "banned" ? 403 : 401, auth.failure, "Sign in to use included AI. Banned accounts cannot use it.");
+      if (url.pathname.startsWith("/v1/admin/") && !auth.isAdmin) return fail(403, "not-admin", "Administrator access is required.");
+      const audit = async (action: string, subjectUid = "*"): Promise<void> => deps.store.writeAudit({ adminUid: auth.uid, action, subjectUid, at: deps.clock.now() });
+      if (url.pathname === "/v1/ai/tagflow/audience") {
+        if (request.method === "GET") {
+          const profile = await deps.store.getModelAudienceProfile(auth.uid);
+          return json(200,{ profile: profile === null ? null : { role: profile.role, experience: profile.experience, primaryUse: profile.primaryUse, consent: true } });
+        }
+        if (request.method === "POST") {
+          const raw = await readJson(request);
+          if (!isRecord(raw) || Object.keys(raw).some(key => !["role","experience","primaryUse","consent"].includes(key)) || typeof raw["consent"] !== "boolean") return fail(400,"bad-profile","Choose the optional profile fields and sharing preference.");
+          if (!raw["consent"]) { await deps.store.deleteModelAudienceProfile(auth.uid); return json(200,{ ok:true, profile:null }); }
+          if (!AUDIENCE_ROLES.includes(raw["role"] as never) || !AUDIENCE_EXPERIENCE.includes(raw["experience"] as never) || !DECLARED_USES.includes(raw["primaryUse"] as never)) return fail(400,"bad-profile","Choose a supported role, experience and purpose.");
+          await deps.store.putModelAudienceProfile({ uid:auth.uid, role:raw["role"] as ModelAudienceProfile["role"], experience:raw["experience"] as ModelAudienceProfile["experience"], primaryUse:raw["primaryUse"] as ModelAudienceProfile["primaryUse"], updatedAt:deps.clock.now() });
+          return json(200,{ ok:true });
+        }
+      }
+      if (url.pathname === "/v1/admin/tagflow") {
+        if (request.method === "GET") return json(200, { config, updatedAt: saved?.updatedAt ?? 0, updatedBy: saved?.updatedBy ?? "", keyConfigured: defaultKeyConfigured(config), connections: connections() });
+        if (request.method === "POST") {
+          const next = parseTagflowConfig(await readJson(request));
+          if (next === null) return fail(400, "bad-config", "Check the provider, Tagflow HTTPS base URL, unique model IDs, prices, and non-negative limits.");
+          if (next.enabled && !defaultKeyConfigured(next)) {
+            const provider = includedProvider(modelProvider(next.models.find((model) => model.id === next.defaultModel)!));
+            return fail(409, "missing-secret", `Set the ${provider.secretName} server secret before choosing this default model.`);
+          }
+          await audit("save-tagflow-config");
+          const result = { config: next, updatedAt: deps.clock.now(), updatedBy: auth.uid };
+          await deps.store.putTagflowConfig(result);
+          return json(200, { ...result, keyConfigured: defaultKeyConfigured(next), connections: connections() });
+        }
+      }
+      if (url.pathname === "/v1/admin/tagflow/usage" && request.method === "GET") {
+        const requestedDay = url.searchParams.get("day") ?? day;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDay) || !Number.isFinite(Date.parse(requestedDay)) || new Date(requestedDay).toISOString().slice(0, 10) !== requestedDay) return fail(400, "bad-day", "Choose a valid date.");
+        await audit("read-tagflow-usage");
+        return json(200, { day: requestedDay, rows: await deps.store.listTagflowUsage(requestedDay) });
+      }
+      if (url.pathname === "/v1/admin/tagflow/reports" && request.method === "GET") {
+        const range = parseReportRange(url.searchParams.get("from"),url.searchParams.get("to"),deps.clock.now());
+        if (range === null) return fail(400,"bad-range","Choose valid dates, up to 93 days, ending no later than today (UTC).");
+        await audit("read-free-model-provider-reports");
+        return json(200,completeModelReport(await deps.store.readModelReports(range),config,range,deps.clock.now()));
+      }
+      if (url.pathname === "/v1/ai/tagflow/feedback" && request.method === "POST") {
+        const raw = await readJson(request);
+        if (!isRecord(raw) || Object.keys(raw).some(key => !["requestId","rating","category","comment","shareWithProvider"].includes(key)) || typeof raw["requestId"] !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw["requestId"])) return fail(400,"bad-feedback","Choose a response to rate.");
+        const original = await deps.store.getModelRequest(raw["requestId"]);
+        if (original === null || original.uid !== auth.uid) return fail(404,"not-found","That response was not found for this account.");
+        if (original.outcome === "pending") return fail(409,"not-ready","Wait for this response to finish before rating it.");
+        if (raw["rating"] === null) { await deps.store.deleteModelFeedback(original.id,auth.uid); return json(200,{ ok: true }); }
+        if (!["helpful","not-helpful"].includes(String(raw["rating"])) || !MODEL_FEEDBACK_CATEGORIES.includes(raw["category"] as never) || typeof raw["comment"] !== "string" || raw["comment"].length > 2000 || typeof raw["shareWithProvider"] !== "boolean") return fail(400,"bad-feedback","Choose a rating and category. Comments can be up to 2,000 characters.");
+        const previous = await deps.store.getModelFeedback(original.id,auth.uid);
+        await deps.store.putModelFeedback({ requestId: original.id, uid: auth.uid, rating: raw["rating"] as "helpful" | "not-helpful", category: raw["category"] as typeof MODEL_FEEDBACK_CATEGORIES[number], comment: raw["comment"].trim(), shareWithProvider: raw["shareWithProvider"], createdAt: previous?.createdAt ?? deps.clock.now(), updatedAt: deps.clock.now() });
+        return json(200,{ ok: true });
+      }
+      const userMatch = /^\/v1\/admin\/tagflow\/users\/([^/]+)$/.exec(url.pathname);
+      const subject = userMatch === null ? auth.uid : decodeURIComponent(userMatch[1]!);
+      if (subject.length > 128 || subject.length === 0) return fail(400, "bad-user", "Choose a valid user.");
+      if (userMatch !== null) {
+        if (await deps.store.getUser(subject) === null) return fail(404, "not-found", "That account was not found.");
+        if (request.method === "POST") {
+          const raw = await readJson(request);
+          if (!isRecord(raw) || Object.keys(raw).some((key) => !["blocked", "limits"].includes(key)) || typeof raw["blocked"] !== "boolean") return fail(400, "bad-policy", "Check the user allowance.");
+          const limits = raw["limits"] === null ? null : parseTagflowLimits(raw["limits"]);
+          if (raw["limits"] !== null && limits === null) return fail(400, "bad-policy", "Check the user allowance.");
+          await audit("save-tagflow-policy", subject);
+          await deps.store.putTagflowPolicy(subject, { blocked: raw["blocked"], limits, updatedAt: deps.clock.now(), updatedBy: auth.uid });
+        } else if (request.method !== "GET") return fail(405, "method", "Use GET or POST.");
+        await audit("read-tagflow-user", subject);
+      }
+      const policy = await deps.store.getTagflowPolicy(subject);
+      const limits = policy?.limits ?? config.limits;
+      const usage = await deps.store.getTagflowUsage(subject, day) ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
+      if (userMatch !== null || url.pathname === "/v1/ai/tagflow/usage" && request.method === "GET") return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true });
+      if (url.pathname !== "/v1/ai/tagflow/chat/completions" || request.method !== "POST") return fail(405, "method", "Unsupported method.");
+      const user = await deps.store.getUser(auth.uid);
+      if (!user?.email || user.emailVerified !== true) return fail(403, "verify-account", "Sign in and verify your email in Account to use included AI. No API key is needed.");
+      const raw = await readJson(request);
+      const selected = isRecord(raw) ? config.models.find(model => model.id === raw["model"]) : undefined;
+      if (selected !== undefined) {
+        const source = request.headers.get("x-adcode-ai-source");
+        const sourceValue: ModelRequestSource = ["chat","agent","completion","edit"].includes(source ?? "") ? source as ModelRequestSource : source === "admin-test" && auth.isAdmin ? "admin-test" : "unknown";
+        const aiPersona = audienceChoice(request.headers.get("x-adcode-ai-persona"),AI_PERSONAS);
+        let country = "unknown"; try { country = audienceCountry(deps.country?.(request)); } catch { /* Geography must never fail an AI request. */ }
+        metric = { id: randomUUID(), uid: auth.uid, modelId: selected.id, modelName: selected.name, provider: modelProvider(selected), upstreamModel: selected.upstreamModel ?? selected.id,
+          country, aiPersona, useCase: observedUse(sourceValue,aiPersona), platform: audienceChoice(request.headers.get("x-adcode-platform"),["win32","darwin","linux"]),
+          startedAt: deps.clock.now(), finishedAt: null, providerStartedAt: null, outcome: "pending", errorCode: null, upstreamStatus: null, source: sourceValue,
+          streamed: isRecord(raw) && raw["stream"] !== false, toolsOffered: isRecord(raw) && Array.isArray(raw["tools"]) && raw["tools"].length > 0,
+          toolCalls: 0, finishReason: null, contextWindow: selected.contextWindow, requestedOutput: 0, estimatedInput: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimated: false, durationMs: null, firstTokenMs: null };
+        headers["x-adcode-request-id"] = metric.id;
+        await writeMetric();
+      }
+      if (!available) { await finishMetric("rejected","unavailable"); return fail(503, "unavailable", "Included AI is unavailable. Try another connected model."); }
+      if (policy?.blocked) { await finishMetric("rejected","blocked"); return fail(403, "blocked", "Included AI is disabled for this account."); }
+      const parsed = chatBody(raw, config);
+      if ("error" in parsed) { await finishMetric("rejected",parsed.error.code); return fail(parsed.error.status, parsed.error.code, parsed.error.message); }
+      if (metric !== null) { metric.requestedOutput = parsed.output; metric.estimatedInput = parsed.contextInput; }
+      const providerId = modelProvider(parsed.model);
+      const apiKey = providerKey(providerId);
+      const baseUrl = providerId === "tagflow" ? config.baseUrl : includedProvider(providerId).baseUrl;
+      if (apiKey.length === 0 || providerId === "tagflow" && !isTagflowUrl(baseUrl)) { await finishMetric("rejected","unavailable"); return fail(503, "unavailable", "This included model is unavailable. Choose another model."); }
+      parsed.body["model"] = parsed.model.upstreamModel ?? parsed.model.id;
+      if (providerId === "openai") {
+        parsed.body["max_completion_tokens"] = parsed.output;
+        delete parsed.body["max_tokens"];
+      }
+      const reservation = { id: randomUUID(), uid: auth.uid, day, minute: Math.floor(deps.clock.now() / 60_000), tokens: parsed.input + parsed.output, costMicros: tagflowCost(parsed.model, parsed.input, parsed.output), limits };
+      const reserved = await deps.store.reserveTagflow(reservation);
+      if (reserved !== "ok") {
+        await finishMetric("rejected",reserved);
+        const daily = reserved === "daily-limit";
+        const retryable = daily ? limits.dailyRequests > 0 && reservation.tokens <= limits.dailyTokens && reservation.costMicros <= limits.dailyCostMicros : limits.requestsPerMinute > 0;
+        const message = !retryable ? daily
+          ? "This request cannot fit within your account's daily allowance, even after a reset. Start a smaller conversation, choose another model, or ask an administrator to increase your allowance."
+          : "This account's per-minute AI request allowance is zero. Waiting will not enable requests. Ask an administrator to change the allowance."
+          : daily ? "Your remaining daily included AI allowance cannot cover this request and its reply. This task can resume after the daily reset. All free models share the same allowance."
+          : "Your account reached its per-minute AI request limit. This task can resume in about a minute. Your daily token allowance may still have room.";
+        return fail(429,reserved,message,daily ? remainingDay : { "retry-after":"60" },{ retryable,...(daily ? { resetsAt } : {}) });
+      }
+      const observer = new UsageObserver(() => { if (metric !== null && metric.streamed && metric.firstTokenMs === null && metric.providerStartedAt !== null) metric.firstTokenMs = Math.max(0,deps.clock.now()-metric.providerStartedAt); });
+      let settled = false;
+      let settlementFailed = false;
+      const settle = async (failed = false, complete = false): Promise<void> => {
+        if (settled) return;
+        const reported = observer.completed ? observer.reported : null;
+        // An incomplete stream may have consumed its full allocation upstream.
+        const inputTokens = failed ? 0 : reported?.input ?? parsed.input;
+        const outputTokens = failed ? 0 : reported?.output ?? (complete && observer.completed ? Math.min(parsed.output, Math.ceil(observer.outputBytes / 3) + (observer.toolCalls.size > 0 ? 16 * observer.toolCalls.size : 0)) : parsed.output);
+        const result: TagflowSettlement = { inputTokens, outputTokens, costMicros: failed ? 0 : tagflowCost(parsed.model, inputTokens, outputTokens), estimated: reported === null, failed };
+        if (metric !== null) {
+          metric.finishedAt ??= deps.clock.now();
+          metric.inputTokens = inputTokens; metric.outputTokens = outputTokens; metric.costMicros = result.costMicros; metric.estimated = !failed && result.estimated;
+          metric.toolCalls = observer.toolCalls.size; metric.finishReason = observer.finishReason;
+        }
+        try { await deps.store.settleTagflow(reservation.id, result); }
+        catch (error) { settlementFailed = true; throw error; }
+        settled = true;
+      };
+      const abort = new AbortController();
+      const onAbort = (): void => abort.abort();
+      request.signal.addEventListener("abort", onAbort, { once: true });
+      if (request.signal.aborted) abort.abort();
+      const timeout = setTimeout(() => abort.abort(), 180_000);
+      const cleanup = (): void => { clearTimeout(timeout); request.signal.removeEventListener("abort", onAbort); };
+      let upstream: Response;
+      try {
+        if (metric !== null) metric.providerStartedAt = deps.clock.now();
+        await writeMetric();
+        // Each provider has a fixed approved host; Tagflow also validates its domain.
+        // Redirects are refused, so a credential cannot travel to another host.
+        upstream = await fetchImpl(`${baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(parsed.body), redirect: "manual", signal: abort.signal });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        const reason = abort.signal.aborted ? request.signal.aborted ? "request-ended" : "timeout"
+          : /redirect/i.test(message) ? "redirect"
+          : /header|ByteString/i.test(message) ? "key-format"
+          : /certificate|TLS|SSL/i.test(message) ? "tls"
+          : /cache mode/i.test(message) ? "cache-mode"
+          : /different request|global scope|I\/O/i.test(message) ? "request-context"
+          : /Illegal invocation|receiver/i.test(message) ? "fetch-binding"
+          : /resolve|DNS/i.test(message) ? "dns" : "network";
+        // Never log the upstream error message: malformed-header errors can contain a key.
+        console.warn("Included AI connection failed", { provider: providerId, reason });
+        cleanup(); await settle(); await finishMetric(reason === "request-ended" ? "cancelled" : ["key-format","cache-mode","request-context","fetch-binding"].includes(reason) ? "relay_error" : "provider_error",reason);
+        const explanation = reason === "request-ended" ? "The request ended before the provider answered. Try again."
+          : reason === "timeout" ? "The included AI provider took too long to answer. Try later."
+          : reason === "key-format" ? "The server provider key has invalid formatting. Ask an administrator to update it."
+          : reason === "redirect" ? "The provider redirected its API address. An administrator needs to update the saved endpoint."
+          : reason === "cache-mode" || reason === "request-context" || reason === "fetch-binding" ? "The AI relay encountered a server configuration error. Ask an administrator to check the connection."
+          : "The included AI provider could not be reached. Try another model or try later.";
+        return fail(502, "upstream", explanation);
+      }
+      if (metric !== null) metric.upstreamStatus = upstream.status;
+      if (!upstream.ok || upstream.body === null) {
+        await upstream.body?.cancel(); cleanup(); await settle(!upstream.ok); await finishMetric("provider_error",upstream.status === 429 ? "upstream-rate-limit" : !upstream.ok ? "upstream-http" : "empty-response");
+        if (upstream.status === 429) return fail(429, "upstream-rate-limit", "This free model's provider reached a temporary rate limit. Your daily allowance may still have tokens left. Try again shortly, or choose a different model.", { "retry-after": "60" }, { retryable:true });
+        return fail(502, "upstream", "The included AI provider refused the request. Try another model or try later.");
+      }
+      if (parsed.body["stream"] === false) {
+        try {
+          const raw = await readJson(new Request("https://relay.invalid", { method: "POST", body: upstream.body, duplex: "half" } as RequestInit));
+          observer.observe(raw);
+          if (!isRecord(raw) || !Array.isArray(raw["choices"]) || raw["error"] !== undefined) { await settle(); await finishMetric("provider_error","invalid-response"); return fail(502, "upstream", "The included AI provider returned an invalid response."); }
+          observer.completed = true;
+          await settle(false, true); await finishMetric("success"); return json(200, raw);
+        } catch {
+          if (settlementFailed) { await finishMetric("relay_error","storage-settlement"); return fail(503,"unavailable","Included AI accounting is temporarily unavailable. Try again later."); }
+          await settle(); await finishMetric("provider_error","invalid-response"); return fail(502, "upstream", "The included AI provider returned an invalid response.");
+        }
+        finally { cleanup(); }
+      }
+      if (!upstream.headers.get("content-type")?.includes("text/event-stream")) {
+        await upstream.body.cancel(); cleanup(); await settle(); await finishMetric("provider_error","invalid-stream");
+        return fail(502, "upstream", "The included AI provider did not return a chat stream.");
+      }
+      const reader = upstream.body.getReader();
+      const stream = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          try {
+            for (;;) {
+              const chunk = await reader.read();
+              if (chunk.done) { await settle(false, true); await finishMetric(observer.completed ? "success" : "provider_error",observer.completed ? null : "incomplete-stream"); cleanup(); reader.releaseLock(); controller.close(); break; }
+              const safe = observer.push(chunk.value);
+              if (safe !== null) { controller.enqueue(safe); break; }
+            }
+          } catch {
+            abort.abort(); cleanup(); await reader.cancel().catch(() => undefined);
+            await settle().catch(() => undefined);
+            await finishMetric(settlementFailed ? "relay_error" : request.signal.aborted ? "cancelled" : "provider_error",settlementFailed ? "storage-settlement" : request.signal.aborted ? "request-ended" : "stream-interrupted");
+            controller.error(new Error("Included AI stream interrupted"));
+          }
+        },
+        async cancel() { abort.abort(); cleanup(); await reader.cancel().catch(() => undefined); await settle().catch(() => undefined); await finishMetric(settlementFailed ? "relay_error" : "cancelled",settlementFailed ? "storage-settlement" : "request-ended"); },
+      });
+      return new Response(stream, { headers: { ...headers, "content-type": "text/event-stream", "x-accel-buffering": "no" } });
+    } catch (error) {
+      await finishMetric("relay_error","storage-or-relay");
+      if (error instanceof SyntaxError || error instanceof URIError) return fail(400, "bad-request", "Send a valid request.");
+      if (error instanceof Error && error.message === "body-too-large") return fail(413, "body-too-large", "The request is too large.");
+      return fail(503, "unavailable", "Included AI is temporarily unavailable. Try another connected model.");
+    }
+  };
+}

@@ -816,8 +816,16 @@ progress.ad-progress::-moz-progress-bar { background: var(--fill-primary); borde
   .welcome-action { flex-direction: row; justify-content: flex-start; align-items: center; min-height: 60px; }
 }
 @media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .ad-switch > input::before { transition: none; }
   .welcome-action:active, .ad-btn:active, .ad-icon-btn:active { transform: none; }
+}
+:root[data-reduced-motion="true"] *,
+:root[data-reduced-motion="true"] *::before,
+:root[data-reduced-motion="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
 }
 @media (prefers-reduced-transparency: reduce) {
   .ad-dialog::backdrop { backdrop-filter: none; }

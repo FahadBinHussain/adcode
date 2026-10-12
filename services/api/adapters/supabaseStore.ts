@@ -118,6 +118,7 @@ import {
   type SourceFactRow,
 } from "./supabaseRows.ts";
 import { DEFAULT_REFERRAL_CONFIG, type AttributionRecord } from "../src/store.ts";
+import { createTagflowStore } from "./tagflowStore.ts";
 import type {
   ActivityDay,
   CampaignBudgetMoveRefusal,
@@ -1229,6 +1230,7 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
      * The admin panel's model list curation: one row, id 1. The document was validated by
      * `parseModelCatalog` before it reached here; jsonb keeps it whole.
      */
+    ...createTagflowStore(lazy),
     async getModelCatalog() {
       const row = await maybe<{ overrides: unknown; updated_at: number | string; updated_by: string }>("getModelCatalog", (db) =>
         db.from("model_catalog").select("overrides, updated_at, updated_by").eq("id", 1).maybeSingle(),

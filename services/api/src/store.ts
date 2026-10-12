@@ -10,6 +10,7 @@
  */
 import type { Balance, LedgerEntry } from "./ledger.ts";
 import type { ModelCatalogRecord } from "./modelCatalogTypes.ts";
+import type { TagflowStore } from "./tagflowTypes.ts";
 
 export interface Clock {
   now(): number;
@@ -691,7 +692,7 @@ export interface WithdrawalPage {
   nextCursor: string | null;
 }
 
-export interface Store {
+export interface Store extends TagflowStore {
   /**
    * Anonymous lifetime totals, plus accounts created in the seven days before `now`.
    * Excludes zero-cost test receipts; counts active users only; no account data.

@@ -31,7 +31,7 @@ const require = createRequire(join(REPO, "package.json"));
 
 const packaged = process.argv.includes("--packaged");
 const electronPath = packaged
-  ? join(releaseDirectory(REPO), "win-unpacked", "ADCode.exe")
+  ? join(releaseDirectory(REPO), process.platform === "win32" ? "win-unpacked" : "linux-unpacked", process.platform === "win32" ? "ADCode.exe" : "ADCode")
   : require("electron");
 const appArgs = packaged ? [] : ["apps/desktop"];
 

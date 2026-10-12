@@ -13,6 +13,7 @@ it("runs the Tools page in real Chromium: servers, catalogue, skills, memory, sh
   expect(line, run.stdout + run.stderr).toBeDefined();
   expect(JSON.parse(line!.slice("TOOLS_PAGE_RESULTS=".length))).toEqual({
     counts: true,
+    qualityTools: true,
     usedBy: true,
     liveState: true,
     toggleReachesBackend: true,

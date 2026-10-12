@@ -116,6 +116,7 @@ describe("the admin rail", () => {
       "/admin",
       "/admin/analytics",
       "/admin/models",
+      "/admin/tagflow",
       "/admin/review",
       "/admin/review?tab=feedback",
       "/admin/money",

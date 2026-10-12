@@ -15,6 +15,7 @@ describe("the bundled skills", () => {
     expect(BUILTIN_SKILLS.map((skill) => skill.name)).toEqual([
       "design-taste-frontend",
       "full-output-enforcement",
+      "production-quality",
       "redesign-existing-projects",
     ]);
     for (const skill of BUILTIN_SKILLS) expect(skill.description.length).toBeGreaterThan(20);
@@ -48,6 +49,18 @@ describe("the bundled skills", () => {
     expect(main).toContain("taste-skill");
     expect(main).toContain("MIT");
   });
+
+  it("ships compact original product, motion and release guidance without false upstream attribution", () => {
+    const skill = readBuiltinSkill({ name: "production-quality" }, true);
+    expect(skill.content).toContain("inspect_project");
+    expect(skill.content).toContain("audit_page");
+    expect(skill.content).not.toContain("from taste-skill");
+    expect(skill.content.length).toBeLessThan(7000);
+    const motion = readBuiltinSkill({ name: "production-quality", resource: "references/motion.md" }, true);
+    expect(motion.content).toContain("prefers-reduced-motion");
+    const release = readBuiltinSkill({ name: "production-quality", resource: "references/release.md" }, true);
+    expect(release.content).toContain("unverified");
+  });
 });
 
 describe("the tool", () => {
@@ -70,7 +83,7 @@ describe("the tool", () => {
   it("says the skills are off rather than reading them when the setting is off", () => {
     const off = readBuiltinSkill({ name: "design-taste-frontend" }, false);
     expect(off.isError).toBe(true);
-    expect(off.content).toContain("Design taste skill");
+    expect(off.content).toContain("Product design guidance");
   });
 
   it("routes only its own calls, leaving every other tool to the runner it wraps", async () => {

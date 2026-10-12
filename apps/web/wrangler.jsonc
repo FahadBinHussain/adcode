@@ -14,6 +14,21 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "adcode",
   "main": ".open-next/worker.js",
+  /* Billing webhooks also use the existing workers.dev address. */
+  "workers_dev": true,
+  "preview_urls": false,
+  /* Preserve public runtime variables edited in Cloudflare's dashboard. Secrets are retained by Wrangler. */
+  "keep_vars": true,
+
+  /* Keep the existing production hostname attached when deploying from this project. */
+  "routes": [
+    {
+      "pattern": "adcode.bluethenics.com",
+      "custom_domain": true,
+      "enabled": true,
+      "previews_enabled": false
+    }
+  ],
 
   /*
    * Pins the runtime's behaviour to a known date. Raising it can change how existing APIs

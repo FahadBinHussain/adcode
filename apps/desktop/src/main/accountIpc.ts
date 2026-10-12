@@ -19,7 +19,7 @@ import {
 import { CHANNELS, type AccountState, type LinkOutcome } from "../shared/api.ts";
 import { DiskFileStore, FetchHttpTransport, SystemClock } from "./adPorts.ts";
 import { apiBaseUrl, backendAccount } from "./backend.ts";
-import { linkWithGitHub, cancelSignIn, linkWithGoogle } from "./oauth.ts";
+import { linkWithGitHub, cancelSignIn, linkWithGoogle, openGitHubCompletionPage } from "./oauth.ts";
 
 function account() {
   return backendAccount({
@@ -207,7 +207,11 @@ export function registerAccountIpc(): void {
         ? await auth.linkGoogle(flow.idToken)
         : await auth.linkGitHub(flow.accessToken);
 
-    if (linked.ok) return succeed();
+    if (linked.ok) {
+      const outcome = await succeed();
+      if (outcome.ok && flow.provider === "github.com") void openGitHubCompletionPage();
+      return outcome;
+    }
 
     /*
      * The refusal that used to be a dead end.
@@ -224,7 +228,9 @@ export function registerAccountIpc(): void {
       return { ok: false, message: linked.error.detail };
     }
 
-    return offerSignIn(auth, { kind: "idp", provider: flow.provider, credential });
+    const outcome = await offerSignIn(auth, { kind: "idp", provider: flow.provider, credential });
+    if (outcome.ok && flow.provider === "github.com") void openGitHubCompletionPage();
+    return outcome;
   });
 
   /**
@@ -244,7 +250,9 @@ export function registerAccountIpc(): void {
       return { ok: false, message: "That sign-in expired. Try again." };
     }
 
-    return signInWith(auth, waiting.held);
+    const outcome = await signInWith(auth, waiting.held);
+    if (outcome.ok && waiting.held.kind === "idp" && waiting.held.provider === "github.com") void openGitHubCompletionPage();
+    return outcome;
   });
 
   /**

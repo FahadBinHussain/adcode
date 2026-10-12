@@ -102,7 +102,14 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(import.meta.dirname, "src/renderer"),
-    resolve: { alias },
+    resolve: {
+      alias: [
+        // Monaco vendors its own DOMPurify copy, so updating its npm dependency alone
+        // does not patch the editor. Resolve that import to our audited lockfile version.
+        { find: "./dompurify/dompurify.js", replacement: resolve(import.meta.dirname, "../../node_modules/dompurify/dist/purify.es.mjs") },
+        ...Object.entries(alias).map(([find, replacement]) => ({ find, replacement })),
+      ],
+    },
     build: {
       rollupOptions: {
         input: { index: resolve(import.meta.dirname, "src/renderer/index.html") },

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AdminShell } from "@/components/AdminShell";
+import { AdminModelTabs } from "@/components/AdminModelTabs";
 import { useAuth } from "@/components/AuthProvider";
 import { apiFetch } from "@/lib/api";
 import {
@@ -26,7 +27,8 @@ import "@/components/adminModels.css";
  */
 export default function ModelsPage() {
   return (
-    <AdminShell title="AI models" subtitle="What the model picker in every editor offers. Saved changes reach editors within about five minutes.">
+    <AdminShell title="Bring your own key models" subtitle="Add new models, hide models, and set recommendations and defaults for users with their own provider keys. Changes reach editors within about five minutes.">
+      <AdminModelTabs active="byok" />
       <ModelsEditor />
     </AdminShell>
   );
@@ -348,7 +350,7 @@ function AddModel({ providers, onAdd }: { providers: PanelProvider[]; onAdd: (ad
     const maxOutput = number(output);
     const input = number(inputPrice);
     const outputCost = number(outputPrice);
-    if (!/^[^\s:]{1,200}$/.test(id.trim()) || id.trim().length === 0) return setProblem("Enter the model id exactly as the provider spells it, with no spaces.");
+    if (!/^[^\s\u0000-\u001f]{1,200}$/.test(id.trim())) return setProblem("Enter the model id exactly as the provider spells it, with no spaces.");
     for (const value of [contextWindow, maxOutput]) {
       if (value !== undefined && !(Number.isSafeInteger(value) && value > 0)) return setProblem("Context and output are whole numbers of tokens, like 1000000.");
     }

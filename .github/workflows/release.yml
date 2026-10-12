@@ -73,7 +73,8 @@ jobs:
           sudo chown root:root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       - run: xvfb-run -a npm run verify
-      - run: npm audit --omit=dev --audit-level=high
+      # Electron and Monaco are devDependencies but ship in the desktop app.
+      - run: npm audit --audit-level=high
 
   build:
     needs: [version, verify]

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { WebsiteAnalytics } from "@/components/WebsiteAnalytics";
 import { COMPARE_PREFIX, comparisons, guides, landingPath } from "@/lib/landings";
-import { PARENT, SITE, SOURCE } from "@/lib/site";
+import { PARENT, SITE, SOURCE, TEAM } from "@/lib/site";
 
 /**
  * The footer, and the only route to the landing pages.
@@ -54,6 +54,9 @@ export function Footer() {
         <nav aria-label="Company">
           <h2>Company</h2>
           <a href={PARENT.url}>{PARENT.name}</a>
+          <a href="/#about">About us</a>
+          <Link href="/support">Support</Link>
+          <a href={TEAM.bookingUrl} target="_blank" rel="noopener noreferrer">Talk to the team</a>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
           <a href="/llms.txt">For language models</a>

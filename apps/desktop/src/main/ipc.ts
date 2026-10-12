@@ -12,6 +12,7 @@ import { GEMINI_KEY_PAGE, OLLAMA_DOWNLOAD_PAGE } from "../shared/quickConnect.ts
 import { BrowserWindow, app, clipboard, dialog, ipcMain, shell } from "electron";
 import { isInsideWorkspace } from "./pathSafety.ts";
 import { clearAiUsage, readAiUsage } from "./aiUsage.ts";
+import { readTagflowAllowance, submitTagflowFeedback, tagflowAudience } from "./tagflowAi.ts";
 import {
   detectPreviewProject,
   previewLog,
@@ -100,6 +101,7 @@ import {
   aiReset,
   aiSend,
   aiStatus,
+  aiModelSettingsChanged,
   aiStopToolProcesses,
   aiCompact,
   aiContextUsage,
@@ -136,6 +138,7 @@ import {
   aiTeamConfigure,
   aiTeamList,
   aiTeamRead,
+  aiTeamRemove,
   aiTeamStart,
   aiTeamSuggestion,
   aiTeamTraces,
@@ -465,6 +468,9 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
   });
 
   ipcMain.handle(CHANNELS.aiUsageRead, (_event, range: unknown) => readAiUsage(range));
+  ipcMain.handle(CHANNELS.aiUsageAllowance, () => readTagflowAllowance());
+  ipcMain.handle(CHANNELS.aiModelFeedback, (_event, input: unknown) => submitTagflowFeedback(input));
+  ipcMain.handle(CHANNELS.aiAudience, (_event, input: unknown) => tagflowAudience(input));
   ipcMain.handle(CHANNELS.aiUsageClear, () => clearAiUsage());
 
   ipcMain.handle(CHANNELS.windowOpenIde, (_event, file: unknown, view: unknown) => {
@@ -1030,6 +1036,7 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
 
 
   onSettingsChanged((values) => {
+    aiModelSettingsChanged();
     broadcast(CHANNELS.settingsChanged, values);
     applyLanguageSettings(values);
   });
@@ -1180,6 +1187,10 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
   ipcMain.handle(CHANNELS.aiTeamTraces, (_event, id: unknown) => {
     if (!validAiTeamId(id)) throw new Error("expected a Team id");
     return aiTeamTraces(id);
+  });
+  ipcMain.handle(CHANNELS.aiTeamRemove, (_event, id: unknown) => {
+    if (!validAiTeamId(id)) throw new Error("expected a Team id");
+    return aiTeamRemove(id);
   });
 
   const ads = getAdRuntime();

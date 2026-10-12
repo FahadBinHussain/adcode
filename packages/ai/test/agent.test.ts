@@ -296,6 +296,7 @@ describe("tool use", () => {
     expect(tools.calls).toHaveLength(3);
     expect(provider.requests).toBe(3);
     expect(events.at(-1)).toMatchObject({ kind: "error", detail: expect.stringContaining("three identical") });
+    expect(events.at(-1)).toMatchObject({ kind: "error", detail: expect.stringContaining("Service is unavailable") });
     expect(agent.history().at(-1)?.content[0]).toMatchObject({ type: "tool-result", isError: true });
   });
   it("does not report an output-token cutoff as a successful completion", async () => {

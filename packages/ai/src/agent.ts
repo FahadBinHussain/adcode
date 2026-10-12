@@ -281,7 +281,7 @@ export function stripImages(messages: Message[]): boolean {
  * images" - so this is only ever asked about a request that actually carried one.
  */
 export function isImageUnsupported(detail: string): boolean {
-  return /image[_ ]?(?:url|input|content|part)s?\b.*(?:not|only|unsupported|support)|(?:not|n't|only) (?:be )?support(?:s|ed)? (?:for )?(?:image|vision|multimodal)|support (?:image|vision)|does not support images?|vision|multimodal|unknown variant `?image|content must be a string|images? (?:is|are) not (?:supported|allowed)/i.test(detail);
+  return /\bimages-not-supported\b|\bcannot read images?\b|image[_ ]?(?:url|input|content|part|attachment)s?\b.*(?:not|only|unsupported|support)|(?:not|n't|only) (?:be )?support(?:s|ed)? (?:for )?(?:image|vision|multimodal)|support (?:image|vision)|does not support images?|vision|multimodal|unknown variant `?image|content must be a string|images? (?:is|are) not (?:supported|allowed)/i.test(detail);
 }
 
 /** Extra turns input beyond the text. Everything optional, so old callers keep working. */
@@ -561,7 +561,7 @@ export function createAgent(deps: AgentDeps): Agent {
         }
         // §9: the provider being down costs the user an answer, never the editor.
         failed = true;
-        yield { kind: "error", detail };
+        if (!signal.aborted) yield { kind: "error", detail };
       }
 
       // A request the provider refused outright cost nothing; one that answered, even in
@@ -649,6 +649,7 @@ export function createAgent(deps: AgentDeps): Agent {
       const results: ContentBlock[] = [];
       const pictures: ContentBlock[] = [];
       let repeatedFailure: string | null = null;
+      let repeatedFailureDetail = "";
       for (const [index, call] of pendingCalls.entries()) {
         // Three identical failures indicate no progress. Avoid spending an entire
         // turn budget on retries, or repeating external operations indefinitely.
@@ -661,7 +662,10 @@ export function createAgent(deps: AgentDeps): Agent {
         if (result.isError) {
           const count = (failures.get(signature) ?? 0) + 1;
           failures.set(signature, count);
-          if (count >= 3) repeatedFailure = call.name;
+          if (count >= 3) {
+            repeatedFailure = call.name;
+            repeatedFailureDetail = result.content.slice(0, 1800);
+          }
         } else failures.delete(signature);
         const images = (result.images ?? []).slice(0, MAX_TOOL_IMAGES);
         results.push({
@@ -696,7 +700,7 @@ export function createAgent(deps: AgentDeps): Agent {
       retireToolImages(messages);
       messages.push({ role: "user", content: [...results, ...pictures] });
       if (repeatedFailure !== null) {
-        yield { kind: "error", detail: `Stopped after three identical failed calls to ${repeatedFailure}. Review the tool error, connection, or permissions before retrying.` };
+        yield { kind: "error", detail: `Stopped after three identical failed calls to ${repeatedFailure}.\n${repeatedFailureDetail}` };
         return;
       }
     }

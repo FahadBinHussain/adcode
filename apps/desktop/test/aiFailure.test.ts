@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { CONTINUE_PROMPT, describeAiFailure, OUTPUT_LIMIT_AGAIN, providerFrom, resumeAfterModelSwitch } from "../src/renderer/ai/aiFailure.ts";
+import { CONTINUE_PROMPT, RECOVER_EDIT_PROMPT, describeAiFailure, OUTPUT_LIMIT_AGAIN, providerFrom, resumeAfterModelSwitch, retryAfterFailure } from "../src/renderer/ai/aiFailure.ts";
 
 describe("assistant failure explanations", () => {
+  it("separates a daily allowance from a temporary limit and offers its usage display", () => {
+    const daily = describeAiFailure("Included AI returned HTTP 429: Your daily included AI allowance cannot cover this request. (code daily-limit)");
+    expect(daily).toMatchObject({ kind: "daily-limit", actions: ["usage", "models"] });
+    expect(daily.explanation).toContain("daily reset");
+    expect(daily.explanation).toContain("All free models share this allowance");
+    expect(daily.explanation).not.toContain("in a minute");
+    const minute = describeAiFailure("Included AI returned HTTP 429: Included AI is busy for this account. (code rate-limit)");
+    expect(minute).toMatchObject({ kind: "rate-limit", title: "Too many AI requests in a minute", actions: ["retry", "usage", "models"] });
+    expect(minute.explanation).toContain("daily allowance may still have tokens left");
+    const upstream = describeAiFailure("Included AI returned HTTP 429: Busy (code upstream-rate-limit)");
+    expect(upstream.title).toBe("This free model is temporarily busy");
+    expect(upstream.explanation).toContain("model provider");
+  });
+  it("does not promise that a reset will fix an undersized or disabled allowance",()=>{
+    const tooSmall=describeAiFailure("Included AI returned HTTP 429: This request cannot fit within your account's daily allowance, even after a reset. (code daily-limit)");
+    expect(tooSmall.actions).toEqual(["usage","new-conversation","models"]);
+    expect(tooSmall.explanation).toContain("reset will not make this request fit");
+    const disabled=describeAiFailure("Included AI returned HTTP 429: This account's per-minute AI request allowance is zero. (code rate-limit)");
+    expect(disabled.title).toBe("Included AI requests are disabled");expect(disabled.actions).not.toContain("retry");
+  });
   it("names the provider from its own error", () => {
     expect(providerFrom("Groq returned HTTP 429: Rate limit reached")).toBe("Groq");
     expect(providerFrom("OpenRouter: Provider returned error (code 502)")).toBe("OpenRouter");
@@ -93,6 +113,24 @@ describe("assistant failure explanations", () => {
     const failure = describeAiFailure("something odd happened");
     expect(failure).toMatchObject({ kind: "unknown", actions: ["retry", "report"], detail: "something odd happened" });
     expect(describeAiFailure("  ").detail).toBe("The assistant stopped without saying why.");
+  });
+  it("identifies the Linux edit loop and makes retry reread exact file text", () => {
+    const failure = describeAiFailure("Stopped after three identical failed calls to edit_file. Edit 1's old_string was not found in src/crawler/crawler.ts. Nothing was changed.");
+    expect(failure).toMatchObject({ kind: "edit-mismatch", actions: ["retry", "models", "report"] });
+    expect(retryAfterFailure(failure, "fix the crawler")).toBe(RECOVER_EDIT_PROMPT);
+    expect(RECOVER_EDIT_PROMPT).toContain("line_numbers: false");
+    expect(retryAfterFailure(describeAiFailure("fetch failed"), "fix the crawler")).toBe("fix the crawler");
+  });
+  it("offers actionable recovery for the older ambiguous included-AI rejection", () => {
+    const failure = describeAiFailure("Included AI returned HTTP 400: Choose an offered model and send text within its context limit. Image attachments are not supported by included AI. (code bad-request)");
+    expect(failure).toMatchObject({ kind: "history", title: "Included AI rejected this request", actions: ["new-conversation", "models", "report"] });
+    expect(failure.explanation).not.toContain("cannot read images");
+  });
+  it("distinguishes included-AI image, model, message format and context failures", () => {
+    expect(describeAiFailure("Included AI returned HTTP 400: Included AI cannot read image attachments. (code images-not-supported)")).toMatchObject({ kind: "no-images", actions: ["models", "new-conversation"] });
+    expect(describeAiFailure("Included AI returned HTTP 400: This model is not available in included AI. (code model-unavailable)").kind).toBe("model-missing");
+    expect(describeAiFailure("Included AI returned HTTP 400: Invalid conversation (code invalid-messages)").kind).toBe("history");
+    expect(describeAiFailure("Included AI returned HTTP 413: Estimated input tokens: Limit 32768, Requested 35000. (code context-length)")).toMatchObject({ kind: "too-large" });
   });
 });
 

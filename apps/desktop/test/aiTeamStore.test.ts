@@ -76,6 +76,19 @@ const record = (root = "C:/private/project", id = "team-alpha"): AiTeamRecord =>
   });
 
 describe("durable AI Team records", () => {
+  it("deletes a run and its traces durably without accepting a path as an id", async () => {
+    const store = createAiTeamStore(directory);
+    await store.save(record());
+    await store.appendTrace({ id: "trace-delete", teamId: "team-alpha", nodeId: null, at: 1_000, kind: "state", summary: "Configured", detail: "", outcome: "ok" });
+    await expect(store.remove("../team-alpha")).rejects.toThrow("Invalid AI Team id");
+    expect(await store.read("team-alpha")).not.toBeNull();
+    await expect(store.remove("team-alpha")).resolves.toBe(true);
+    const reloaded = createAiTeamStore(directory);
+    await expect(reloaded.read("team-alpha")).resolves.toBeNull();
+    await expect(reloaded.traces("team-alpha")).resolves.toEqual([]);
+    await expect(reloaded.remove("team-alpha")).resolves.toBe(false);
+  });
+
   it("reloads execution routes with the same model length accepted by named agents", async () => {
     const store = createAiTeamStore(directory);
     const modelId = "m".repeat(256);

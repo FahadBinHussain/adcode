@@ -7,6 +7,7 @@
  * tested; the element at the bottom is the DOM.
  */
 import type { AiContextUsageView } from "../../shared/api.ts";
+import { createComposerMeter } from "./composerMeter.ts";
 
 export interface ContextMeterModel {
   readonly percent: number;
@@ -49,51 +50,27 @@ export interface ContextMeter {
   update(usage: AiContextUsageView): void;
 }
 
-const RING = 2 * Math.PI * 7;
-
 /** The meter itself: a ring and a label. Clicking it calls `onOpen` with the button. */
 export function createContextMeter(onOpen: (button: HTMLButtonElement) => void): ContextMeter {
-  const element = document.createElement("button");
-  element.type = "button";
-  element.className = "chat-context-meter";
-  element.dataset["tone"] = "ok";
+  const meter = createComposerMeter("Context", onOpen);
+  const element = meter.element;
+  element.classList.add("chat-context-meter");
+  element.dataset["meter"] = "context";
   element.setAttribute("aria-haspopup", "menu");
   element.setAttribute("aria-expanded", "false");
-
-  const svgNs = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNs, "svg");
-  svg.setAttribute("viewBox", "0 0 18 18");
-  svg.setAttribute("aria-hidden", "true");
-  svg.classList.add("chat-context-ring");
-  const track = document.createElementNS(svgNs, "circle");
-  const fill = document.createElementNS(svgNs, "circle");
-  for (const circle of [track, fill]) {
-    circle.setAttribute("cx", "9");
-    circle.setAttribute("cy", "9");
-    circle.setAttribute("r", "7");
-  }
-  track.classList.add("chat-context-track");
-  fill.classList.add("chat-context-fill");
-  fill.setAttribute("stroke-dasharray", `${String(RING)} ${String(RING)}`);
-  fill.setAttribute("stroke-dashoffset", String(RING));
-  svg.append(track, fill);
-
-  const label = document.createElement("span");
-  label.className = "chat-context-label";
-  label.textContent = "Context 0%";
-  element.append(svg, label);
-  element.addEventListener("click", () => onOpen(element));
 
   return {
     element,
     update(usage) {
       const model = contextMeterModel(usage);
-      label.textContent = model.label;
-      element.dataset["tone"] = model.tone;
-      element.dataset["percent"] = String(model.percent);
-      element.title = model.tooltip;
-      element.setAttribute("aria-label", `${model.label}. ${model.tooltip}`);
-      fill.setAttribute("stroke-dashoffset", String(RING * (1 - model.percent / 100)));
+      const known = usage.contextWindow > 0 && Number.isFinite(usage.contextWindow) && Number.isFinite(usage.tokens);
+      meter.update({
+        percent: known ? model.percent : null,
+        value: known ? `${model.percent}%` : "—",
+        detail: known ? `${formatTokens(Math.max(0, usage.tokens))} / ${formatTokens(usage.contextWindow)}` : "Unknown limit",
+        tooltip: known ? `${model.tooltip} Click to manage context.` : "The model's context limit is unavailable. Click to manage context.",
+        tone: known ? model.tone : "unknown",
+      });
     },
   };
 }

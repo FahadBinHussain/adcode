@@ -55,6 +55,9 @@ export {
   DELETE_FILE,
   OPEN_PREVIEW,
   VIEW_PAGE,
+  AUDIT_PAGE,
+  INSPECT_PROJECT,
+  RUN_PROJECT_CHECKS,
   UPDATE_PLAN,
   LIST_FILES,
   MEMORY_SEARCH,
@@ -141,6 +144,8 @@ export {
 
 export * from "./connections.ts";
 export * from "./requestScheduler.ts";
+export * from "./includedLimitRecovery.ts";
+export * from "./modelHandoff.ts";
 export * from "./requestSize.ts";
 export * from "./compaction.ts";
 

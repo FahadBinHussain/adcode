@@ -1,8 +1,8 @@
 /** Durable parent records and lane traces for confirmed or configured AI Teams. */
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { atomicReplace } from "./atomicReplace.ts";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   createFileClaim,
   createTeamGraph,
@@ -423,6 +423,7 @@ function parseTrace(raw: unknown): AiTeamTrace | null {
 export interface AiTeamStore {
   save(record: AiTeamRecord): Promise<void>;
   read(id: string): Promise<AiTeamRecord | null>;
+  remove(id: string): Promise<boolean>;
   list(workspaceId: string): Promise<AiTeamRecord[]>;
   listAll(): Promise<AiTeamRecord[]>;
   recoverActive(now: number): Promise<AiTeamRecord[]>;
@@ -466,6 +467,14 @@ export function createAiTeamStore(userDataDirectory: string): AiTeamStore {
       await atomicReplace(temporary, target);
     },
     read,
+    async remove(id): Promise<boolean> {
+      if (!TEAM_ID.test(id)) throw new Error("Invalid AI Team id");
+      const target = resolve(folder(id));
+      if (dirname(target) !== resolve(root)) throw new Error("Invalid AI Team directory");
+      if (await read(id) === null) return false;
+      await rm(target, { recursive: true, force: true });
+      return true;
+    },
     async list(workspaceId): Promise<AiTeamRecord[]> {
       return (await all())
         .filter((record) => record.workspaceId === workspaceId)
