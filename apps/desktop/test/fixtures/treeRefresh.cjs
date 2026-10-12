@@ -47,7 +47,13 @@ app.whenReady().then(async () => {
       background.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       const modalEscape = shell.isOpen() && closeCount === 1;
       other.close(); shell.close({ immediate: true }); document.removeEventListener('keydown', intercept, true);
-      return { preserved, submittedOnce, retainedRow, staleRowRemoved, outsideEscape, innerEscape, modalEscape };
+      const modalContent = document.createElement('div');
+      const focusShell = popup.createPopupShell({ id: 'source-control', title: 'Source Control', size: 'workspace', modal: true, host: document.body, content: modalContent, onRequestClose() {}, onClosed() { background.focus(); } });
+      focusShell.open(); focusShell.close();
+      for(let attempt = 0; attempt < 100 && focusShell.isOpen(); attempt++) await new Promise(resolve => setTimeout(resolve, 30));
+      await new Promise(resolve => setTimeout(resolve, 20));
+      const modalFocusRestored = !focusShell.isOpen() && document.activeElement === background;
+      return { preserved, submittedOnce, retainedRow, staleRowRemoved, outsideEscape, innerEscape, modalEscape, modalFocusRestored };
     })()`);
     console.log('treeRefreshEvidence:' + JSON.stringify(result));
   } catch (error) { console.error(error); process.exitCode = 1; }

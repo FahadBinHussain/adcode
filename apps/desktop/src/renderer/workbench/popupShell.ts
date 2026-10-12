@@ -15,6 +15,8 @@ export interface PopupShellOptions {
   readonly initialFocus?: () => HTMLElement | null;
   readonly closeOnBackdrop?: boolean;
   readonly onRequestClose: () => void;
+  /** Runs after the native dialog releases focus and the top layer. */
+  readonly onClosed?: () => void;
 }
 
 export interface PopupOpenOptions {
@@ -186,6 +188,7 @@ export function createPopupShell(options: PopupShellOptions): PopupShell {
     event.preventDefault();
     options.onRequestClose();
   });
+  dialog.addEventListener("close", () => options.onClosed?.());
   dialog.addEventListener("keydown", (event) => {
     if (!options.modal && event.key === "Escape") {
       event.preventDefault();

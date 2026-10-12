@@ -323,6 +323,7 @@ const chatControls = await evaluate(`(async () => {
   probe.remove();
   const row = document.querySelector('.vibe-history-host .chat-history-row');
   const options = row?.querySelector('.chat-history-options');
+  const optionsLeft = options?.getBoundingClientRect().left ?? null;
   options?.click();
   await frame();
   const menu = document.querySelector('.menu-panel[data-context]');
@@ -334,7 +335,7 @@ const chatControls = await evaluate(`(async () => {
     dangerBackground: danger ? getComputedStyle(danger).backgroundColor : null,
     // The position it was given, not its box: menus scale in, and mid-animation the box is not where it lands.
     menuLeft: menu ? parseFloat(menu.style.left) : null,
-    buttonLeft: options ? options.getBoundingClientRect().left : null,
+    buttonLeft: optionsLeft,
   };
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await frame();
@@ -1017,6 +1018,10 @@ checks.scmKeyboardCloseRestoresEditor = await (async () => {
   if (openedFromKeyboard !== true) return false;
 
   await pressEscape();
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await evaluate("document.querySelector('[data-popup-id=\"source-control\"]')?.open === false && document.activeElement?.closest('.monaco-editor') !== null") === true) break;
+    await sleep(50);
+  }
   return await evaluate(
     `document.querySelector('[data-popup-id="source-control"]')?.open === false &&
       document.activeElement?.closest(".monaco-editor") !== null`,
@@ -5857,6 +5862,17 @@ checks.ideAssistantFloats = await evaluate(
  * reload is invisible to every assertion except one that watches the frame's identity and
  * its `src` across the change. So that is what this watches.
  */
+async function closePreviewBeforeOpening() {
+  const closed = await evaluate(`(async () => {
+    const pane = document.querySelector('.preview-pane');
+    if (!pane || pane.hidden) return true;
+    pane.querySelector('.icon-button[aria-label="Close preview"]')?.click();
+    for (let attempt = 0; attempt < 100 && !pane.hidden; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
+    return pane.hidden;
+  })()`);
+  if (closed !== true) throw new Error("Preview did not close before testing its open action");
+}
+await closePreviewBeforeOpening();
 checks.previewFloatsAndMaximisesWithoutReloading = await evaluate(
   `(async () => {
      /*
@@ -5937,6 +5953,7 @@ checks.previewFloatsAndMaximisesWithoutReloading = await evaluate(
  * page. So this asserts the iframe is the same node with the same `src` afterwards, which is
  * the same assertion the undocking check makes, for the same reason.
  */
+await closePreviewBeforeOpening();
 checks.deviceSizingDoesNotReloadThePage = await evaluate(
   `(async () => {
      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'P', ctrlKey: true, shiftKey: true, bubbles: true }));
@@ -6614,7 +6631,7 @@ checks.settingsCloseButtonDismisses = await evaluate(
      close.focus();
       const focused = document.activeElement === close;
       close.click();
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      for (let attempt = 0; attempt < 100 && dialog.open; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
       return focused && dialog.open === false && document.activeElement === document.querySelector('#open-settings');
   })()`,
 );
