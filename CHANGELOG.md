@@ -3,6 +3,13 @@
 All notable changes to ADCode. Dates are the date the version was prepared; a version is
 only public once its installers are attached to a GitHub release.
 
+## 2.3.2 — 2026-10-14
+
+- A dropped connection no longer ends a free AI task. The request is retried inside the same turn for about two minutes, with a status line and Stop, and completed tool steps are not repeated. If the connection stays down, the message names the network error.
+- A network drop while ADCode refreshes your sign-in no longer asks a signed-in person to sign in again; it is retried like any other dropped connection.
+- While agents are working, their live card moves down with the conversation and stays just below the newest message instead of being left above it.
+- Bold text that starts or ends with inline code (`**`fitLine` was broken**`) renders as bold instead of showing the asterisks.
+
 ## 2.3.1 — 2026-10-13
 
 - Slash commands typed with words (`/fix the login bug`) now work exactly like commands picked from the menu, and `/new hello` starts a fresh chat and sends "hello". Messages and history titles show the command you typed; only the model receives the full instruction.

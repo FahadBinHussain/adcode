@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { recoverIncludedLimits } from "../src/includedLimitRecovery.ts";
+import { networkFailure, recoverIncludedLimits } from "../src/includedLimitRecovery.ts";
 import type { Provider, ProviderEvent, ProviderRequest } from "../src/types.ts";
 const request: ProviderRequest = {model:"coder",system:"Current task",messages:[],tools:[],maxTokens:100};
 const collect=async(provider:Provider,signal=new AbortController().signal)=>{const events:ProviderEvent[]=[];for await(const event of provider.stream(request,signal))events.push(event);return events;};
@@ -52,4 +52,35 @@ it("supports older relay messages and HTTP-date Retry-After",async()=>{
   vi.useFakeTimers();vi.setSystemTime(0);let calls=0;
   const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){if(++calls===1)throw{status:429,message:"Included AI returned HTTP 429 (code rate-limit)",retryAfter:"Thu, 01 Jan 1970 00:00:02 GMT"};yield{kind:"stop",reason:"end-turn"};}};
   const result=collect(recoverIncludedLimits(provider));await vi.advanceTimersByTimeAsync(2000);await result;expect(calls).toBe(2);
+});
+const dropped=(code="ECONNRESET")=>Object.assign(new TypeError("fetch failed"),{cause:Object.assign(new Error("other side closed"),{code})});
+it("retries a dropped connection inside the same turn and carries on",async()=>{
+  vi.useFakeTimers();vi.setSystemTime(0);const seen:ProviderRequest[]=[];
+  const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(input){seen.push(input);if(seen.length<3)throw dropped();yield{kind:"text",text:"Back"};yield{kind:"stop",reason:"end-turn"};}};
+  const result=collect(recoverIncludedLimits(provider));await vi.advanceTimersByTimeAsync(1999);expect(seen).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);expect(seen).toHaveLength(2);await vi.advanceTimersByTimeAsync(5000);const events=await result;
+  expect(seen).toEqual([request,request,request]);
+  expect(events.filter(event=>event.kind==="status").map(event=>event.kind==="status"?event.text:"")).toEqual([expect.stringContaining("dropped (ECONNRESET). Retrying in 2s"),expect.stringContaining("Retrying in 5s")]);
+  expect(events.filter(event=>event.kind==="text")).toEqual([{kind:"text",text:"Back"}]);
+});
+it("gives up after about two minutes and names the network error",async()=>{
+  vi.useFakeTimers();vi.setSystemTime(0);let calls=0;
+  const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){calls++;throw dropped("ENOTFOUND");}};
+  const result=collect(recoverIncludedLimits(provider)).catch(error=>error);await vi.advanceTimersByTimeAsync(137_000);
+  const error=await result;expect(calls).toBe(7);expect(error.message).toBe("fetch failed (ENOTFOUND) - still unreachable after 6 retries");expect(vi.getTimerCount()).toBe(0);
+});
+it("never resends after part of a reply arrived, and stops at once when cancelled",async()=>{
+  vi.useFakeTimers();let calls=0;
+  const partial:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){calls++;yield{kind:"text",text:"partial"};throw dropped();}};
+  await expect(collect(recoverIncludedLimits(partial))).rejects.toThrow("fetch failed");expect(calls).toBe(1);
+  const controller=new AbortController();let more=0;
+  const failing:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){more++;throw dropped();}};
+  const result=collect(recoverIncludedLimits(failing),controller.signal).catch(error=>error.name);await vi.advanceTimersByTimeAsync(0);controller.abort();
+  expect(await result).toBe("AbortError");await vi.advanceTimersByTimeAsync(200_000);expect(more).toBe(1);expect(vi.getTimerCount()).toBe(0);
+});
+it("recognises the desktop's token-refresh network failure and nothing that answered",()=>{
+  expect(networkFailure(Object.assign(new TypeError("fetch failed"),{cause:Object.assign(new Error("getaddrinfo ENOTFOUND x"),{code:"ENOTFOUND"})}))).toBe("ENOTFOUND");
+  expect(networkFailure(new TypeError("fetch failed"))).toBe("network");
+  expect(networkFailure(new Error("Sign in in Account to use included AI."))).toBeNull();
+  expect(networkFailure({status:503})).toBeNull();
 });

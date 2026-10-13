@@ -12,7 +12,7 @@
  * Reads are revalidated rather than cached forever, so publishing from the admin panel
  * appears without a deploy.
  */
-import { API_ORIGIN } from "./site";
+import { readApi } from "./apiRead";
 
 export interface Post {
   slug: string;
@@ -680,9 +680,7 @@ export async function allPosts(options?: { surface?: "blog" | "docs" }): Promise
     wanted === undefined || post.surface === "both" || (post.surface ?? "blog") === wanted;
 
   try {
-    const response = await fetch(`${API_ORIGIN}/v1/posts`, {
-      next: { revalidate: REVALIDATE_SECONDS },
-    });
+    const response = await readApi("/v1/posts", REVALIDATE_SECONDS);
     if (!response.ok) return fileposts().filter(onSurface);
 
     const body = (await response.json()) as { posts?: ApiPost[] };
@@ -713,9 +711,7 @@ export async function allPosts(options?: { surface?: "blog" | "docs" }): Promise
 
 export async function getPost(slug: string): Promise<Post | null> {
   try {
-    const response = await fetch(`${API_ORIGIN}/v1/posts/${encodeURIComponent(slug)}`, {
-      next: { revalidate: REVALIDATE_SECONDS },
-    });
+    const response = await readApi(`/v1/posts/${encodeURIComponent(slug)}`, REVALIDATE_SECONDS);
     if (response.ok) return fromApi((await response.json()) as ApiPost);
   } catch {
     // Fall through to the bundled posts.

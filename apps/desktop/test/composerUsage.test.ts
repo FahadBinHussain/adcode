@@ -80,3 +80,16 @@ describe("composer usage meters", () => {
     expect(composerUsageModels(null, null, false)[0].detail).toBe("Unavailable");
   });
 });
+
+describe("free AI sign-in token failures", () => {
+  it("turns a network drop while refreshing the token into the retryable fetch failure, not a sign-in request", async () => {
+    const { includedTokenError } = await import("../src/shared/tagflow.ts");
+    for (const detail of ["fetch failed", "refresh transport failure", "connect ECONNRESET 104.21.0.1:443"]) {
+      const error = includedTokenError(detail);
+      expect(error, detail).toBeInstanceOf(TypeError);
+      expect(error.message, detail).toBe("fetch failed");
+    }
+    expect((includedTokenError("getaddrinfo ENOTFOUND securetoken.googleapis.com").cause as { code?: string }).code).toBe("ENOTFOUND");
+    expect(includedTokenError("token refresh failed: TOKEN_EXPIRED").message).toBe("Sign in in Account to use included AI.");
+  });
+});

@@ -4,7 +4,7 @@ import { createOpenAiCompatibleProvider, recoverIncludedLimits, type CataloguePr
 import { DiskFileStore, FetchHttpTransport, SystemClock } from "./adPorts.ts";
 import { apiBaseUrl, createBackendTokens } from "./backend.ts";
 import type { TagflowAllowanceView, TagflowFeedbackInput, TagflowFeedbackResult } from "../shared/tagflow.ts";
-import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, includedAiPersona, type TagflowAudienceInput, type TagflowAudienceResult } from "../shared/tagflow.ts";
+import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, includedAiPersona, includedTokenError, type TagflowAudienceInput, type TagflowAudienceResult } from "../shared/tagflow.ts";
 
 let offered: CatalogueProvider | null = null;
 let defaultModel = "";
@@ -47,7 +47,7 @@ export function refreshTagflowModels(force = false): Promise<void> {
 async function token(): Promise<string> {
   const provider = createBackendTokens({ http: new FetchHttpTransport([]), clock: new SystemClock(), store: new DiskFileStore(join(app.getPath("userData"), "ads")) });
   const result = await provider.getToken();
-  if (!result.ok) throw new Error("Sign in in Account to use included AI.");
+  if (!result.ok) throw includedTokenError(result.error.detail);
   return result.value;
 }
 

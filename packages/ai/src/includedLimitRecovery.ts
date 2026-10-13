@@ -26,11 +26,32 @@ function resetTime(error: LimitError, daily: boolean): number {
   return daily ? (Math.floor(now / 86_400_000) + 1) * 86_400_000 : now + 60_000;
 }
 
+/**
+ * Pauses between retries after the connection to the relay fails, about two minutes in all.
+ *
+ * Reported on 2026-10-13: a one-second network blip ("fetch failed", and the relay never saw
+ * the request) ended an eleven-minute, 33-tool task. A request that failed before any reply
+ * came back is safe to send again inside the same turn, so a blip now costs a pause.
+ */
+export const NETWORK_RETRY_SECONDS = [2, 5, 10, 20, 40, 60] as const;
+const NETWORK_CODES = /^(?:ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ENETUNREACH|ENETDOWN|EHOSTUNREACH|EPIPE|UND_ERR_[A-Z_]+)$/;
+
+/** The network error behind a failure, or null when the relay or provider answered. */
+export function networkFailure(caught: unknown): string | null {
+  if (!(caught instanceof Error)) return null;
+  const codeOf = (value: unknown): string | null =>
+    typeof value === "object" && value !== null && typeof (value as { code?: unknown }).code === "string" ? (value as { code: string }).code : null;
+  const code = codeOf((caught as { cause?: unknown }).cause) ?? codeOf(caught);
+  if (code !== null && NETWORK_CODES.test(code)) return code;
+  return /^fetch failed$|socket hang up|network (?:error|changed)/i.test(caught.message) ? code ?? "network" : null;
+}
+
 /** Keep the pending request inside its existing agent turn; completed tools are not replayed. */
 export function recoverIncludedLimits(provider: Provider): Provider {
   return {
     ...provider,
     async *stream(request, signal) {
+      let networkRetries = 0;
       for (;;) {
         signal.throwIfAborted();
         let producedOutput = false;
@@ -42,6 +63,17 @@ export function recoverIncludedLimits(provider: Provider): Provider {
           return;
         } catch (caught) {
           if (signal.aborted || producedOutput || typeof caught !== "object" || caught === null) throw caught;
+          const network = networkFailure(caught);
+          if (network !== null) {
+            if (networkRetries >= NETWORK_RETRY_SECONDS.length) {
+              // Name the network error, so the chat card and the log say more than "fetch failed".
+              throw new Error(`fetch failed (${network}) - still unreachable after ${NETWORK_RETRY_SECONDS.length} retries`, { cause: caught });
+            }
+            const seconds = NETWORK_RETRY_SECONDS[networkRetries++]!;
+            yield { kind: "status", text: `The connection to free AI dropped (${network}). Retrying in ${seconds}s - this task carries on where it was. Press Stop to cancel.` };
+            await waitUntil(Date.now() + seconds * 1000, signal);
+            continue;
+          }
           const error = caught as LimitError;
           const code = error.code ?? /\(code (daily-limit|rate-limit|upstream-rate-limit)\)/.exec(error.message ?? "")?.[1];
           if (error.status !== 429 || error.retryable === false || !["daily-limit", "rate-limit", "upstream-rate-limit"].includes(code ?? "")) throw caught;

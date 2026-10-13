@@ -145,15 +145,16 @@ function renderInlineWithImages(raw: string): string {
 
 /** Inline code, bold, and file-reference buttons. Input must already be escaped. */
 export function renderChatInline(escaped: string): string {
-  const parts = escaped.split(/(`[^`\n]*`)/g);
-  return parts
-    .map((part) => {
-      if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
-        return `<code class="chat-inline-code">${part.slice(1, -1)}</code>`;
-      }
-      return renderReferenceButtons(renderItalic(renderBold(part)));
-    })
-    .join("");
+  /*
+   * Code spans are set aside first and put back last, so bold and emphasis can wrap them
+   * while nothing inside a span is ever read as formatting. Splitting the line at each span
+   * instead left "**`fitLine` was broken**" with both "**" on the page: the pair ended up in
+   * different pieces and neither piece had one to match.
+   */
+  const spans: string[] = [];
+  const held = escaped.replace(/[]/g, "").replace(/`([^`\n]*)`/g, (_whole, code: string) => `${spans.push(code) - 1}`);
+  return renderReferenceButtons(renderItalic(renderBold(held)))
+    .replace(/(\d+)/g, (_whole, index: string) => `<code class="chat-inline-code">${spans[Number(index)] ?? ""}</code>`);
 }
 
 type LineKind = "ol" | "ul" | "quote" | "heading" | "rule" | "text";

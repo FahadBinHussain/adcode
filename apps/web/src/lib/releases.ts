@@ -10,7 +10,7 @@
  * showing slightly stale; a release note baked into the build would claim a version
  * shipped that this deployment may not have, which is worse than saying nothing.
  */
-import { API_ORIGIN } from "./site";
+import { readApi } from "./apiRead";
 
 export interface ReleaseNote {
   version: string;
@@ -56,9 +56,7 @@ function fromApi(release: ApiRelease): ReleaseNote {
 /** Newest first. Empty when the API cannot be reached. */
 export async function allReleases(): Promise<ReleaseNote[]> {
   try {
-    const response = await fetch(`${API_ORIGIN}/v1/releases`, {
-      next: { revalidate: REVALIDATE_SECONDS },
-    });
+    const response = await readApi("/v1/releases", REVALIDATE_SECONDS);
     if (!response.ok) return [];
 
     const body = (await response.json()) as { releases?: ApiRelease[] };

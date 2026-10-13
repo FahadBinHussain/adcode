@@ -832,9 +832,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   const transcript = document.createElement("div");
   // Every agent's ongoing work lives in the transcript, beside the turn that started it.
+  let liveCard: HTMLElement | null = null;
   const live = createChatLiveRoom({
     onChatResize: () => scrollToEnd(),
     onActivity: (element, newRun) => {
+      liveCard = element;
       if (newRun || element.parentElement !== transcript) {
         transcript.append(element);
         scrollToEnd();
@@ -843,6 +845,22 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     stopChat: () => stopTurn(),
     runCommand: (command, arg) => deps.runCommand?.(command, arg),
   });
+  /*
+   * While agents are still working, their card follows the conversation. Reported: it stayed
+   * mounted where the run began, so a later "continue" and the assistant's whole reply piled
+   * up underneath and the working agents sat out of sight above them. Anything the chat now
+   * adds below a working card moves the card back to the end - just above the "working"
+   * indicator, which `scrollToEnd` keeps last - and a finished run stays where it happened.
+   */
+  new MutationObserver(() => {
+    const card = liveCard;
+    if (card === null || card.parentElement !== transcript || live.room.stats().working === 0) return;
+    const tail = !working.hidden && working.parentElement === transcript ? working : null;
+    const inPlace = tail === null ? transcript.lastElementChild === card : card.nextElementSibling === tail && transcript.lastElementChild === tail;
+    if (inPlace) return;
+    transcript.insertBefore(card, tail);
+    scrollToEnd();
+  }).observe(transcript, { childList: true });
   const chatPreview = createChatPreview(transcript);
   const previewCalls = new Set<string>();
   /*

@@ -7,6 +7,15 @@ import {
 } from "../src/renderer/ai/chatMarkdown.ts";
 
 describe("chatMarkdown", () => {
+  it("bolds text that starts or ends with inline code, and never reads code as formatting", () => {
+    const html = renderChatMessageHtml("1. **`fitLine` was broken** - slope used `dyy/dxy`\n2. **Fixed `fitCircle`** too\n3. Keep `**not bold**` and `a*b*c` literal");
+    expect(html).toContain('<strong><code class="chat-inline-code">fitLine</code> was broken</strong>');
+    expect(html).toContain('<strong>Fixed <code class="chat-inline-code">fitCircle</code></strong>');
+    expect(html).toContain('<code class="chat-inline-code">**not bold**</code>');
+    expect(html).toContain('<code class="chat-inline-code">a*b*c</code>');
+    expect(html).not.toMatch(/\*\*<code|<\/code> was broken\*\*/);
+    expect(html).not.toContain("");
+  });
   it("renders the file summary as a real table between prose and a heading", () => {
     const html = renderChatMessageHtml("What was built (3 files)\n| File | Purpose |\n|---|---|\n| `index.html` | App shell |\n| `styles.css` | **Full styling** |\n| [app.js](app.js#L2) | All logic |\n## Features\n- Notes");
     expect(html).toContain('<table class="chat-md-table"><thead><tr><th scope="col"');
