@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHECK_APP_PROMPT,
   SLASH_COMMANDS,
   contextChipName,
+  expandSlashCommand,
+  parseSlashCommand,
   matchSlashCommands,
   menuTriggerAt,
   rememberPrompt,
@@ -40,6 +43,50 @@ describe("matchSlashCommands", () => {
 
   it("matches hints as well as ids", () => {
     expect(matchSlashCommands("commit message").map((command) => command.id)).toContain("commit");
+  });
+});
+
+describe("parseSlashCommand", () => {
+  it("reads a command typed out in full and the words after it", () => {
+    expect(parseSlashCommand("/fix the login bug")).toMatchObject({ command: { id: "fix" }, rest: "the login bug" });
+    expect(parseSlashCommand("  /Review   focus on auth  ")).toMatchObject({ command: { id: "review" }, rest: "focus on auth" });
+    expect(parseSlashCommand("/new")).toMatchObject({ command: { id: "new" }, rest: "" });
+    expect(parseSlashCommand("/plan\nstep one\nstep two")).toMatchObject({ command: { id: "plan" }, rest: "step one\nstep two" });
+  });
+
+  it("leaves paths, unknown commands and mid-sentence slashes alone", () => {
+    expect(parseSlashCommand("/etc/hosts is wrong")).toBeNull();
+    expect(parseSlashCommand("/src/app.ts fails to build")).toBeNull();
+    expect(parseSlashCommand("/fixit now")).toBeNull();
+    expect(parseSlashCommand("please /fix this")).toBeNull();
+    expect(parseSlashCommand("/ fix")).toBeNull();
+  });
+});
+
+describe("expandSlashCommand", () => {
+  it("gives the model the command's instruction followed by the person's words", () => {
+    const fix = SLASH_COMMANDS.find((command) => command.id === "fix")!;
+    expect(expandSlashCommand("/fix the login bug")).toBe(`${fix.prompt}the login bug`);
+    const review = SLASH_COMMANDS.find((command) => command.id === "review")!;
+    expect(expandSlashCommand("/review focus on auth")).toBe(`${review.prompt}\n\nfocus on auth`);
+  });
+
+  it("closes the instruction as a sentence when nothing follows", () => {
+    expect(expandSlashCommand("/explain")).toBe("Explain how this works, step by step and in plain words, pointing at the files and lines involved.");
+    expect(expandSlashCommand("/check")).toBe(CHECK_APP_PROMPT.trim());
+    expect(expandSlashCommand("/commit")).toBe(SLASH_COMMANDS.find((command) => command.id === "commit")!.prompt);
+  });
+
+  it("sends anything else exactly as written, actions included", () => {
+    expect(expandSlashCommand("what does /fix do?")).toBe("what does /fix do?");
+    expect(expandSlashCommand("/etc/hosts")).toBe("/etc/hosts");
+    expect(expandSlashCommand("/new")).toBe("/new");
+  });
+
+  it("gives every prompt and diff command an instruction", () => {
+    for (const command of SLASH_COMMANDS) {
+      expect(command.kind === "action" ? command.prompt === undefined : (command.prompt?.length ?? 0) > 20, command.id).toBe(true);
+    }
   });
 });
 

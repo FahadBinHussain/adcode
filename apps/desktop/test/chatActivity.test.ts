@@ -110,7 +110,7 @@ describe("Agent Chat v2 wiring", () => {
   });
 
   it("keeps the v2 composer contract", () => {
-    expect(widgetSource).toContain("Ask anything, or describe what to build");
+    expect(widgetSource).toContain("Ask anything or describe what to build · / for commands · @ for files");
     expect(widgetSource).toContain("autogrowComposer");
     expect(widgetSource).toContain("140");
     expect(widgetSource).toContain("chat-mode-pill");

@@ -136,6 +136,21 @@ export function openUsageDialog(): Promise<void> {
         const requestLimit = view.limits.requestsPerMinute === UNLIMITED_REQUESTS_PER_MINUTE ? "ADCode has no per-minute request cap. The AI provider may still limit busy periods." : `Up to ${view.limits.requestsPerMinute.toLocaleString()} AI requests per minute.`;
         budgetNote.textContent = `${requestLimit} Service budget: ${formatUsageCost(summary.remainingCost)} left of ${formatUsageCost(view.limits.dailyCostMicros)} today. ADCode pays this cost; you are not charged. Your daily token allowance resets at the time above.`;
         const parts: HTMLElement[] = [heading, meters, breakdown, counts];
+        // Partner models with their own allowance draw from it instead of the main one above.
+        if ((view.pools ?? []).length > 0) {
+          const pools = el("div", "usage-allowance-meters");
+          for (const pool of view.pools ?? []) {
+            const left = allowanceSummary({ ...view, limits: pool.limits, usage: pool.usage }).remainingTokens;
+            const progress = el("progress", "ad-progress");
+            progress.max = Math.max(1, pool.limits.dailyTokens);
+            progress.value = Math.min(pool.limits.dailyTokens, left);
+            progress.setAttribute("aria-label", `${pool.name} tokens remaining today`);
+            const meter = el("div", "usage-allowance-meter");
+            meter.append(el("span", "usage-stat-label", `${pool.name} models · own allowance`), el("strong", "usage-allowance-value", left.toLocaleString()), progress, el("span", "usage-stat-detail", `of ${pool.limits.dailyTokens.toLocaleString()} daily tokens, separate from the allowance above`));
+            pools.append(meter);
+          }
+          parts.push(pools);
+        }
         if (summary.remainingTokens === 0 || summary.remainingRequests === 0 || summary.remainingCost === 0) {
           parts.push(el("p", "usage-allowance-warning", `${summary.remainingTokens === 0 ? "Today's token allowance is used up" : summary.remainingRequests === 0 ? "Today's AI request allowance is used up" : "Today's service budget is used up"}. Wait for the reset above, or use your own connected model.`));
         }

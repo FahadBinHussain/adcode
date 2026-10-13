@@ -31,6 +31,7 @@ import type {
   AiAutomationView,
   AiTeamSuggestionView,
   AiTeamView,
+  AiCheckpointView,
   AiWorkspaceChangeView,
   AiWorkspaceTaskView,
   ChatSessionView,
@@ -48,6 +49,7 @@ import {
   createComposerMenu,
   matchSlashCommands,
   menuTriggerAt,
+  parseSlashCommand,
   rememberPrompt,
   replaceTrigger,
   type MenuTrigger,
@@ -56,7 +58,7 @@ import {
 import { runChatWidgetIntent } from "./chatWidgetIntents.ts";
 import { createIcon, ICON } from "../workbench/icons.ts";
 import { createContextMenu, attachContextMenuDismissal, type ContextMenuNode } from "../workbench/contextMenu.ts";
-import { compactCommand, contextMeterModel, createContextMeter } from "./contextMeter.ts";
+import { contextMeterModel, createContextMeter } from "./contextMeter.ts";
 import { createComposerUsage } from "./composerUsage.ts";
 import { openModelFeedback } from "./modelFeedback.ts";
 import { markFor } from "../motionFlip.ts";
@@ -186,6 +188,8 @@ export interface ChatWidgetDeps {
   readonly openCodeReference?: (reference: CodeReference) => void;
   /** Open the Connect screen, which owns providers, keys and models. */
   readonly openConnect: () => void;
+  /** Opens the Account panel, where free AI's sign-in happens. */
+  readonly openAccount?: () => void;
   /** Whether Connect is open: someone choosing a model there may not have picked the last one yet. */
   readonly modelPickerOpen?: () => boolean;
   /** Save every open editor, so the isolated task can start from current files. */
@@ -246,6 +250,28 @@ export function dispatchChatSend(
   return true;
 }
 
+/**
+ * A sent `/fix the login bug` shows as a `/fix` chip and the person's own words. The model
+ * was given the command's full instruction; the bubble keeps to what was typed, and the
+ * chip's tooltip says what the command asked for.
+ */
+export function markSlashCommand(element: HTMLElement, text: string): void {
+  const parsed = parseSlashCommand(text);
+  if (parsed === null || parsed.command.kind === "action") return;
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let first = walker.nextNode();
+  // Skip the attachment row's chip text: the command is the first word of the message.
+  while (first !== null && first.parentElement?.closest(".chat-bubble-attachments") !== null) first = walker.nextNode();
+  const token = first === null ? null : /^\s*\/[A-Za-z][\w-]*/.exec(first.textContent ?? "");
+  if (first === null || token === null || first.parentNode === null) return;
+  const badge = document.createElement("span");
+  badge.className = "chat-command-badge";
+  badge.textContent = `/${parsed.command.id}`;
+  badge.title = parsed.command.hint;
+  first.textContent = (first.textContent ?? "").slice(token[0].length).replace(/^\s+/, "");
+  first.parentNode.insertBefore(badge, first);
+}
+
 export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   let open = false;
   let streamingBubble: HTMLElement | null = null;
@@ -299,9 +325,13 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   function renderMessage(element: HTMLElement, text: string): void {
     messageSources.set(element, text);
+    // The pictures and files sent with a message sit above its text; a re-render keeps them.
+    const attachments = element.querySelector(":scope > .chat-bubble-attachments");
     // Rich Claude-style HTML (escaped, code blocks, lists, inline code, file
     // links). Buttons are wired after insert so copy and open-file work.
     element.innerHTML = renderChatMessageHtml(text);
+    if (attachments !== null) element.prepend(attachments);
+    if (element.classList.contains("chat-bubble-user")) markSlashCommand(element, text);
     wireMessageButtons(element);
     if (element.classList.contains("is-streaming")) markFreshBlocks(element);
   }
@@ -481,7 +511,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         modelName.textContent = label;
         refreshContextMeter();
       }
-      usageMeters.setIncluded(status.activeProvider === "tagflow");
+      usageMeters.setIncluded(status.activeProvider === "tagflow", status.activeModel || null);
       connectButton.textContent = status.ready || saved ? "Models" : "Connect";
       modelLabel.dataset["ready"] = String(status.ready);
       modelLabel.title = status.ready
@@ -554,6 +584,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   resetButton.title = "Start a new conversation - the current one is kept in History";
   resetButton.setAttribute("aria-label", "Start a new conversation");
   resetButton.addEventListener("click", () => {
+    resumeGeneration += 1;
     window.adcode.ai.reset();
     resetActivity();
     chatPreview.clear();
@@ -802,6 +833,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const transcript = document.createElement("div");
   // Every agent's ongoing work lives in the transcript, beside the turn that started it.
   const live = createChatLiveRoom({
+    onChatResize: () => scrollToEnd(),
     onActivity: (element, newRun) => {
       if (newRun || element.parentElement !== transcript) {
         transcript.append(element);
@@ -1060,10 +1092,16 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   let includedFeedbackRequest: string | null = null;
 
   /** Draw a past conversation back into the transcript. */
+  let resumeGeneration = 0;
   async function resume(id: string): Promise<void> {
+    const generation = ++resumeGeneration;
     if (docked) api.open();
     const session = await window.adcode.chat.resume(id);
-    if (session === null) return;
+    if (session === null || generation !== resumeGeneration) return;
+    const recorded = await window.adcode.ai.checkpoints(session.id).catch(() => []);
+    if (generation !== resumeGeneration) return;
+    const edits: AiCheckpointView[] = Array.isArray(recorded) ? [...recorded] : [];
+    edits.sort((a, b) => a.createdAt - b.createdAt);
 
     resetActivity();
     chatPreview.clear();
@@ -1073,14 +1111,19 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     transcript.replaceChildren();
     authorPending = true;
     streamingBubble = null;
+    live.chatWindow.reset();
     activeSessionId = session.id;
     conversationTitle.textContent = session.title;
 
     restoring = true;
+    const messageNodes: HTMLElement[] = [];
     try {
+      let editIndex = 0;
       for (const message of session.messages) {
-        bubble(message.role === "user" ? "user" : "assistant", message.text, [], message.at,message.includedRequestId);
+        while (editIndex < edits.length && edits[editIndex]!.createdAt < message.at) appendEditSummary(edits[editIndex++]!);
+        messageNodes.push(bubble(message.role === "user" ? "user" : "assistant", message.text, [], message.at,message.includedRequestId));
       }
+      while (editIndex < edits.length) appendEditSummary(edits[editIndex++]!);
     } finally {
       restoring = false;
     }
@@ -1089,7 +1132,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     currentSummary = session.summary?.text ?? null;
     const summary = session.summary ?? null;
     if (summary !== null && summary.coversUntil > 0) {
-      transcript.insertBefore(compactionDivider(), transcript.children[summary.coversUntil] ?? null);
+      transcript.insertBefore(compactionDivider(), messageNodes[summary.coversUntil] ?? null);
     }
     refreshContextMeter();
 
@@ -1097,6 +1140,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     renderHistory();
     historyOpen = false;
     applyDisclosures();
+    scrollToEnd(true);
   }
 
   /* -- What is being remembered ----------------------------------------- */
@@ -1390,7 +1434,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const input = document.createElement("textarea");
   input.className = "chat-input";
   input.rows = 2;
-  input.placeholder = "Ask anything, or describe what to build…";
+  // The two typed menus are the fastest way to everything; an empty composer says so.
+  input.placeholder = "Ask anything or describe what to build · / for commands · @ for files";
   input.setAttribute("aria-label", "Message the assistant");
 
   // Auto-growing composer, capped at ~140px per the Agent Chat reference.
@@ -1877,33 +1922,58 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     input.focus();
   }
 
-  async function runSlashCommand(command: SlashCommand, autoSend = false): Promise<void> {
-    applyTrigger("");
-    switch (command.id) {
-      case "new": resetButton.click(); return;
+  /**
+   * An action command, picked or typed. `rest` is whatever followed it: `/team add a cart`
+   * sets up a Team for that task, `/new fix the header` starts over and sends it.
+   */
+  function runSlashAction(id: string, rest = ""): void {
+    switch (id) {
+      case "new":
+        resetButton.click();
+        if (rest.length > 0) api.ask(rest);
+        return;
       case "history": historyButton.click(); return;
       case "model": deps.openConnect(); return;
       case "preview": void chatPreview.start(); return;
       case "team": api.openTeamSetup(); return;
       case "schedule": api.openScheduleComposer(); return;
-      case "compact": void compactNow(); return;
+      case "compact": void compactNow(rest.length > 0 ? rest : undefined); return;
     }
-    if (command.kind === "diff") {
-      const diff = await (deps.uncommittedDiff?.() ?? Promise.resolve("")).catch(() => "");
-      if (diff.trim().length === 0) {
-        complain("No uncommitted changes to look at: git diff HEAD is empty.");
-        input.focus();
-        return;
-      }
-      if (!addTextContext("uncommitted-changes.diff", diff)) return;
+  }
+
+  const DIFF_CHIP = "uncommitted-changes.diff";
+
+  /** Put `git diff HEAD` in the conversation as a chip, once; false when there is nothing to show. */
+  async function attachUncommittedDiff(): Promise<boolean> {
+    if (pending.some((item) => item.name === DIFF_CHIP)) return true;
+    const diff = await (deps.uncommittedDiff?.() ?? Promise.resolve("")).catch(() => "");
+    if (diff.trim().length === 0) {
+      complain("No uncommitted changes to look at: git diff HEAD is empty.");
+      input.focus();
+      return false;
     }
+    return addTextContext(DIFF_CHIP, diff);
+  }
+
+  async function runSlashCommand(command: SlashCommand, autoSend = false): Promise<void> {
+    applyTrigger("");
+    // Picked from the menu, an action never sends a draft: what else is in the composer stays.
+    if (command.kind === "action") {
+      runSlashAction(command.id);
+      return;
+    }
+    if (command.kind === "diff" && !(await attachUncommittedDiff())) return;
+    // The composer keeps the short `/fix`: the message reads as typed in the conversation and
+    // its title, and the model is given the command's full instruction when it is sent.
     const rest = input.value.trim();
-    input.value = `${command.prompt ?? ""}${rest}`;
+    input.value = `/${command.id} ${rest}`;
     const end = input.value.length;
     input.setSelectionRange(end, end);
     autogrowComposer();
     input.focus();
-    if (autoSend) submit();
+    // /review and /commit are complete with the diff alone: picked with nothing else typed,
+    // they go at once. (Typed out, `/review focus on auth` still says what to look at.)
+    if (autoSend || (command.kind === "diff" && rest.length === 0)) submit();
   }
 
   async function chooseMention(path: string): Promise<void> {
@@ -2902,7 +2972,18 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   function resend(prompt: string): boolean {
     if (sendButton.dataset["mode"] === "stop") return false;
     if (prompt.trim().length === 0) return false;
-    void window.adcode.ai.send(prompt, undefined, currentEditorContext()).catch(() => undefined);
+    const editor = currentEditorContext();
+    if (parseSlashCommand(prompt)?.command.kind === "diff") {
+      // A retried /review or /commit looks at the changes as they are now, attached again.
+      void (deps.uncommittedDiff?.() ?? Promise.resolve(""))
+        .catch(() => "")
+        .then((diff) => {
+          const data = diff.length > MAX_TEXT_CHARS ? diff.slice(0, MAX_TEXT_CHARS) : diff;
+          const attached: AiAttachmentView[] = data.trim().length === 0 ? [] : [{ name: DIFF_CHIP, kind: "text", mediaType: "text/plain", data }];
+          return window.adcode.ai.send(prompt, attached.length === 0 ? undefined : attached, editor);
+        })
+        .catch(() => undefined);
+    } else void window.adcode.ai.send(prompt, undefined, editor).catch(() => undefined);
     setSendMode("stop");
     streamingBubble = null;
     return true;
@@ -2962,7 +3043,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
     const icon = document.createElement("span");
     icon.className = "chat-failure-icon";
-    icon.textContent = "!";
+    icon.textContent = failure.kind === "sign-in" ? "→" : "!";
     icon.setAttribute("aria-hidden", "true");
 
     const body = document.createElement("div");
@@ -3004,6 +3085,27 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         }, primary);
       } else if (kind === "report") {
         action("Report problem", () => reportFailure(failure.title, failure.detail), primary);
+      } else if (kind === "sign-in") {
+        // Signing in is the whole fix, so the request goes again by itself once the account
+        // links - a newcomer's first build carries on instead of waiting to be retyped.
+        const request = lastUserPrompt;
+        let waiting: (() => void) | null = null;
+        const signIn = action("Sign in", () => {
+          deps.openAccount?.();
+          if (waiting !== null || request.trim().length === 0) return;
+          signIn.textContent = "Waiting for sign-in…";
+          waiting = window.adcode.account.onChanged((state) => {
+            if (state.state !== "linked") return;
+            waiting?.(); waiting = null;
+            signIn.textContent = "Signed in";
+            signIn.disabled = true;
+            text.textContent = "You're signed in. Sending your message again…";
+            continueWhenIdle(request);
+          });
+        }, primary);
+        signIn.hidden = deps.openAccount === undefined;
+        // A build without accounts cannot sign anyone in; switching model is then the way on.
+        void window.adcode.account.status().then((state) => { if (state.state === "unavailable") signIn.hidden = true; }, () => undefined);
       }
     });
     if (!failure.actions.includes("report") && deps.reportProblem !== undefined) {
@@ -4083,7 +4185,13 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       transcript.append(liveWindow);
       scrollToEnd();
     }
-    if (event.kind === "tool-draft") return;
+    if (event.kind === "tool-draft") {
+      const path = typeof event["path"] === "string" ? event["path"] : null;
+      const label = path === null ? "Writing a file" : `Writing ${path}`;
+      workingText.textContent = label;
+      ensureActivity().setLabel(label);
+      return;
+    }
 
     switch (event.kind) {
       case "text": {
@@ -4292,12 +4400,15 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    * edits the user made afterwards until they say so.
    */
   window.adcode.ai.onCheckpoint((checkpoint) => {
+    appendEditSummary(checkpoint);
+    scrollToEnd();
+  });
+  function appendEditSummary(checkpoint: AiCheckpointView): void {
     transcript.append(createEditSummary(checkpoint, {
       openFile: path => deps.openExternalPath(path),
       undo: (id, force) => window.adcode.ai.undoCheckpoint(id, force),
     }));
-    scrollToEnd();
-  });
+  }
   /* ── Sending ──────────────────────────────────────────────────────────── */
 
   /**
@@ -4308,6 +4419,31 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     closeOpenMenu();
     // A person stepping in resets Keep going's count, whether to stop or to redirect.
     keptGoing = 0;
+    // A Team suggestion still waiting on its debounce belongs to text that is leaving now.
+    if (suggestionTimer !== null) {
+      window.clearTimeout(suggestionTimer);
+      suggestionTimer = null;
+    }
+
+    /*
+     * A command typed out in full works like one picked from the menu. Actions act at once,
+     * even mid-turn - `/model` while an answer streams opens the picker - and `/compact
+     * <focus>` makes room rather than asking anything. Review and commit fetch the diff
+     * first, then send (or queue) as typed; the main process expands every prompt command.
+     */
+    const typed = parseSlashCommand(input.value);
+    if (typed !== null && typed.command.kind === "action") {
+      input.value = typed.command.id === "new" || typed.command.id === "compact" ? "" : typed.rest;
+      autogrowComposer();
+      composerMenu.hide();
+      runSlashAction(typed.command.id, typed.rest);
+      return;
+    }
+    if (typed !== null && typed.command.kind === "diff" && !pending.some((item) => item.name === DIFF_CHIP)) {
+      void attachUncommittedDiff().then((attached) => { if (attached) submit(fromKey); });
+      return;
+    }
+
     if (sendButton.dataset["mode"] === "stop") {
       if (fromKey && (input.value.trim().length > 0 || pending.length > 0)) {
         if (followUps.add(input.value, pending) !== null) {
@@ -4325,15 +4461,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     }
     const text = input.value;
     if (text.trim().length === 0 && pending.length === 0) return;
-
-    // `/compact` and `/compact <what matters>` make room rather than asking anything.
-    const compact = pending.length === 0 ? compactCommand(text) : null;
-    if (compact !== null) {
-      input.value = "";
-      autogrowComposer();
-      void compactNow(compact.focus);
-      return;
-    }
 
     // Explicitly not connected: printing the message into a turn that cannot
     // run answers nothing. Say the true thing instead — how to start — with a
@@ -4584,8 +4711,14 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   async function suggestForComposer(manual: boolean): Promise<void> {
     const prompt = input.value.trim();
-    if (prompt.length === 0) {
-      input.placeholder = "Describe the task, then choose Team";
+    if (prompt.length === 0 || parseSlashCommand(prompt)?.command.id === "team") {
+      // The automatic offer fires after a debounce, by when a fast Enter has already emptied
+      // the composer: it says nothing. Asked for by hand with no task yet, the composer gets
+      // `/team ` - type the task, press Enter, and the typed command sets the Team up.
+      if (!manual) return;
+      if (prompt.length === 0) input.value = "/team ";
+      input.setSelectionRange(input.value.length, input.value.length);
+      autogrowComposer();
       input.focus();
       return;
     }
@@ -4828,6 +4961,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     },
 
     setWorkspace(root: string | null): void {
+      resumeGeneration += 1;
       if (root !== currentFolderRoot) {
         waitingForIncludedLimit = false;
         includedWaitGeneration += 1;

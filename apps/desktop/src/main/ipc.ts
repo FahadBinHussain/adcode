@@ -93,6 +93,7 @@ import { gitAt, invalidateFileCache } from "./sourceControl.ts";
 import {
   aiAnswerAnyway,
   aiUndoCheckpoint,
+  aiSessionCheckpoints,
   aiCancel,
   aiCancelCompletion,
   aiCancelInlineEdit,
@@ -1093,6 +1094,9 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
     typeof id === "string"
       ? aiUndoCheckpoint(id, force === true)
       : { ok: false, restored: [], conflicts: [], message: "Nothing to undo." },
+  );
+  ipcMain.handle(CHANNELS.aiCheckpoints, (_event, sessionId: unknown) =>
+    typeof sessionId === "string" ? aiSessionCheckpoints(sessionId) : [],
   );
 
   ipcMain.handle(CHANNELS.aiWorkspaceList, () => aiWorkspaceTasks());

@@ -292,7 +292,8 @@ export function createLiveWindow(options: LiveWindowOptions): LiveWindowHandle {
       name.textContent = agent.label;
       model.textContent = agent.model;
       model.hidden = agent.model.length === 0;
-      status.textContent = agent.status === "working" && agent.activity.kind === "text" ? "Typing" : STATUS_TEXT[agent.status];
+      const typing = agent.activity.kind === "text" || (agent.activity.kind === "code" && !agent.activity.final);
+      status.textContent = agent.status === "working" && typing ? "Typing" : STATUS_TEXT[agent.status];
       status.dataset["status"] = agent.status;
       const live = agent.status === "working" || agent.status === "waiting";
       stopAction = live ? options.stop?.(agent) ?? null : null;

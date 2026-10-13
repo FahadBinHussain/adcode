@@ -48,13 +48,68 @@ describe("local calls printed in content", () => {
     expect(new Set(calls.map((call) => call.id)).size).toBe(2);
   });
 
+  /*
+   * qwen2.5-coder:7b through Ollama (measured in the built app): the call in a json fence,
+   * then a sentence saying the change was made - before anything ran. The call is what it
+   * meant; the sentence is not true yet, so it is dropped rather than shown.
+   */
+  it.each([
+    '```json\n{"name":"list_files","arguments":{}}\n```',
+    '```json\n{"name":"list_files","arguments":{}}\n```\nI listed the files and fixed the bug.',
+    '{"name":"list_files","arguments":{}}\nChanged the function to calculate the total.',
+    '<tool_call>{"name":"list_files","arguments":{}}</tool_call> Done.',
+  ])("runs a call the reply opens with and drops the premature claim after it: %s", async (text) => {
+    const events = await collect(createOllamaProvider(undefined, vi.fn(async () => response(text))).stream(request, new AbortController().signal));
+    expect(textOf(events)).toBe("");
+    expect(events).toContainEqual({ kind: "tool-call", call: expect.objectContaining({ name: "list_files", input: {} }) });
+    expect(events.at(-1)).toEqual({ kind: "stop", reason: "tool-use" });
+  });
+
+  /*
+   * The same model narrates, then acts: "Let's update the function." and the right edit in a
+   * fence, then "run the tests" and a second fenced call. A fenced call naming an offered tool
+   * is taken as a call wherever it stands - written as an illustration it would run too, which
+   * is why every edit lands in the turn's Undo.
+   */
+  it("streams the narration and runs each fenced call after it, in order", async () => {
+    const text = "Let's fix it.\n```json\n{\"name\":\"list_files\",\"arguments\":{}}\n```\nThen create the page.\n```json\n{\"name\":\"propose_edit\",\"arguments\":{\"path\":\"a.html\",\"contents\":\"<h1>Hi</h1>\"}}\n```\nAll fixed and verified.";
+    const events = await collect(createOllamaProvider(undefined, vi.fn(async () => response(text))).stream(request, new AbortController().signal));
+    expect(textOf(events)).toBe("Let's fix it.\n");
+    const calls = events.filter((event) => event.kind === "tool-call").map((event) => event.call);
+    expect(calls.map((call) => [call.name, call.input])).toEqual([["list_files", {}], ["propose_edit", { path: "a.html", contents: "<h1>Hi</h1>" }]]);
+    expect(new Set(calls.map((call) => call.id)).size).toBe(2);
+    expect(events.at(-1)).toEqual({ kind: "stop", reason: "tool-use" });
+  });
+
+  it("shows narration before a fence while the reply is still arriving", async () => {
+    const stream = createOllamaProvider(undefined, vi.fn(async () => response("Let's look.\n```json\n{\"name\":\"list_files\",\"arguments\":{}}\n```"))).stream(request, new AbortController().signal)[Symbol.asyncIterator]();
+    expect((await stream.next()).value).toEqual({ kind: "text", text: "L" });
+    await stream.return?.();
+  });
+
+  it.each(["length", "content_filter"])("shows a fenced call as written when the reply ended with %s", async (finish) => {
+    const text = "Fixing.\n```json\n{\"name\":\"list_files\",\"arguments\":{}}\n```\nDone.";
+    const events = await collect(createOllamaProvider(undefined, vi.fn(async () => response(text, finish))).stream(request, new AbortController().signal));
+    expect(events.some((event) => event.kind === "tool-call")).toBe(false);
+    expect(textOf(events)).toBe(text);
+  });
+
+  it("lets native calls win over a fenced call in the text", async () => {
+    const text = "```json\n{\"name\":\"propose_edit\",\"arguments\":{\"path\":\"a.html\",\"contents\":\"x\"}}\n```";
+    const events = await collect(createOllamaProvider(undefined, vi.fn(async () => response(text, "tool_calls", true))).stream(request, new AbortController().signal));
+    expect(events.filter((event) => event.kind === "tool-call").map((event) => event.call.name)).toEqual(["list_files"]);
+    expect(textOf(events)).toBe(text);
+  });
+
   it.each([
     'Here is an example: {"name":"propose_edit","arguments":{"path":"index.html","contents":"bad"}}',
-    '```json\n{"name":"propose_edit","arguments":{"path":"index.html","contents":"bad"}}\n```',
+    '```json\n{"name":"example_tool","arguments":{}}\n```',
+    'Settings:\n```json\n{"name":"my-app","version":"1.0.0"}\n```\nThat is the manifest.',
+    '```json\n{"name":"list_files","description":"ordinary data","arguments":{}}\n```',
     '{"name":"example","description":"ordinary data","arguments":{}}',
     '[{"name":"list_files","arguments":{}},{"message":"ordinary data"}]',
-    '<tool_call>{"name":"list_files","arguments":{}}</tool_call> This is an example.',
     '{"name":"propose_edit","arguments":{"path":"index.html","contents":"partial',
+    '```json\n{"name":"propose_edit","arguments":{"path":"index.html","contents":"partial',
   ])("leaves examples, data, and incomplete replies as text", async (text) => {
     const events = await collect(createOllamaProvider(undefined, vi.fn(async () => response(text))).stream(request, new AbortController().signal));
     expect(textOf(events)).toBe(text);
@@ -74,6 +129,20 @@ describe("local calls printed in content", () => {
     expect(events.filter((event) => event.kind === "tool-call")).toEqual([{ kind: "tool-call", call: { type: "tool-call", id: "native", name: "list_files", input: {} } }]);
   });
 
+  it("samples a local tool loop at a low temperature, and leaves every other request alone", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return response("Hi");
+    });
+    await collect(createOllamaProvider(undefined, fetchImpl).stream(request, new AbortController().signal));
+    await collect(createOllamaProvider(undefined, fetchImpl).stream({ ...request, tools: [] }, new AbortController().signal));
+    await collect(createOpenAiProvider("key", fetchImpl).stream(request, new AbortController().signal));
+    expect(bodies[0]?.["temperature"]).toBe(0.2);
+    expect(bodies[1]).not.toHaveProperty("temperature");
+    expect(bodies[2]).not.toHaveProperty("temperature");
+  });
+
   it("does not reinterpret cloud replies or local replies with tools disabled", async () => {
     const text = '{"name":"list_files","arguments":{}}';
     const fetchImpl = vi.fn(async () => response(text));
@@ -87,6 +156,12 @@ describe("local calls printed in content", () => {
   it("streams normal local prose before the response finishes", async () => {
     const stream = createOllamaProvider(undefined, vi.fn(async () => response("Hello"))).stream(request, new AbortController().signal)[Symbol.asyncIterator]();
     expect((await stream.next()).value).toEqual({ kind: "text", text: "H" });
+    await stream.return?.();
+  });
+
+  it("streams an answer that opens with an ordinary code fence once its language is known", async () => {
+    const stream = createOllamaProvider(undefined, vi.fn(async () => response("```js\nconst a = 1;\n```"))).stream(request, new AbortController().signal)[Symbol.asyncIterator]();
+    expect((await stream.next()).value).toEqual({ kind: "text", text: "```js\n" });
     await stream.return?.();
   });
 

@@ -16,6 +16,10 @@ export function createEditSummary(checkpoint: AiCheckpointView, deps: {
   const title = document.createElement("strong"); title.className = "chat-checkpoint-title";
   const count = checkpoint.files.length;
   title.textContent = `Edited ${count} file${count === 1 ? "" : "s"}`;
+  if (checkpoint.undone === true) {
+    card.dataset["state"] = "undone";
+    title.textContent = `Undid edits to ${count} file${count === 1 ? "" : "s"}`;
+  }
   const totals = document.createElement("span"); totals.className = "chat-checkpoint-counts";
   function counts(added: number, removed: number): DocumentFragment {
     const fragment = document.createDocumentFragment();
@@ -29,6 +33,7 @@ export function createEditSummary(checkpoint: AiCheckpointView, deps: {
   const actions = document.createElement("div"); actions.className = "chat-checkpoint-actions";
   const undo = document.createElement("button"); undo.type = "button"; undo.className = "chat-checkpoint-undo";
   undo.textContent = "Undo"; undo.title = "Restore these files to before this turn";
+  undo.hidden = checkpoint.undone === true;
   const review = document.createElement("button"); review.type = "button"; review.className = "chat-checkpoint-review";
   review.textContent = "Review"; review.setAttribute("aria-expanded", "false");
   actions.append(undo, review); header.append(icon, body, actions);

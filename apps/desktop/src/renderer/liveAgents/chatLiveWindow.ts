@@ -33,6 +33,8 @@ export interface ChatLiveWindowOptions {
   label(): string;
   model(): string;
   enabled(): boolean;
+  /** Follow growing code only while the chat is already following the latest work. */
+  onResize?(): void;
   onMenu?(agent: LiveAgent, anchor: HTMLElement): void;
 }
 
@@ -43,6 +45,7 @@ export function createChatLiveWindow(options: ChatLiveWindowOptions): ChatLiveWi
   let window_: LiveWindowHandle | null = null;
   let ticker: number | null = null;
   let typedBefore = 0;
+  let resizeObserver: ResizeObserver | null = null;
 
   const identity = (): LiveAgentIdentity => ({ id: "chat", label: options.label(), role: "assistant", model: options.model(), lookKey: "chat", group: "chat" });
 
@@ -76,6 +79,10 @@ export function createChatLiveWindow(options: ChatLiveWindowOptions): ChatLiveWi
         });
         window_.element.classList.add("live-window-inline");
         created = window_.element;
+        if (options.onResize !== undefined) {
+          resizeObserver = new ResizeObserver(() => options.onResize?.());
+          resizeObserver.observe(created);
+        }
         ticker = window.setInterval(() => paint.schedule(), 1_000);
       }
       if (window_ !== null) paint.schedule();
@@ -83,6 +90,9 @@ export function createChatLiveWindow(options: ChatLiveWindowOptions): ChatLiveWi
     },
     reset() {
       stopTicker();
+      paint.cancel();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       if (window_ !== null) typedBefore += window_.typed();
       window_ = null;
       state = emptyLiveRoom();

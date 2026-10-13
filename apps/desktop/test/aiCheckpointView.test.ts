@@ -1,5 +1,15 @@
 import { expect, it } from "vitest";
-import { checkpointView } from "../src/main/aiCheckpointView.ts";
+import { checkpointView, checkpointsForSession } from "../src/main/aiCheckpointView.ts";
+import type { EditCheckpoint } from "../src/main/aiCheckpoints.ts";
+
+it("restores only a chat's bound or uniquely matched legacy edits, including undone state", () => {
+  const sessions = [{ id: "a", messages: [{ role: "user", at: 100 }, { role: "assistant", at: 200 }] }, { id: "b", messages: [{ role: "assistant", at: 10_000 }] }];
+  const saved = (id: string, createdAt: number, sessionId?: string): EditCheckpoint => ({ id, createdAt, root: "project", files: [], undone: false, ...(sessionId === undefined ? {} : { sessionId }) });
+  const checkpoints = [saved("legacy-a", 210), saved("legacy-b", 10_010), saved("too-old", 6_000), saved("bound-a", 20_000, "a"), saved("bound-b", 220, "b")];
+  expect(checkpointsForSession(checkpoints, sessions, "a").map(cp => cp.id)).toEqual(["legacy-a", "bound-a"]);
+  expect(checkpointsForSession(checkpoints, [...sessions, { id: "other", messages: [{ role: "assistant", at: 205 }] }], "a").map(cp => cp.id)).toEqual(["bound-a"]);
+  expect(checkpointView({ ...saved("undone", 200, "a"), undone: true }).undone).toBe(true);
+});
 it("reviews recorded text changes, counts edits and never exposes binary bytes or the root", () => {
   const view = checkpointView({ id: "cp-test", root: "private-root", createdAt: 10, undone: false, files: [
     { path: "edited.ts", before: "same\nold\n", after: "same\nnew\nextra\n" },

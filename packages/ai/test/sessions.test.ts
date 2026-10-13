@@ -36,6 +36,12 @@ describe("titleFor", () => {
     );
   });
 
+  it("leaves the attachment bookkeeping out, unless files were all that was sent", () => {
+    expect(titleFor([message("user", "/review focus on auth\n[Attached: uncommitted-changes.diff]")])).toBe("/review focus on auth");
+    expect(titleFor([message("user", "\n[Attached: mockup.png, notes.md]")])).toBe("mockup.png, notes.md");
+    expect(titleFor([message("user", "Explain [Attached: x] in the README")])).toBe("Explain [Attached: x] in the README");
+  });
+
   it("ignores the assistant's opening", () => {
     const messages = [message("assistant", "Hello!"), message("user", "Fix the build")];
     expect(titleFor(messages)).toBe("Fix the build");

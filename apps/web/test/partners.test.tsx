@@ -9,10 +9,13 @@ import { PARTNERS } from "../src/lib/partners";
 const publicFile = (src: string): string => fileURLToPath(new URL(`../public${src}`, import.meta.url));
 
 describe("partners", () => {
-  it("lists Tagflow AI, linked to its site", () => {
+  it("lists Tagflow AI, Heabsy and Bluethenics, each linked to its site with what it does", () => {
     const markup = renderToStaticMarkup(<Partners />);
-    expect(markup).toContain("Tagflow AI");
-    expect(markup).toContain('href="https://tagflow-ai.com"');
+    for (const [name, href] of [["Tagflow AI", "https://tagflow-ai.com"], ["Heabsy", "https://heabsy.com"], ["Bluethenics", "https://bluethenics.com"]]) {
+      expect(markup).toContain(`${name}</span>`);
+      expect(markup).toContain(`href="${href}"`);
+    }
+    expect((markup.match(/class="partner-role"/g) ?? []).length).toBe(PARTNERS.length);
     expect(markup).toContain('rel="noreferrer"');
   });
 
@@ -38,10 +41,18 @@ describe("partners", () => {
     }
   });
 
+  it("prints a wordmark partner's name for screen readers only, beside its logo", () => {
+    const markup = renderToStaticMarkup(<Partners />);
+    expect(markup).toContain('class="partner-name partner-name-hidden">Heabsy</span>');
+    expect(markup).toContain('class="partner-name">Tagflow AI</span>');
+    expect(markup).toContain('src="/partners/tagflow-dark.png"');
+    expect(markup).toContain('class="partner-logo partner-logo-wordmark partner-logo-dark"');
+  });
+
   it("draws only logos that exist, and the name either way", () => {
     const markup = renderToStaticMarkup(<Partners />);
     const logos = PARTNERS.reduce((sum, partner) => sum + (partner.logo ? 1 : 0) + (partner.logoDark ? 1 : 0), 0);
     expect((markup.match(/<img /g) ?? []).length).toBe(logos);
-    expect((markup.match(/class="partner-name"/g) ?? []).length).toBe(PARTNERS.length);
+    expect((markup.match(/class="partner-name[ "]/g) ?? []).length).toBe(PARTNERS.length);
   });
 });

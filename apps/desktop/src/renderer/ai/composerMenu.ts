@@ -7,48 +7,11 @@
  * matching below are pure and tested without a window; the popup at the bottom is the DOM.
  */
 
-export type SlashKind = "prompt" | "action" | "diff";
+import { SLASH_COMMANDS, type SlashCommand } from "../../shared/slashCommands.ts";
 
-export interface SlashCommand {
-  readonly id: string;
-  readonly hint: string;
-  readonly kind: SlashKind;
-  /** Text that replaces `/id` in the composer, ready for the user's own words. */
-  readonly prompt?: string;
-}
-
-/**
- * "Check my app": look at it the way a visitor would, then fix what is broken. Shared by
- * `/check` and the Check My Running App command, so the two ask for the same thing.
- */
-export const CHECK_APP_PROMPT =
-  "Look at my running app with view_page, at desktop width and at phone width (390x844). Click through the main links, buttons and forms, and fix everything that is broken: console errors, failed requests, broken images, text or layout that spills sideways. Look again after each fix to confirm it, then show me the result with open_preview. ";
-
-/**
- * Prompts are written the way a senior engineer would ask: name the outcome, the
- * verification, and what not to do. The trailing space leaves the cursor ready to type.
- */
-export const SLASH_COMMANDS: readonly SlashCommand[] = [
-  { id: "check", hint: "Look at the running app and fix what is wrong", kind: "prompt", prompt: `${CHECK_APP_PROMPT}Pay most attention to: ` },
-  { id: "fix", hint: "Find the root cause and fix it", kind: "prompt", prompt: "Find the root cause of this problem and fix it, then run the tests or typecheck to confirm the fix: " },
-  { id: "explain", hint: "Explain code in plain words", kind: "prompt", prompt: "Explain how this works, step by step and in plain words, pointing at the files and lines involved: " },
-  { id: "test", hint: "Write tests and run them", kind: "prompt", prompt: "Write focused tests for this with the project's existing test setup, run them, and fix any failures: " },
-  { id: "review", hint: "Review my uncommitted changes", kind: "diff", prompt: "Review the attached uncommitted changes for bugs, edge cases, security problems and missing tests. List concrete findings with file and line, most severe first, and say plainly if you find nothing. Do not change files yet." },
-  { id: "commit", hint: "Write a commit message for my changes", kind: "diff", prompt: "Write a concise commit message for the attached changes: a short imperative subject line, a blank line, then the why in two or three lines. Do not change files." },
-  { id: "plan", hint: "Plan first, change nothing yet", kind: "prompt", prompt: "Read the relevant code first, then write a short numbered plan for this, with the files each step touches and the risks. Do not propose edits until I say go: " },
-  { id: "refactor", hint: "Clean up, same behaviour", kind: "prompt", prompt: "Refactor this for readability and simplicity without changing its behaviour, then run the tests to prove it: " },
-  { id: "optimize", hint: "Find and fix what is slow", kind: "prompt", prompt: "Find the real performance bottlenecks here and fix the worst ones, explaining the expected gain of each: " },
-  { id: "security", hint: "Audit for vulnerabilities", kind: "prompt", prompt: "Audit this for security vulnerabilities (injection, auth, secrets, unsafe input, path traversal). Report concrete findings with severity, file and line, then propose fixes: " },
-  { id: "docs", hint: "Write or update documentation", kind: "prompt", prompt: "Write clear documentation for this in the project's existing style - a README section or doc comments - with a usage example: " },
-  { id: "build", hint: "Build a feature end to end", kind: "prompt", prompt: "Build this end to end: read the code it touches, make the change, add or update tests, and run them: " },
-  { id: "new", hint: "Start a new conversation", kind: "action" },
-  { id: "history", hint: "Open past conversations", kind: "action" },
-  { id: "model", hint: "Switch provider or model", kind: "action" },
-  { id: "preview", hint: "Show the live preview here", kind: "action" },
-  { id: "team", hint: "Split the task across AI roles", kind: "action" },
-  { id: "schedule", hint: "Send a message later", kind: "action" },
-  { id: "compact", hint: "Summarise the older conversation to make room", kind: "action" },
-];
+// The commands themselves are shared with the main process, which expands them for the model.
+export { CHECK_APP_PROMPT, SLASH_COMMANDS, expandSlashCommand, parseSlashCommand } from "../../shared/slashCommands.ts";
+export type { SlashCommand, SlashKind } from "../../shared/slashCommands.ts";
 
 export interface MenuTrigger {
   readonly kind: "slash" | "mention";

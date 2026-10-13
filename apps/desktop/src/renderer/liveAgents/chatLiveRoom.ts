@@ -32,6 +32,8 @@ export interface ChatLiveRoom {
 export interface ChatLiveRoomDeps {
   /** Mount ongoing work as a conversation item, also after the transcript was cleared. */
   readonly onActivity?: (element: HTMLElement, newRun: boolean) => void;
+  /** The main assistant's inline code window grew or changed view. */
+  readonly onChatResize?: () => void;
   /** Stop the chat's own turn - the same as its stop button. */
   readonly stopChat?: () => void;
   /** Run a workbench command, such as opening the Agents board. */
@@ -160,6 +162,7 @@ export function createChatLiveRoom(deps: ChatLiveRoomDeps = {}): ChatLiveRoom {
     label: () => appearance.name,
     model: () => model,
     enabled: () => enabled,
+    ...(deps.onChatResize === undefined ? {} : { onResize: deps.onChatResize }),
     onMenu: openAgentMenu,
   });
 

@@ -6,7 +6,8 @@ import { corsHeaders } from "./cors.ts";
 import { DEFAULT_TAGFLOW_CONFIG, isTagflowUrl, parseTagflowConfig, parseTagflowLimits, tagflowCost } from "./tagflowConfig.ts";
 import type { Clock, Store } from "./store.ts";
 import type { TagflowConfig, TagflowModel, TagflowSettlement } from "./tagflowTypes.ts";
-import { INCLUDED_PROVIDERS, includedProvider, modelProvider, type IncludedProviderId } from "./includedProviders.ts";
+import { createWorkerSecrets, type WorkerSecrets } from "./workerSecrets.ts";
+import { allowanceKey, includedProvider, isCustomProviderUrl, modelProvider, providerConnections, type IncludedProviderId } from "./includedProviders.ts";
 import { MODEL_FEEDBACK_CATEGORIES, type ModelRequestOutcome, type ModelRequestRecord, type ModelRequestSource } from "./tagflowReportTypes.ts";
 import { completeModelReport, parseReportRange } from "./tagflowReports.ts";
 import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, AI_PERSONAS, audienceChoice, audienceCountry, observedUse, type ModelAudienceProfile } from "./modelAudience.ts";
@@ -18,12 +19,14 @@ export interface TagflowOptions {
   apiKey?: string;
   fetchImpl?: typeof fetch;
   country?: (request: Request) => string | undefined;
+  /** Saves provider keys as this Worker's Cloudflare secrets from the admin panel. */
+  workerSecrets?: WorkerSecrets;
 }
 
 export function isTagflowPath(path: string): boolean {
   return path === "/v1/ai/tagflow/config" || path === "/v1/ai/tagflow/usage" || path === "/v1/ai/tagflow/chat/completions" ||
     path === "/v1/ai/tagflow/feedback" || path === "/v1/ai/tagflow/audience" || path === "/v1/admin/tagflow/reports" ||
-    path === "/v1/admin/tagflow" || path === "/v1/admin/tagflow/usage" || /^\/v1\/admin\/tagflow\/users\/[^/]+$/.test(path);
+    path === "/v1/admin/tagflow" || path === "/v1/admin/tagflow/usage" || path === "/v1/admin/tagflow/keys" || /^\/v1\/admin\/tagflow\/users\/[^/]+$/.test(path);
 }
 
 const isRecord = (raw: unknown): raw is Record<string, unknown> => typeof raw === "object" && raw !== null && !Array.isArray(raw);
@@ -155,13 +158,18 @@ class UsageObserver {
 
 export function createTagflowHandler(deps: TagflowOptions): (request: Request) => Promise<Response | null> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const providerKey = (id: IncludedProviderId): string => (id === "tagflow"
-    ? deps.apiKey ?? process.env["TAGFLOW_API_KEY"] ?? process.env["tagflow-api"] ?? ""
-    : process.env[includedProvider(id).secretName] ?? "").trim();
-  const connections = () => INCLUDED_PROVIDERS.map((provider) => ({ ...provider, configured: providerKey(provider.id).length > 0 }));
+  const secrets = deps.workerSecrets ?? createWorkerSecrets();
+  // A custom provider's secret name is derived from its ID inside its own namespace, so a
+  // saved configuration can never name another server secret.
+  const providerKey = (config: TagflowConfig, id: IncludedProviderId): string => {
+    if (id === "tagflow") return (deps.apiKey ?? process.env["TAGFLOW_API_KEY"] ?? process.env["tagflow-api"] ?? "").trim();
+    const connection = includedProvider(id, config.providers);
+    return connection === undefined ? "" : (process.env[connection.secretName] ?? "").trim();
+  };
+  const connections = (config: TagflowConfig) => providerConnections(config.providers).map((provider) => ({ ...provider, configured: providerKey(config, provider.id).length > 0 }));
   const defaultKeyConfigured = (config: TagflowConfig): boolean => {
     const model = config.models.find((one) => one.id === config.defaultModel);
-    return model !== undefined && providerKey(modelProvider(model)).length > 0;
+    return model !== undefined && providerKey(config, modelProvider(model)).length > 0;
   };
   return async (request) => {
     const url = new URL(request.url);
@@ -189,13 +197,13 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       const saved = await deps.store.getTagflowConfig();
       const config = parseTagflowConfig(saved?.config ?? DEFAULT_TAGFLOW_CONFIG);
       if (config === null) return fail(503, "unavailable", "Included AI is unavailable. Try another connected model.");
-      const offeredModels = config.models.filter((model) => model.enabled !== false && providerKey(modelProvider(model)).length > 0);
+      const offeredModels = config.models.filter((model) => model.enabled !== false && providerKey(config, modelProvider(model)).length > 0);
       const available = config.enabled && offeredModels.length > 0;
       const day = new Date(deps.clock.now()).toISOString().slice(0, 10);
       const resetsAt = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
       const remainingDay = { "retry-after": String(Math.max(1, Math.ceil((resetsAt - deps.clock.now()) / 1000))) };
       if (url.pathname === "/v1/ai/tagflow/config" && request.method === "GET") {
-        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model)).name, contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens) })) : [], requiresVerifiedAccount: true });
+        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI", contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens) })) : [], requiresVerifiedAccount: true });
       }
       const auth = await authenticate(deps, request.headers.get("authorization") ?? undefined);
       if (!auth.ok) return fail(auth.failure === "banned" ? 403 : 401, auth.failure, "Sign in to use included AI. Banned accounts cannot use it.");
@@ -216,19 +224,32 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         }
       }
       if (url.pathname === "/v1/admin/tagflow") {
-        if (request.method === "GET") return json(200, { config, updatedAt: saved?.updatedAt ?? 0, updatedBy: saved?.updatedBy ?? "", keyConfigured: defaultKeyConfigured(config), connections: connections() });
+        if (request.method === "GET") return json(200, { config, updatedAt: saved?.updatedAt ?? 0, updatedBy: saved?.updatedBy ?? "", keyConfigured: defaultKeyConfigured(config), connections: connections(config), keysManageable: secrets.configured() });
         if (request.method === "POST") {
           const next = parseTagflowConfig(await readJson(request));
-          if (next === null) return fail(400, "bad-config", "Check the provider, Tagflow HTTPS base URL, unique model IDs, prices, and non-negative limits.");
+          if (next === null) return fail(400, "bad-config", "Check the providers (custom ones need a public HTTPS API address), the Tagflow HTTPS base URL, unique model IDs, prices, and non-negative limits.");
           if (next.enabled && !defaultKeyConfigured(next)) {
-            const provider = includedProvider(modelProvider(next.models.find((model) => model.id === next.defaultModel)!));
-            return fail(409, "missing-secret", `Set the ${provider.secretName} server secret before choosing this default model.`);
+            const provider = includedProvider(modelProvider(next.models.find((model) => model.id === next.defaultModel)!), next.providers);
+            return fail(409, "missing-secret", `Set the ${provider?.secretName ?? "provider"} server secret before choosing this default model.`);
           }
           await audit("save-tagflow-config");
           const result = { config: next, updatedAt: deps.clock.now(), updatedBy: auth.uid };
           await deps.store.putTagflowConfig(result);
-          return json(200, { ...result, keyConfigured: defaultKeyConfigured(next), connections: connections() });
+          return json(200, { ...result, keyConfigured: defaultKeyConfigured(next), connections: connections(next), keysManageable: secrets.configured() });
         }
+      }
+      // Only a saved provider's own key name can be written, so this can never replace another secret.
+      if (url.pathname === "/v1/admin/tagflow/keys" && request.method === "POST") {
+        const raw = await readJson(request);
+        if (!isRecord(raw) || Object.keys(raw).some((key) => !["provider", "key"].includes(key)) || typeof raw["provider"] !== "string") return fail(400, "bad-key", "Choose a provider.");
+        const connection = providerConnections(config.providers).find((provider) => provider.id === raw["provider"]);
+        if (connection === undefined) return fail(404, "not-found", "Save this provider before adding its key.");
+        const value = raw["key"] === null ? null : typeof raw["key"] === "string" ? raw["key"].trim() : undefined;
+        if (value === undefined || value !== null && !/^[\x21-\x7e]{8,4096}$/.test(value)) return fail(400, "bad-key", "Paste the whole key: 8 to 4,096 visible characters, with no spaces.");
+        await audit(value === null ? "remove-provider-key" : "save-provider-key", connection.id);
+        const result = value === null ? await secrets.remove(connection.secretName) : await secrets.put(connection.secretName, value);
+        if (!result.ok) return fail(result.reason === "not-configured" ? 409 : 502, result.reason, result.message);
+        return json(200, { ok: true, provider: connection.id, secretName: connection.secretName, saved: value !== null });
       }
       if (url.pathname === "/v1/admin/tagflow/usage" && request.method === "GET") {
         const requestedDay = url.searchParams.get("day") ?? day;
@@ -272,7 +293,14 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       const policy = await deps.store.getTagflowPolicy(subject);
       const limits = policy?.limits ?? config.limits;
       const usage = await deps.store.getTagflowUsage(subject, day) ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
-      if (userMatch !== null || url.pathname === "/v1/ai/tagflow/usage" && request.method === "GET") return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true });
+      if (userMatch !== null || url.pathname === "/v1/ai/tagflow/usage" && request.method === "GET") {
+        // Providers with their own allowance report it beside the main one; older desktops ignore `pools`.
+        const pools = await Promise.all(providerConnections(config.providers).filter((provider) => provider.limits !== undefined).map(async (provider) => {
+          const key = allowanceKey(subject, provider);
+          return { provider: provider.id, name: provider.name, models: config.models.filter((model) => modelProvider(model) === provider.id).map((model) => model.id), limits: provider.limits!, usage: await deps.store.getTagflowUsage(key, day) ?? { ...usage, uid: key, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 } };
+        }));
+        return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true, pools });
+      }
       if (url.pathname !== "/v1/ai/tagflow/chat/completions" || request.method !== "POST") return fail(405, "method", "Unsupported method.");
       const user = await deps.store.getUser(auth.uid);
       if (!user?.email || user.emailVerified !== true) return fail(403, "verify-account", "Sign in and verify your email in Account to use included AI. No API key is needed.");
@@ -297,24 +325,32 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       if ("error" in parsed) { await finishMetric("rejected",parsed.error.code); return fail(parsed.error.status, parsed.error.code, parsed.error.message); }
       if (metric !== null) { metric.requestedOutput = parsed.output; metric.estimatedInput = parsed.contextInput; }
       const providerId = modelProvider(parsed.model);
-      const apiKey = providerKey(providerId);
-      const baseUrl = providerId === "tagflow" ? config.baseUrl : includedProvider(providerId).baseUrl;
-      if (apiKey.length === 0 || providerId === "tagflow" && !isTagflowUrl(baseUrl)) { await finishMetric("rejected","unavailable"); return fail(503, "unavailable", "This included model is unavailable. Choose another model."); }
+      const connection = includedProvider(providerId, config.providers);
+      const apiKey = providerKey(config, providerId);
+      const baseUrl = providerId === "tagflow" ? config.baseUrl : connection?.baseUrl ?? "";
+      if (connection === undefined || apiKey.length === 0 || (providerId === "tagflow" ? !isTagflowUrl(baseUrl) : connection.custom && !isCustomProviderUrl(baseUrl))) { await finishMetric("rejected","unavailable"); return fail(503, "unavailable", "This included model is unavailable. Choose another model."); }
       parsed.body["model"] = parsed.model.upstreamModel ?? parsed.model.id;
-      if (providerId === "openai") {
+      if (connection.outputTokenField === "max_completion_tokens") {
         parsed.body["max_completion_tokens"] = parsed.output;
         delete parsed.body["max_tokens"];
       }
-      const reservation = { id: randomUUID(), uid: auth.uid, day, minute: Math.floor(deps.clock.now() / 60_000), tokens: parsed.input + parsed.output, costMicros: tagflowCost(parsed.model, parsed.input, parsed.output), limits };
+      // A provider with its own allowance charges a separate per-account pool at its own limits;
+      // a personal override applies to the main allowance, and Block applies to both.
+      const poolLimits = connection.limits ?? limits;
+      const reservation = { id: randomUUID(), uid: allowanceKey(auth.uid, connection), day, minute: Math.floor(deps.clock.now() / 60_000), tokens: parsed.input + parsed.output, costMicros: tagflowCost(parsed.model, parsed.input, parsed.output), limits: poolLimits };
       const reserved = await deps.store.reserveTagflow(reservation);
       if (reserved !== "ok") {
         await finishMetric("rejected",reserved);
         const daily = reserved === "daily-limit";
-        const retryable = daily ? limits.dailyRequests > 0 && reservation.tokens <= limits.dailyTokens && reservation.costMicros <= limits.dailyCostMicros : limits.requestsPerMinute > 0;
+        const retryable = daily ? poolLimits.dailyRequests > 0 && reservation.tokens <= poolLimits.dailyTokens && reservation.costMicros <= poolLimits.dailyCostMicros : poolLimits.requestsPerMinute > 0;
+        const separate = providerConnections(config.providers).filter((provider) => provider.limits !== undefined && provider.id !== connection.id).map((provider) => provider.name);
+        const shared = connection.limits !== undefined
+          ? `${connection.name} models have their own daily allowance, so other free models may still have room.`
+          : separate.length > 0 ? `Free models share this allowance, except ${separate.join(" and ")} models, which have their own.` : "All free models share the same allowance.";
         const message = !retryable ? daily
           ? "This request cannot fit within your account's daily allowance, even after a reset. Start a smaller conversation, choose another model, or ask an administrator to increase your allowance."
           : "This account's per-minute AI request allowance is zero. Waiting will not enable requests. Ask an administrator to change the allowance."
-          : daily ? "Your remaining daily included AI allowance cannot cover this request and its reply. This task can resume after the daily reset. All free models share the same allowance."
+          : daily ? `Your remaining daily included AI allowance cannot cover this request and its reply. This task can resume after the daily reset. ${shared}`
           : "Your account reached its per-minute AI request limit. This task can resume in about a minute. Your daily token allowance may still have room.";
         return fail(429,reserved,message,daily ? remainingDay : { "retry-after":"60" },{ retryable,...(daily ? { resetsAt } : {}) });
       }
@@ -347,9 +383,11 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       try {
         if (metric !== null) metric.providerStartedAt = deps.clock.now();
         await writeMetric();
-        // Each provider has a fixed approved host; Tagflow also validates its domain.
-        // Redirects are refused, so a credential cannot travel to another host.
-        upstream = await fetchImpl(`${baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(parsed.body), redirect: "manual", signal: abort.signal });
+        // Built-in providers have fixed hosts, Tagflow stays on its domain, and custom hosts are
+        // public HTTPS addresses only an administrator can register. Redirects are refused, so a
+        // credential cannot travel to another host.
+        const keyHeader: Record<string, string> = connection.authentication === "bearer" ? { authorization: `Bearer ${apiKey}` } : { [connection.authentication]: apiKey };
+        upstream = await fetchImpl(`${baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...keyHeader }, body: JSON.stringify(parsed.body), redirect: "manual", signal: abort.signal });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         const reason = abort.signal.aborted ? request.signal.aborted ? "request-ended" : "timeout"

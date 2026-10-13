@@ -394,6 +394,12 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
       return rows.map(toCampaign);
     },
 
+    async liveImpressions() {
+      const total = Number(await scalar<string>("liveImpressions", (db) => db.rpc("live_impressions")));
+      if (!Number.isSafeInteger(total) || total < 0) throw new Error("Invalid live impressions total");
+      return total;
+    },
+
     async publicStats(now) {
       const db = await lazy();
       const results = await Promise.all([

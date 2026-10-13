@@ -135,6 +135,110 @@ describe("included Tagflow AI", () => {
     expect(published).not.toContain("private-key"); expect(published).not.toContain("provider-model-id");
     expect(await usage()).toMatchObject({ requests: 1, inputTokens: 12, outputTokens: 3 });
   });
+  const custom = { id: "custom-together-ai" as const, name: "Together AI", baseUrl: "https://api.together.xyz/v1" };
+  const customModel = { ...config.models[0]!, id: "free-llama", upstreamModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo", provider: custom.id };
+  it("routes a registered custom provider's models to its address with its own secret", async () => {
+    vi.stubEnv("INCLUDED_AI_CUSTOM_TOGETHER_AI_API_KEY", "together-private-key");
+    const next = { ...config, baseUrl: "", defaultModel: customModel.id, models: [customModel], providers: [custom] };
+    const saved = await call("/admin/tagflow", "admin", next);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ keyConfigured: true, config: { providers: [custom] }, connections: expect.arrayContaining([expect.objectContaining({ id: custom.id, secretName: "INCLUDED_AI_CUSTOM_TOGETHER_AI_API_KEY", configured: true, custom: true })]) });
+    const response = await chat("user", { ...body, model: customModel.id }); expect(response.status).toBe(200); await response.text();
+    const [url, init] = upstream.mock.calls[0]!;
+    expect(url).toBe("https://api.together.xyz/v1/chat/completions");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer together-private-key");
+    expect(init?.redirect).toBe("manual");
+    const sent = JSON.parse(init!.body as string);
+    expect(sent.model).toBe(customModel.upstreamModel); expect(sent.max_tokens).toBe(100); expect(sent.max_completion_tokens).toBeUndefined();
+    const published = await (await call("/ai/tagflow/config")).text();
+    expect(JSON.parse(published)).toMatchObject({ models: [{ id: customModel.id, providerName: "Together AI" }] });
+    expect(published).not.toContain(custom.baseUrl); expect(published).not.toContain("private-key"); expect(published).not.toContain(customModel.upstreamModel);
+    expect(await usage()).toMatchObject({ requests: 1, inputTokens: 12, outputTokens: 3 });
+  });
+  it.each([["x-api-key", "x-api-key"], ["api-key", "api-key"]] as const)("sends a custom provider's key in its %s header", async (authentication, header) => {
+    vi.stubEnv("INCLUDED_AI_CUSTOM_TOGETHER_AI_API_KEY", "together-private-key");
+    await save({ ...config, baseUrl: "", defaultModel: customModel.id, models: [customModel], providers: [{ ...custom, authentication, outputTokenField: "max_completion_tokens" }] });
+    await (await chat("user", { ...body, model: customModel.id })).text();
+    const headers = new Headers(upstream.mock.calls[0]?.[1]?.headers);
+    expect(headers.get(header)).toBe("together-private-key"); expect(headers.get("authorization")).toBeNull();
+    const sent = JSON.parse(upstream.mock.calls[0]![1]!.body as string);
+    expect(sent.max_completion_tokens).toBe(100); expect(sent.max_tokens).toBeUndefined();
+  });
+  it("lets an administrator save a provider's key as its own Cloudflare secret, and nothing else", async () => {
+    const written: [string, string | null][] = [];
+    const workerSecrets = { configured: () => true, put: async (name: string, value: string) => { written.push([name, value]); return { ok: true } as const; }, remove: async (name: string) => { written.push([name, null]); return { ok: true } as const; } };
+    handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, workerSecrets } });
+    await save({ ...config, providers: [custom] });
+    expect(await (await call("/admin/tagflow", "admin")).json()).toMatchObject({ keysManageable: true });
+    expect((await call("/admin/tagflow/keys", "user", { provider: custom.id, key: "sk-hb-test-value" })).status).toBe(403);
+    expect((await call("/admin/tagflow/keys", "admin", { provider: "custom-unsaved", key: "sk-hb-test-value" })).status).toBe(404);
+    for (const key of ["short", "has a space in it", 42, "x".repeat(4097)]) expect((await call("/admin/tagflow/keys", "admin", { provider: custom.id, key })).status).toBe(400);
+    expect((await call("/admin/tagflow/keys", "admin", { provider: custom.id, key: "sk-test-value", secretName: "SUPABASE_SERVICE_ROLE_KEY" })).status).toBe(400);
+    expect(written).toEqual([]);
+    const saved = await call("/admin/tagflow/keys", "admin", { provider: custom.id, key: "  sk-hb-test-value  " });
+    expect(saved.status).toBe(200);
+    const text = await saved.text(); expect(text).not.toContain("sk-hb-test-value");
+    expect((await call("/admin/tagflow/keys", "admin", { provider: "openai", key: null })).status).toBe(200);
+    expect(written).toEqual([["INCLUDED_AI_CUSTOM_TOGETHER_AI_API_KEY", "sk-hb-test-value"], ["INCLUDED_AI_OPENAI_API_KEY", null]]);
+  });
+  it("explains how to set up key saving when its token is missing", async () => {
+    const workerSecrets = { configured: () => false, put: async () => ({ ok: false, reason: "not-configured", message: "Key saving is not set up yet." } as const), remove: async () => ({ ok: true } as const) };
+    handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, workerSecrets } });
+    expect(await (await call("/admin/tagflow", "admin")).json()).toMatchObject({ keysManageable: false });
+    const response = await call("/admin/tagflow/keys", "admin", { provider: "tagflow", key: "sk-test-value" });
+    expect(response.status).toBe(409); expect(await response.text()).toContain("not set up");
+  });
+  it("charges a provider with its own allowance to a separate per-account pool", async () => {
+    vi.stubEnv("INCLUDED_AI_CUSTOM_TOGETHER_AI_API_KEY", "together-private-key");
+    const today = new Date(now).toISOString().slice(0, 10);
+    const pooled = { ...custom, limits: { ...config.limits, dailyTokens: 10_000_000 } };
+    await save({ ...config, models: [...config.models, customModel], providers: [pooled] });
+    expect((await call("/admin/tagflow", "admin", (await store.getTagflowConfig())!.config)).status).toBe(200);
+    const response = await chat("user", { ...body, model: customModel.id }); expect(response.status).toBe(200); await response.text();
+    expect(await usage()).toBeNull();
+    expect(await store.getTagflowUsage("user#custom-together-ai", today)).toMatchObject({ requests: 1, inputTokens: 12, outputTokens: 3 });
+    const view = await (await call("/ai/tagflow/usage", "user")).json() as { limits: { dailyTokens: number }; pools: unknown[] };
+    expect(view.limits.dailyTokens).toBe(config.limits.dailyTokens);
+    expect(view.pools).toEqual([expect.objectContaining({ provider: custom.id, name: "Together AI", limits: expect.objectContaining({ dailyTokens: 10_000_000 }), usage: expect.objectContaining({ requests: 1, inputTokens: 12 }) })]);
+    // Filling the pool refuses only its own models, and says so.
+    await store.reserveTagflow({ id: "fill-pool", uid: "user#custom-together-ai", day: today, minute: 0, tokens: 9_999_900, costMicros: 0, limits: pooled.limits });
+    const refused = await chat("user", { ...body, model: customModel.id });
+    expect(refused.status).toBe(429); expect(await refused.text()).toContain("Together AI models have their own daily allowance");
+    const main = await chat(); expect(main.status).toBe(200); await main.text();
+    // Filling the main allowance names the pool that still has room.
+    await store.reserveTagflow({ id: "fill-main", uid: "user", day: today, minute: 0, tokens: config.limits.dailyTokens - 100, costMicros: 0, limits: config.limits });
+    const mainRefused = await chat(); expect(mainRefused.status).toBe(429); expect(await mainRefused.text()).toContain("except Together AI models");
+    expect(parseTagflowConfig({ ...config, models: [...config.models, customModel], providers: [{ ...custom, limits: { dailyTokens: -1 } }] })).toBeNull();
+  });
+  it("hides a custom provider's models until its own secret exists, and never reads another secret", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "database-secret");
+    const sneaky = { ...custom, id: "custom-supabase-service-role" as const };
+    await save({ ...config, models: [...config.models, { ...customModel, provider: sneaky.id }], providers: [sneaky] });
+    expect(await (await call("/ai/tagflow/config")).json()).toMatchObject({ models: [{ id: "coder" }] });
+    expect((await chat("user", { ...body, model: customModel.id })).status).toBe(503);
+    expect(upstream).not.toHaveBeenCalled();
+    const admin = await (await call("/admin/tagflow", "admin")).text();
+    expect(admin).toContain("INCLUDED_AI_CUSTOM_SUPABASE_SERVICE_ROLE_API_KEY"); expect(admin).not.toContain("database-secret");
+  });
+  it("accepts only public HTTPS custom providers that models can name", () => {
+    const valid = { ...config, models: [...config.models, customModel], providers: [custom] };
+    expect(parseTagflowConfig(valid)?.providers).toEqual([custom]);
+    expect(parseTagflowConfig({ ...valid, providers: [{ ...custom, baseUrl: "https://api.together.xyz/v1/" }] })?.providers?.[0]?.baseUrl).toBe(custom.baseUrl);
+    expect(parseTagflowConfig({ ...config, providers: [] })).not.toHaveProperty("providers");
+    for (const baseUrl of ["http://api.together.xyz/v1", "https://api.together.xyz:8443/v1", "https://key:secret@api.together.xyz/v1", "https://api.together.xyz/v1?key=1", "https://api.together.xyz/v1#x",
+      "https://127.0.0.1/v1", "https://10.0.0.8/v1", "https://[::1]/v1", "https://localhost/v1", "https://metadata.internal/v1", "https://printer.local/v1", "https://intranet/v1", "not a url"]) {
+      expect(parseTagflowConfig({ ...valid, providers: [{ ...custom, baseUrl }] }), baseUrl).toBeNull();
+    }
+    for (const provider of [{ ...custom, id: "openai" }, { ...custom, id: "custom-" }, { ...custom, id: "custom-Upper" }, { ...custom, id: "custom-a_b" }, { ...custom, name: " " },
+      { ...custom, secretName: "SUPABASE_SERVICE_ROLE_KEY" }, { ...custom, authentication: "query" }, { ...custom, outputTokenField: "n" }]) {
+      expect(parseTagflowConfig({ ...valid, providers: [provider] }), JSON.stringify(provider)).toBeNull();
+    }
+    expect(parseTagflowConfig({ ...valid, providers: [custom, custom] })).toBeNull();
+    expect(parseTagflowConfig({ ...valid, providers: [] })).toBeNull();
+    const many = (count: number) => [custom, ...Array.from({ length: count - 1 }, (_, n) => ({ ...custom, id: `custom-p${n}` }))];
+    expect(parseTagflowConfig({ ...valid, providers: many(20) })?.providers).toHaveLength(20);
+    expect(parseTagflowConfig({ ...valid, providers: many(21) })).toBeNull();
+  });
   it("hides disconnected and disabled models, refuses them before charging, and shares quotas across providers", async () => {
     vi.stubEnv("INCLUDED_AI_OPENAI_API_KEY", "openai-private-key");
     vi.stubEnv("INCLUDED_AI_GROQ_API_KEY", undefined);

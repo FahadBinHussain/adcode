@@ -14,7 +14,7 @@ Included models are free to the user within an account allowance. Tagflow Code 2
 
 Choose **Usage** in the chat header, **Usage by model** in the context menu, or **AI: Show Usage** in the command palette.
 
-- **Your free AI today** puts tokens left first, with a bar showing the amount remaining. The standard allowance is **1,000,000 tokens per user per day**, shared across devices, with the reset time shown in your local timezone (midnight UTC). Requests show **Unlimited**, alongside today's request count and tokens held for active replies. ADCode has no daily or per-minute request cap; provider limits and the daily token allowance still apply. **How this allowance works** explains tokens, tool requests and the service budget paid by ADCode.
+- **Your free AI today** puts tokens left first, with a bar showing the amount remaining. The current live allowance is **2,000,000 tokens per user per day**, shared across devices, with the reset time shown in your local timezone (midnight UTC). The administrator can change the allowance. Requests show **Unlimited**, alongside today's request count and tokens held for active replies. ADCode has no daily or per-minute request cap; provider limits and the daily token allowance still apply. **How this allowance works** explains tokens, tool requests and the service budget paid by ADCode.
 - Chats and agents wait at recoverable temporary or daily limits and resume automatically after the displayed reset time. Keep ADCode running; **Stop** cancels the wait, and closing the app ends automatic resumption. A request larger than the entire daily allowance needs a smaller conversation or a higher allowance. All free models share the same daily account allowance; your own connected model uses its provider account.
 - **Today, 7 days, 30 days, All time** change the local totals and model breakdown. A model without a known price says **No price**. `≈` identifies estimated counts. Included AI has no charge to you; provider dashboards show the exact bill for your own keys.
 - **Activity** always shows the past 365 days. Each square is a local calendar day with AI requests from chat or agents on this computer. Stronger green means more requests. Hover, click or focus a square to inspect its date, requests and tokens.
@@ -28,6 +28,16 @@ This is AI usage activity, not a count of commits or time spent typing. It uses 
 On the first visit to **Agents**, Reviewer, Tester, UI polish, Bug fixer and Docs writer appear immediately. They follow the currently connected model. Reviewer has read-only tools; the others keep their configured tool access.
 
 Each card separates the model from tool permissions and keeps Run, Edit, Duplicate and Delete in consistent positions. **Edit → Use the currently connected model** follows changes in Connect a model. Turn it off to select a fixed connection and model for that specialist. Existing agents with a fixed model retain it.
+
+Team tasks run independent roles in parallel. A reviewer or another dependent role waits for its teammates' handoffs. **Settings → AI → Agents working at once** controls the shared limit for Agents board runs and Team roles, from one to six (three by default); an individual Team plan and its provider can impose a lower limit. A normal chat uses the main assistant until you start a Team.
+
+## Watch and review work in chat
+
+The main assistant's file edits stream into an inline code window with a **Typing** indicator and the file name. Its activity label changes to **Writing** as the first draft arrives. Growing code follows the latest work while you are at the bottom; scrolling up keeps your reading position. The live window stays inside the transcript and settles when the turn finishes.
+
+Markdown tables render as real tables with column headers, rows and cells. Wide tables scroll horizontally inside the message, and their contents retain inline code and file links.
+
+An automatically applied turn shows an **Edited files** card with line counts, **Review** and conflict-aware **Undo**. Reopening a saved chat reloads its retained edit cards in conversation order, including whether edits were already undone. New checkpoints record their conversation. Older checkpoints are restored only when one nearby saved assistant message identifies their conversation unambiguously; missing or expired checkpoints are not invented.
 
 The cards adapt to smaller windows. **Reduce motion** and the operating system’s motion preference disable decorative transitions and animations while status changes remain visible.
 

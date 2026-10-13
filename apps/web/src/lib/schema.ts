@@ -275,6 +275,10 @@ export const FAQ: readonly { q: string; a: string }[] = [
     a: "ADCode is free. There is no subscription, no trial, and no paid tier. The editor is funded by advertisers, and a share of what they pay goes to the developer rather than only to the vendor.",
   },
   {
+    q: "Is the AI in ADCode free?",
+    a: "Yes. ADCode includes free AI models from its partners, Tagflow AI and Heabsy. Sign in with a verified account and start building - no API key and no bill, within a daily allowance that resets at midnight UTC. You can also use your own provider key or a model running on your computer.",
+  },
+  {
     q: "How much can you earn using ADCode?",
     a: `Advertisers bid in a second-price auction from ${formatMicros(ECONOMICS.floorBlockMicros, 2)} per 500 impressions. The developer receives ${ECONOMICS.revSharePercent}% of the winning ad's clearing price, so earnings vary with live demand. ADCode is a way to use a capable editor for free with some money coming back, not a promise of income.`,
   },

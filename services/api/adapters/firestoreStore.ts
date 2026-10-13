@@ -246,6 +246,22 @@ export function createFirestoreStore(injected?: Firestore, injectedPayoutKey?: s
       });
     },
 
+    async liveImpressions() {
+      const database = await lazy();
+      const [users, sources, activity] = await Promise.all([
+        database.collection("users").count().get(),
+        readSightings(database),
+        database.collection("activity").select("acceptedEdits", "sessions").get(),
+      ]);
+      // Included AI and website analytics are unavailable in this retired adapter.
+      return users.data().count + new Set(sightings(sources).map((row) => row.uid)).size
+        + sources.serves.filter((serve) => !serve.test).length
+        + activity.docs.reduce((total, doc) => {
+          const row = doc.data();
+          return total + Number(row["acceptedEdits"] ?? 0) + Number(row["sessions"] ?? 0);
+        }, 0);
+    },
+
     async publicStats(now) {
       const database = await lazy();
       // Micros are stored as decimal strings; positive values sort after "0".

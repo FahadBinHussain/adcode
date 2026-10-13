@@ -259,6 +259,9 @@ try {
     viewedServerByUrl: toolResult("look-bg").includes("Served by cmd"),
     stopped: toolResult("stop-1").includes("exited"),
     undoCardListsDeletion: await evaluate("[...document.querySelectorAll('.chat-checkpoint-file[data-deleted=\"true\"]')].some((node) => node.textContent.includes('old-notes.txt'))"),
+    // Drawn at its real size, with Undo on screen: in a scrolling transcript a flex item with
+    // overflow hidden once collapsed to its 1.6px border, Undo and all.
+    undoCardDrawn: await evaluate("(() => { const card = document.querySelector('.chat-checkpoint'); const undo = card?.querySelector('.chat-checkpoint-undo'); return (card?.getBoundingClientRect().height ?? 0) > 60 && (undo?.getBoundingClientRect().height ?? 0) > 20; })()"),
     mostMascotsWhileWorking: mostWhileFiling,
   };
   await evaluate("document.querySelector('.chat-checkpoint .chat-checkpoint-undo')?.click()");

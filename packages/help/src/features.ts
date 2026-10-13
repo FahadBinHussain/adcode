@@ -112,7 +112,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "ai.tagflow": {
     actions: [command("ai.tagflow", "Choose included AI")],
-    keywords: ["tagflow", "included ai", "no api key", "free models", "free allowance", "daily ai limit", "ai quota", "server providers", "admin models"],
+    keywords: ["tagflow", "included ai", "no api key", "free models", "free allowance", "daily ai limit", "ai quota", "server providers", "admin models", "custom free providers"],
   },
   "adcode.ai.designTaste": {
     keywords: ["taste skill", "design skill", "anti slop", "generic ai design", "better ui", "landing page", "frontend", "built-in skills", "leonxlnx"],

@@ -12,6 +12,17 @@ const allowance = (extra: Partial<TagflowAllowanceView> = {}): TagflowAllowanceV
 });
 
 describe("composer usage meters", () => {
+  it("shows a partner model's own allowance instead of the main one", () => {
+    const base = allowance();
+    const view = allowance({ pools: [{ provider: "custom-heabsy", name: "Heabsy", models: ["heabsy-qwen38"], limits: { ...base.limits, dailyTokens: 10_000_000 }, usage: { ...base.usage, inputTokens: 1_000_000, outputTokens: 0, reservedTokens: 0 } }] });
+    const [partner] = composerUsageModels(null, view, true, "heabsy-qwen38");
+    expect(partner).toMatchObject({ percent: 10, detail: "9M left" });
+    expect(partner.tooltip).toContain("Heabsy models have their own daily allowance");
+    expect(partner.tooltip).toContain("out of 10,000,000");
+    const [main] = composerUsageModels(null, view, true, "tagflow-code-27b");
+    expect(main).toMatchObject({ detail: "980k left" });
+    expect(main.tooltip).not.toContain("Heabsy");
+  });
   it("shows unlimited requests even when recorded counts exceed the wire encoding", () => {
     const base = allowance();
     const [tokens, requests] = composerUsageModels(null, allowance({ limits: { ...base.limits, dailyRequests: UNLIMITED_DAILY_REQUESTS, requestsPerMinute: UNLIMITED_REQUESTS_PER_MINUTE }, usage: { ...base.usage, requests: UNLIMITED_DAILY_REQUESTS + 1 } }), true);

@@ -1,6 +1,6 @@
 {
   "name": "adcode",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "bin": {
     "adcode": "scripts/adcode.mjs"
   },
@@ -34,6 +34,7 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:ads": "node scripts/smoke-ads.mjs",
     "smoke:agent": "node scripts/smoke-agent-tools.mjs",
+    "smoke:commands": "node scripts/smoke-chat-commands.mjs",
     "smoke:live": "node scripts/smoke-live-agents.mjs",
     "record:hero": "node scripts/record-hero.mjs",
     "smoke:first-run": "node scripts/smoke-first-run.mjs",

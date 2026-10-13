@@ -7,6 +7,35 @@ import {
 } from "../src/renderer/ai/chatMarkdown.ts";
 
 describe("chatMarkdown", () => {
+  it("renders the file summary as a real table between prose and a heading", () => {
+    const html = renderChatMessageHtml("What was built (3 files)\n| File | Purpose |\n|---|---|\n| `index.html` | App shell |\n| `styles.css` | **Full styling** |\n| [app.js](app.js#L2) | All logic |\n## Features\n- Notes");
+    expect(html).toContain('<table class="chat-md-table"><thead><tr><th scope="col"');
+    expect(html).toContain('<code class="chat-inline-code">index.html</code></td>');
+    expect(html).toContain('<strong>Full styling</strong>');
+    expect(html).toContain('data-path="app.js"');
+    expect(html.match(/<tbody><tr>|<\/tr><tr>/g)).toHaveLength(3);
+    expect(html).toContain('</table></div><h4');
+    expect(html).not.toContain('|---|');
+  });
+
+  it("keeps escaped and code pipes in cells and applies column alignment safely", () => {
+    const html = renderChatMessageHtml('| Name | Value | Count |\n| :--- | :---: | ---: |\n| A\\|B | `left | right` | 2 |\n| <img src=x onerror=alert(1)> | only two |');
+    expect(html).toContain('data-align="left">A|B</td>');
+    expect(html).toContain('data-align="center"><code class="chat-inline-code">left | right</code></td>');
+    expect(html).toContain('data-align="right">2</td>');
+    expect(html).toContain('data-align="right"></td>');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+  });
+
+  it("recognizes tables without outer pipes but keeps incomplete, malformed and fenced rows literal", () => {
+    expect(renderChatMessageHtml('File | Purpose\n--- | ---\napp.js | Logic')).toContain('<table');
+    expect(renderChatMessageHtml('| File | Purpose |\n|---')).not.toContain('<table');
+    expect(renderChatMessageHtml('| File | Purpose |\n|---|---|---|\n|a|b|')).not.toContain('<table');
+    expect(renderChatMessageHtml('```md\n| File | Purpose |\n|---|---|\n|a|b|\n```')).not.toContain('<table');
+    expect(renderChatMessageHtml('Use a | b in a command.')).not.toContain('<table');
+  });
+
   it("escapes HTML before adding markup", () => {
     const html = renderChatMessageHtml(`<img src=x onerror=alert(1)> **bold**`);
     expect(html).not.toContain("<img");

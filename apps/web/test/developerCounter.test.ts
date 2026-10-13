@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { countUpValue, DeveloperCounter, DeveloperCounterView } from "../src/components/DeveloperCounter";
+import { countUpValue, LiveImpressionsCounter, LiveImpressionsCounterView } from "../src/components/LiveImpressionsCounter";
+import { parseLiveImpressions } from "../src/lib/liveImpressions";
 
 describe("countUpValue", () => {
   it("starts at zero and lands exactly on the real value", () => {
@@ -18,46 +19,51 @@ describe("countUpValue", () => {
       previous = value;
     }
   });
+  it("continues from the displayed total when new activity arrives", () => {
+    expect(countUpValue(1_250_000, 0, 1_200_000)).toBe(1_200_000);
+    expect(countUpValue(1_250_000, 0.5, 1_200_000)).toBeGreaterThan(1_200_000);
+    expect(countUpValue(1_250_000, 1, 1_200_000)).toBe(1_250_000);
+  });
 });
 
-describe("DeveloperCounter", () => {
-  /*
-   * The hero once showed a hard-coded 47,298 that ticked up by a random amount every
-   * minute, on a site that sells advertisers access to these developers. The number on the
-   * page is now the API's count or nothing.
-   */
-  it("shows the API's count and this week's sign-ups, without zero-padding", () => {
-    const markup = renderToStaticMarkup(createElement(DeveloperCounterView, { state: { status: "ready", developers: 632, thisWeek: 214 } }));
-    expect(markup).toContain(">632<");
-    expect(markup).toMatch(/\+(<!-- -->)?214</);
-    expect(markup).not.toContain("000632");
-    expect(markup).toContain("632 developers on ADCode, 214 joined this week");
+describe("LiveImpressionsCounter", () => {
+  it("shows one large total with only the live-impressions label", () => {
+    const markup = renderToStaticMarkup(createElement(LiveImpressionsCounterView, { state: { status: "ready", total: 1_250_000 } }));
+    expect(markup).toContain(">1,250,000<");
+    expect(markup).toContain("Live impressions");
+    expect(markup).toContain('aria-label="1,250,000 live impressions"');
+    expect(markup).not.toMatch(/developers|joined this week|accounts|AI usage|ads delivered|sessions|views/i);
   });
 
-  it("groups thousands", () => {
-    const markup = renderToStaticMarkup(createElement(DeveloperCounterView, { state: { status: "ready", developers: 12_345, thisWeek: 1_500 } }));
-    expect(markup).toContain(">12,345<");
-    expect(markup).toContain("1,500<");
-  });
-
-  it("leaves out the weekly figure in a week without sign-ups", () => {
-    const markup = renderToStaticMarkup(createElement(DeveloperCounterView, { state: { status: "ready", developers: 632, thisWeek: 0 } }));
-    expect(markup).not.toContain("joined this week</dt>");
+  it("keeps large totals in full and adjusts their size", () => {
+    const markup = renderToStaticMarkup(createElement(LiveImpressionsCounterView, { state: { status: "ready", total: 123_456_789 } }));
+    expect(markup).toContain(">123,456,789<");
+    expect(markup).toContain('data-digits="medium"');
   });
 
   it("renders blank figures while loading rather than a guess", () => {
-    const markup = renderToStaticMarkup(createElement(DeveloperCounter));
+    const markup = renderToStaticMarkup(createElement(LiveImpressionsCounter));
     expect(markup).toContain('aria-busy="true"');
     expect(markup).toContain("hero-dev-counter-blank");
     expect(markup).not.toMatch(/<dd>\+?\d/);
   });
 
   it("gets out of the way when the count is unavailable", () => {
-    expect(renderToStaticMarkup(createElement(DeveloperCounterView, { state: { status: "offline" } }))).toBe("");
+    expect(renderToStaticMarkup(createElement(LiveImpressionsCounterView, { state: { status: "offline" } }))).toBe("");
   });
 
   it("has no invented baseline or random growth left in it", () => {
-    const source = readFileSync(new URL("../src/components/DeveloperCounter.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../src/components/LiveImpressionsCounter.tsx", import.meta.url), "utf8");
     expect(source).not.toMatch(/Math\.random|HARDCODED|localStorage/);
+  });
+});
+
+describe("live impressions data", () => {
+  it("accepts zero and full, unabridged totals", () => {
+    expect(parseLiveImpressions({ total: 0, asOf: 1 })).toEqual({ total: 0, asOf: 1 });
+    expect(parseLiveImpressions({ total: 1_250_000, asOf: 1 })?.total).toBe(1_250_000);
+  });
+  it.each([null, {}, { total: -1, asOf: 1 }, { total: 1.5, asOf: 1 }, { total: Infinity, asOf: 1 }, { total: Number.MAX_SAFE_INTEGER + 1, asOf: 1 }, { total: 1, asOf: "now" }])("rejects invalid totals", (value) => {
+    expect(parseLiveImpressions(value)).toBeNull();
   });
 });

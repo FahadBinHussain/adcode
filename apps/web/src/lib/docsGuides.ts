@@ -854,8 +854,10 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
     steps: [
       "Open the Assistant (Ctrl+I) and type / at the start of the composer to see every command.",
       "Keep typing to filter - /re finds /review and /refactor - then press Enter or Tab. Arrow keys move through the list; Esc closes it.",
-      "Choose /review to attach your uncommitted changes and get a bug-focused review with file and line, or /commit for a ready-to-use commit message.",
-      "Choose /fix, /test, /plan, /refactor, /explain, /optimize, /security, /docs or /build to start a carefully worded request, then add your own details and send. /check asks the assistant to look at your running app in its own browser and fix what is broken.",
+      "Choose /review to attach your uncommitted changes and get a bug-focused review with file and line, or /commit for a ready-to-use commit message. Both go as soon as you pick them; type /review focus on auth to say what to look at.",
+      "Choose /fix, /test, /plan, /refactor, /explain, /optimize, /security, /docs or /build, add your own details and send. On its own, a command is about the file you have open. /check asks the assistant to look at your running app in its own browser and fix what is broken.",
+      "Or skip the menu: type the command and your words together - /fix the login button does nothing - and press Enter. Your message shows as /fix plus your words, and the conversation is titled the same way, while the assistant receives the command's full, carefully worded instruction.",
+      "Action commands work typed too, even while an answer is being written: /model opens the model picker, /new followed by a message starts a fresh conversation and sends it, /team add a discount code to the cart sets up an AI Team for that task, and /compact keep the API decisions makes room while keeping what you name.",
       "Type @ anywhere in a message to search your project's files. Pick one and it rides along as a chip; if it is open in the editor, its unsaved text is what gets sent.",
       "In an empty composer, press the Up arrow to bring back what you sent before - handy for re-running a request after a fix.",
     ],
@@ -863,6 +865,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Common requests take two keystrokes, and each one asks for verification - tests run, typechecks pass - instead of an unchecked guess.",
       "/review reads the real diff from git, including staged work and newly added files, so nothing gets reviewed from memory.",
       "@ puts exactly the file you mean in front of the model, which saves a round of it searching for the wrong one.",
+      "Your history stays readable: past conversations are titled with what you typed, like /review focus on auth, not with a paragraph of boilerplate.",
       "Commands that change code follow your edit approval: by default the edits land as the assistant works, and Undo in the chat takes any turn back.",
     ],
     betterThan:
@@ -1183,7 +1186,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "When the allowance cannot cover a request, wait for midnight UTC or switch to your own provider or a local model. Clearing local history does not reset the allowance.",
     ],
     benefits: ["Start without purchasing a provider key.", "See the remaining allowance and reset time inside the editor.", "Administrators can set default allowances, individual limits and access blocks."],
-    betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models using server keys, set their prices and default model, hide models, and adjust allowances. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
+    betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models, or models from any OpenAI-compatible provider they register, using server keys, set their prices and default model, hide models, adjust allowances (including a separate allowance for one partner's models), and save provider keys from the admin panel. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
   },
   "ai-provider": {
     steps: [

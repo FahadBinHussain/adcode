@@ -218,6 +218,12 @@ export function createMemoryStore(): Store & { reset(): void } {
         .sort((a, b) => b.createdAt - a.createdAt);
     },
 
+    async liveImpressions() {
+      return users.size + new Set(allSightings().map((row) => row.uid)).size
+        + [...serves.values()].filter((serve) => !serve.test).length
+        + [...activity.values()].reduce((total, day) => total + day.acceptedEdits + day.sessions, 0);
+    },
+
     async publicStats(now) {
       const paid = [...receipts.values()].filter((receipt) => receipt.costMicros > 0n);
       const clicks = paid.filter((receipt) => receipt.outcome === "click").length;

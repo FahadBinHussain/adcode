@@ -5,6 +5,7 @@
  * quiet, a bug here is obvious the first time anyone calls the endpoint. All the logic
  * worth testing hard lives in the modules this one wires together.
  */
+import type { WorkerSecrets } from "./workerSecrets.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
@@ -252,7 +253,7 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 }
 
 export interface ApiOptions {
-  tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined };
+  tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined; workerSecrets?: WorkerSecrets };
   websiteAnalytics?: WebsiteAnalyticsStore;
   port?: number;
   store?: Store;
@@ -421,6 +422,15 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
         // is what an uptime check needs in order to page the right person.
         send(res, 503, { ok: false }, cors);
       }
+      return;
+    }
+
+    if (path === "/v1/impressions" && req.method === "GET") {
+      const total = await store.liveImpressions();
+      send(res, 200, { total, asOf: clock.now() }, {
+        ...cors,
+        "cache-control": "public, max-age=15, stale-while-revalidate=15",
+      });
       return;
     }
 

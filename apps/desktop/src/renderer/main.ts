@@ -4638,6 +4638,7 @@ const chat = createChatWidget({
   // The assistant opened a particular page: an open preview follows it there.
   showPreviewPage: (url) => previewPane.navigate(url),
   openConnect: () => openConnectFromChat(),
+  openAccount: () => accountMenu.open("free-ai"),
   // The layer state, not the dialogs: a closing dialog stays open through its animation.
   modelPickerOpen: () => popupLayerState.dependent === "connect" || popupLayerState.primary === "connect",
   saveAllOpenFiles: () => {

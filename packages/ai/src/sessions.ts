@@ -50,6 +50,9 @@ export interface ChatSummary {
 /** Long enough to tell two conversations apart, short enough for a narrow list. */
 const TITLE_LENGTH = 48;
 
+/** The line the main process appends to a message sent with files: `[Attached: a.png, b.ts]`. */
+const ATTACHED_LINE = /\n?\[Attached: ([^\n]*)\]\s*$/;
+
 /**
  * What to call a conversation, from the first thing asked in it.
  *
@@ -61,7 +64,11 @@ export function titleFor(messages: readonly ChatMessage[]): string {
   const first = messages.find((message) => message.role === "user");
   if (first === undefined) return "New conversation";
 
-  const flattened = first.text.replace(/\s+/g, " ").trim();
+  // A message sent with files is recorded with an `[Attached: ...]` line after it. That is
+  // bookkeeping, not the subject - unless the files were all that was sent.
+  const attached = ATTACHED_LINE.exec(first.text);
+  const own = attached === null ? first.text : first.text.slice(0, attached.index);
+  const flattened = (own.trim().length > 0 ? own : attached?.[1] ?? "").replace(/\s+/g, " ").trim();
   if (flattened.length === 0) return "New conversation";
 
   if (flattened.length <= TITLE_LENGTH) return flattened;

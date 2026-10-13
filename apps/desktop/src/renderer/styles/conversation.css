@@ -116,6 +116,23 @@
   padding: 0;
 }
 
+/* A sent `/fix the login bug`: the command as a chip, then the person's own words. */
+.chat-card .chat-command-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  font-weight: 600;
+  vertical-align: 1px;
+  cursor: help;
+}
+
 /* The hover row belongs to the message above it: 8px under it, not a full turn away. */
 :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-bubble + .chat-message-actions {
   margin-top: calc(8px - var(--chat-turn-gap));
@@ -131,6 +148,13 @@
 
 :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-message-action.chat-message-icon {
   padding: 0;
+}
+
+/* The transcript scrolls; nothing in it may shrink to fit. A card with `overflow: hidden`
+   has no minimum height as a flex item, so once a conversation was long enough to scroll,
+   the Edited files card - the one with Undo - was squeezed to its 1.6px border. */
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-transcript > * {
+  flex-shrink: 0;
 }
 
 /* The turn's working cards (activity, plan, live preview, Undo) brought their own outer

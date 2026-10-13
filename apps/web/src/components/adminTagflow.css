@@ -9,3 +9,5 @@
 .tagflow-model legend { font-size: 13px; padding: 0 6px; }
 .tagflow-checks { display: grid; gap: 10px; font-size: 13px; }
 @media (max-width: 640px) { .tagflow-fields { grid-template-columns: 1fr; } }
+.tagflow-key { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.tagflow-key h4 { margin: 0; font-size: 14px; font-weight: 600; }

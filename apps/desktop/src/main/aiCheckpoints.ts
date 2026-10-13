@@ -39,6 +39,8 @@ export interface EditCheckpoint {
   readonly createdAt: number;
   readonly files: readonly CheckpointFile[];
   readonly undone: boolean;
+  /** The conversation that made these edits. Absent in older saved checkpoints. */
+  readonly sessionId?: string;
 }
 
 export interface UndoResult {
@@ -64,11 +66,13 @@ const CHECKPOINT_ID = /^cp-[a-z0-9-]{8,64}$/;
 
 export interface CheckpointStore {
   /** Start recording a turn in this project. */
-  begin(root: string): void;
+  begin(root: string, sessionId?: string): void;
   /** One write by the assistant; a null `after` is a deletion. The first write of a path keeps its "before". */
   record(path: string, before: string | null, after: string | null, encoding?: "utf8" | "base64"): void;
   /** End the turn; the saved checkpoint, or null when nothing was written. */
   finish(): Promise<EditCheckpoint | null>;
+  /** Saved changes in this project, in the order they happened. */
+  list(root: string): Promise<EditCheckpoint[]>;
   undo(id: string, root: string, force: boolean): Promise<UndoResult>;
 }
 
@@ -81,7 +85,7 @@ export function createCheckpointStore(deps: {
   readonly now?: () => number;
 }): CheckpointStore {
   type Entry = { before: string | null; after: string | null; encoding: "utf8" | "base64" };
-  let turn: { root: string; files: Map<string, Entry> } | null = null;
+  let turn: { root: string; sessionId?: string; files: Map<string, Entry> } | null = null;
   const file = (id: string): string => join(deps.directory(), `${id}.json`);
 
   async function readCurrent(root: string, path: string, encoding: "utf8" | "base64" = "utf8"): Promise<string | null> {
@@ -120,15 +124,16 @@ export function createCheckpointStore(deps: {
     if (!CHECKPOINT_ID.test(id)) return null;
     try {
       const parsed = JSON.parse(await readFile(file(id), "utf8")) as EditCheckpoint;
-      return parsed.id === id && Array.isArray(parsed.files) ? parsed : null;
+      return parsed.id === id && typeof parsed.root === "string" && Number.isFinite(parsed.createdAt) && Array.isArray(parsed.files)
+        && parsed.files.every(entry => typeof entry.path === "string" && (entry.before === null || typeof entry.before === "string") && (entry.after === null || typeof entry.after === "string")) ? parsed : null;
     } catch {
       return null;
     }
   }
 
   return {
-    begin(root): void {
-      turn = { root, files: new Map() };
+    begin(root, sessionId): void {
+      turn = { root, files: new Map(), ...(sessionId === undefined ? {} : { sessionId }) };
     },
 
     record(path, before, after, encoding = "utf8"): void {
@@ -151,11 +156,19 @@ export function createCheckpointStore(deps: {
           .filter(([, entry]) => entry.before !== entry.after)
           .map(([path, { encoding, ...entry }]) => ({ path, ...entry, ...(encoding === "base64" ? { encoding } : {}) })),
         undone: false,
+        ...(finished.sessionId === undefined ? {} : { sessionId: finished.sessionId }),
       };
       if (checkpoint.files.length === 0) return null;
       await save(checkpoint);
       await prune().catch(() => undefined);
       return checkpoint;
+    },
+
+    async list(root): Promise<EditCheckpoint[]> {
+      const names = await readdir(deps.directory()).catch(() => [] as string[]);
+      const saved = await Promise.all(names.filter(name => name.endsWith(".json")).map(name => load(name.slice(0, -5))));
+      const normalize = (path: string): string => process.platform === "win32" ? path.replaceAll("\\", "/").toLowerCase() : path;
+      return saved.filter((checkpoint): checkpoint is EditCheckpoint => checkpoint !== null && normalize(checkpoint.root) === normalize(root)).sort((a, b) => a.createdAt - b.createdAt);
     },
 
     async undo(id, root, force): Promise<UndoResult> {

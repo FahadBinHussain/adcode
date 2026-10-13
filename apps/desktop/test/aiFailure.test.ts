@@ -9,12 +9,31 @@ it("explains invalid file arguments and retries the remaining work in smaller ed
 });
 
 describe("assistant failure explanations", () => {
+  it("asks a signed-out newcomer to sign in for free AI instead of blaming a key they never had", () => {
+    for (const raw of [
+      "Included AI returned HTTP 401: Sign in to use included AI. Banned accounts cannot use it. (code missing-token)",
+      "Included AI returned HTTP 403: Sign in and verify your email in Account to use included AI. No API key is needed. (code verify-account)",
+      "Included AI: Sign in in Account to use included AI.",
+    ]) {
+      const failure = describeAiFailure(raw);
+      expect(failure, raw).toMatchObject({ kind: "sign-in", title: "Sign in to use free AI", actions: ["sign-in", "models"] });
+      expect(failure.explanation).not.toMatch(/key (?:may be|was) /i);
+    }
+    expect(describeAiFailure("Included AI returned HTTP 403: Sign in to use included AI. Banned accounts cannot use it. (code banned)")).toMatchObject({ kind: "auth", title: "Free AI isn't available for this account" });
+    expect(describeAiFailure("Included AI returned HTTP 403: Included AI is disabled for this account. (code blocked)")).toMatchObject({ kind: "auth", title: "Free AI is turned off for this account" });
+    // A personal key's refusal still points at the key.
+    expect(describeAiFailure("OpenAI returned HTTP 401: Incorrect API key provided")).toMatchObject({ kind: "auth", title: "OpenAI did not accept your key" });
+  });
   it("separates a daily allowance from a temporary limit and offers its usage display", () => {
     const daily = describeAiFailure("Included AI returned HTTP 429: Your daily included AI allowance cannot cover this request. (code daily-limit)");
     expect(daily).toMatchObject({ kind: "daily-limit", actions: ["usage", "models"] });
     expect(daily.explanation).toContain("daily reset");
     expect(daily.explanation).toContain("All free models share this allowance");
     expect(daily.explanation).not.toContain("in a minute");
+    const partner = describeAiFailure("Included AI returned HTTP 429: Your remaining daily included AI allowance cannot cover this request and its reply. This task can resume after the daily reset. Heabsy models have their own daily allowance, so other free models may still have room. (code daily-limit)");
+    expect(partner.explanation).toContain("Heabsy models have their own daily allowance, so another free model may still have room.");
+    const main = describeAiFailure("Included AI returned HTTP 429: Your remaining daily included AI allowance cannot cover this request and its reply. Free models share this allowance, except Heabsy models, which have their own. (code daily-limit)");
+    expect(main.explanation).toContain("except Heabsy models, which have their own");
     const minute = describeAiFailure("Included AI returned HTTP 429: Included AI is busy for this account. (code rate-limit)");
     expect(minute).toMatchObject({ kind: "rate-limit", title: "Too many AI requests in a minute", actions: ["retry", "usage", "models"] });
     expect(minute.explanation).toContain("daily allowance may still have tokens left");

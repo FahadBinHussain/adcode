@@ -174,6 +174,53 @@ function lineKind(line: string): LineKind {
   return "text";
 }
 
+/** Pipes inside inline code or escaped as \| belong to their cell. */
+function tableCells(line: string): string[] | null {
+  const text = line.trim();
+  const cells: string[] = [];
+  let cell = "";
+  let fence = 0;
+  let piped = text.startsWith("|");
+  for (let index = piped ? 1 : 0; index < text.length; index += 1) {
+    const ch = text[index]!;
+    if (ch === "\\" && index + 1 < text.length) {
+      const next = text[++index]!;
+      cell += next === "|" ? next : `\\${next}`;
+    } else if (ch === "`") {
+      let end = index + 1;
+      while (text[end] === "`") end += 1;
+      const ticks = text.slice(index, end);
+      if (fence === ticks.length) fence = 0;
+      else if (fence === 0 && text.indexOf(ticks, end) !== -1) fence = ticks.length;
+      cell += ticks;
+      index = end - 1;
+    } else if (ch === "|" && fence === 0) {
+      piped = true;
+      cells.push(cell.trim());
+      cell = "";
+      if (index === text.length - 1) return cells;
+    } else cell += ch;
+  }
+  cells.push(cell.trim());
+  return piped ? cells : null;
+}
+
+type TableAlignment = "left" | "center" | "right";
+function tableHeader(lines: readonly string[], index: number): { cells: string[]; alignments: TableAlignment[] } | null {
+  const cells = tableCells(lines[index] ?? "");
+  const separators = tableCells(lines[index + 1] ?? "");
+  if (cells === null || separators === null || cells.length !== separators.length || !separators.every(cell => /^:?-+:?$/.test(cell))) return null;
+  return {
+    cells,
+    alignments: separators.map(cell => cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : "left"),
+  };
+}
+
+function renderTableRow(cells: readonly string[], alignments: readonly TableAlignment[], heading: boolean): string {
+  const tag = heading ? "th" : "td";
+  return `<tr>${alignments.map((align, index) => `<${tag}${heading ? ' scope="col"' : ""} data-align="${align}">${renderChatInline(escapeHtml(cells[index] ?? ""))}</${tag}>`).join("")}</tr>`;
+}
+
 /**
  * One paragraph-separated block, read line by line, the way a model actually writes:
  * a heading straight above its list, a sentence that introduces the bullets under it,
@@ -192,6 +239,19 @@ function renderTextBlock(block: string): string {
   while (index < lines.length) {
     const line = lines[index] as string;
     const kind = lineKind(line);
+    const table = tableHeader(lines, index);
+    if (table !== null) {
+      index += 2;
+      const rows: string[] = [];
+      while (index < lines.length) {
+        const cells = tableCells(lines[index]!);
+        if (cells === null) break;
+        rows.push(renderTableRow(cells, table.alignments, false));
+        index += 1;
+      }
+      out.push(`<div class="chat-md-table-wrap" role="region" aria-label="Scrollable table" tabindex="0"><table class="chat-md-table"><thead>${renderTableRow(table.cells, table.alignments, true)}</thead><tbody>${rows.join("")}</tbody></table></div>`);
+      continue;
+    }
     if (kind === "rule") {
       out.push(`<hr class="chat-md-rule">`);
       index += 1;
@@ -232,7 +292,7 @@ function renderTextBlock(block: string): string {
       continue;
     }
     const paragraph: string[] = [];
-    while (index < lines.length && lineKind(lines[index] as string) === "text") {
+    while (index < lines.length && lineKind(lines[index] as string) === "text" && tableHeader(lines, index) === null) {
       paragraph.push(lines[index] as string);
       index += 1;
     }
@@ -251,7 +311,7 @@ function renderCodeSegment(segment: ChatCodeSegment): string {
   );
 }
 
-/** Full message to safe HTML: code blocks, lists, bold, inline code, file links. */
+/** Full message to safe HTML: code blocks, tables, lists, bold, inline code, file links. */
 export function renderChatMessageHtml(text: string): string {
   const out: string[] = [];
   for (const segment of splitChatContent(text)) {

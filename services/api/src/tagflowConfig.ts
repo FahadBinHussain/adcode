@@ -1,5 +1,5 @@
 import type { TagflowConfig, TagflowLimits, TagflowModel } from "./tagflowTypes.ts";
-import { INCLUDED_PROVIDERS, modelProvider, type IncludedProviderId } from "./includedProviders.ts";
+import { MAX_CUSTOM_PROVIDERS, OUTPUT_TOKEN_FIELDS, PROVIDER_AUTHENTICATION, isCustomProviderId, isCustomProviderUrl, modelProvider, providerConnections, type CustomProvider, type IncludedProviderId, type OutputTokenField, type ProviderAuthentication } from "./includedProviders.ts";
 
 // Keep the existing numeric wire format compatible with deployed relays.
 // These reserved values disable request-count checks; zero still blocks usage.
@@ -35,19 +35,45 @@ export function parseTagflowLimits(raw: unknown): TagflowLimits | null {
   return { dailyRequests, dailyTokens, dailyCostMicros, requestsPerMinute };
 }
 
+/** Administrator-registered providers: unique custom- IDs and public HTTPS API bases. */
+export function parseCustomProviders(raw: unknown): CustomProvider[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > MAX_CUSTOM_PROVIDERS) return null;
+  const providers: CustomProvider[] = [];
+  for (const item of raw) {
+    if (!record(item) || !fields(item, ["id", "name", "baseUrl", "authentication", "outputTokenField", "limits"])) return null;
+    const { id: providerId, name, authentication, outputTokenField } = item;
+    const limits = item["limits"] === undefined ? undefined : parseTagflowLimits(item["limits"]);
+    if (limits === null) return null;
+    if (!isCustomProviderId(providerId) || providers.some((one) => one.id === providerId)) return null;
+    if (typeof name !== "string" || !name.trim() || name.length > 120 || typeof item["baseUrl"] !== "string") return null;
+    const baseUrl = item["baseUrl"].trim().replace(/\/+$/, "");
+    if (!isCustomProviderUrl(baseUrl)) return null;
+    if (authentication !== undefined && !PROVIDER_AUTHENTICATION.includes(authentication as never)) return null;
+    if (outputTokenField !== undefined && !OUTPUT_TOKEN_FIELDS.includes(outputTokenField as never)) return null;
+    providers.push({ id: providerId, name: name.trim(), baseUrl,
+      ...(authentication === undefined ? {} : { authentication: authentication as ProviderAuthentication }),
+      ...(outputTokenField === undefined ? {} : { outputTokenField: outputTokenField as OutputTokenField }),
+      ...(limits === undefined ? {} : { limits }),
+    });
+  }
+  return providers;
+}
+
 export function parseTagflowConfig(raw: unknown): TagflowConfig | null {
-  if (!record(raw) || !fields(raw, ["enabled", "baseUrl", "defaultModel", "models", "limits", "maxInputTokens", "maxOutputTokens"])) return null;
+  if (!record(raw) || !fields(raw, ["enabled", "baseUrl", "defaultModel", "models", "limits", "maxInputTokens", "maxOutputTokens", "providers"])) return null;
   const { enabled, defaultModel, maxInputTokens, maxOutputTokens } = raw;
   if (typeof enabled !== "boolean" || typeof raw["baseUrl"] !== "string" || typeof defaultModel !== "string") return null;
   const baseUrl = raw["baseUrl"].trim().replace(/\/+$/, "");
   if (baseUrl !== "" && !isTagflowUrl(baseUrl)) return null;
   if (!integer(maxInputTokens, 1_000_000) || maxInputTokens < 1 || !integer(maxOutputTokens, 65_536) || maxOutputTokens < 1) return null;
   const limits = parseTagflowLimits(raw["limits"]);
-  if (limits === null || !Array.isArray(raw["models"]) || raw["models"].length > 50) return null;
+  const providers = parseCustomProviders(raw["providers"]);
+  if (limits === null || providers === null || !Array.isArray(raw["models"]) || raw["models"].length > 50) return null;
   const models: TagflowModel[] = [];
   for (const item of raw["models"]) {
     if (!record(item) || !fields(item, ["id", "name", "provider", "upstreamModel", "enabled", "contextWindow", "maxOutput", "inputPrice", "outputPrice"])) return null;
-    if (item["provider"] !== undefined && !INCLUDED_PROVIDERS.some((provider) => provider.id === item["provider"])) return null;
+    if (item["provider"] !== undefined && !providerConnections(providers).some((provider) => provider.id === item["provider"])) return null;
     if (item["upstreamModel"] !== undefined && !id(item["upstreamModel"])) return null;
     if (item["enabled"] !== undefined && typeof item["enabled"] !== "boolean") return null;
     const { name, contextWindow, maxOutput, inputPrice, outputPrice } = item;
@@ -62,7 +88,7 @@ export function parseTagflowConfig(raw: unknown): TagflowConfig | null {
   }
   if (defaultModel !== "" && !models.some((model) => model.id === defaultModel && model.enabled !== false)) return null;
   if (enabled && (defaultModel === "" || models.length === 0 || baseUrl === "" && models.some((model) => modelProvider(model) === "tagflow"))) return null;
-  return { enabled, baseUrl, defaultModel, models, limits, maxInputTokens, maxOutputTokens };
+  return { enabled, baseUrl, defaultModel, models, limits, maxInputTokens, maxOutputTokens, ...(providers.length === 0 ? {} : { providers }) };
 }
 
 export const tagflowCost = (model: TagflowModel, input: number, output: number): number => Math.ceil(input * model.inputPrice + output * model.outputPrice);

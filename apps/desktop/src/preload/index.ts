@@ -173,6 +173,7 @@ const api: AdcodeApi = {
     onEvent: (listener) => subscribe(CHANNELS.aiEvent, listener),
     onProposedEdit: (listener) => subscribe(CHANNELS.aiProposedEdit, listener),
     onCheckpoint: (listener) => subscribe(CHANNELS.aiCheckpoint, listener),
+    checkpoints: (sessionId) => ipcRenderer.invoke(CHANNELS.aiCheckpoints, sessionId),
     undoCheckpoint: (id, force) => ipcRenderer.invoke(CHANNELS.aiCheckpointUndo, id, force),
   },
   aiWorkspace: {

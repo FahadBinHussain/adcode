@@ -299,10 +299,15 @@ describe("long chat memory in the chat", () => {
     expect(handler.slice(context, turnStart)).toContain("if (!turnActive) return;");
   });
 
-  it("makes room on /compact instead of sending it, before any connect nudge", () => {
+  it("runs a typed /compact (and every other action) instead of sending it, before any connect nudge", () => {
     const submit = source.slice(source.indexOf("  function submit(fromKey = false): void {"));
-    expect(submit.indexOf("compactCommand(text)")).toBeGreaterThan(0);
-    expect(submit.indexOf("compactCommand(text)")).toBeLessThan(submit.indexOf("connectNudge("));
+    const typed = submit.indexOf("parseSlashCommand(input.value)");
+    expect(typed).toBeGreaterThan(0);
+    expect(submit.indexOf("runSlashAction(typed.command.id, typed.rest)")).toBeGreaterThan(typed);
+    expect(submit.indexOf("runSlashAction(typed.command.id, typed.rest)")).toBeLessThan(submit.indexOf("connectNudge("));
+    // Even mid-turn: the action is taken before the branch that queues or stops.
+    expect(typed).toBeLessThan(submit.indexOf('if (sendButton.dataset["mode"] === "stop")'));
+    expect(source).toContain('case "compact": void compactNow(rest.length > 0 ? rest : undefined); return;');
   });
 
   it("offers Compact and View summary from the command palette", () => {

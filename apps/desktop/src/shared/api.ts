@@ -605,6 +605,7 @@ export const CHANNELS = {
   aiStartOllama: "ai:start-ollama",
   aiOpenKeyPage: "ai:open-key-page",
   aiCheckpoint: "ai:checkpoint",
+  aiCheckpoints: "ai:checkpoints",
   aiCheckpointUndo: "ai:checkpoint-undo",
   aiWorkspaceList: "ai-workspace:list",
   aiWorkspaceCurrent: "ai-workspace:current",
@@ -1208,6 +1209,7 @@ export interface ThemedConfirmRequest {
 export interface AiCheckpointView {
   readonly id: string;
   readonly createdAt: number;
+  readonly undone?: boolean;
   /** `deleted`: the turn deleted the file, or moved it away from this path. */
   readonly files: ReadonlyArray<{
     readonly path: string;
@@ -1885,6 +1887,7 @@ export interface AdcodeApi {
     onProposedEdit(listener: (edit: ProposedEditView) => void): () => void;
     /** A turn in "Apply automatically" mode changed files; `undoCheckpoint` puts them back. */
     onCheckpoint(listener: (checkpoint: AiCheckpointView) => void): () => void;
+    checkpoints(sessionId: string): Promise<readonly AiCheckpointView[]>;
     undoCheckpoint(id: string, force: boolean): Promise<AiUndoResultView>;
   };
   readonly aiWorkspace: {

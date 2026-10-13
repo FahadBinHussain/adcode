@@ -31,4 +31,12 @@ export interface TagflowAllowanceView {
   limits: { dailyRequests: number; dailyTokens: number; dailyCostMicros: number; requestsPerMinute: number };
   usage: { day: string; requests: number; inputTokens: number; outputTokens: number; costMicros: number; estimatedRequests: number; reservedTokens: number; reservedCostMicros: number };
   resetsAt: number;
+  /** Partner models with their own daily allowance, counted apart from the main one. Older servers omit it. */
+  pools?: { provider: string; name: string; models: string[]; limits: TagflowAllowanceView["limits"]; usage: TagflowAllowanceView["usage"] }[];
+}
+
+/** The allowance a model draws from: its partner's own pool when it has one, otherwise the main allowance. */
+export function allowanceForModel(view: TagflowAllowanceView, modelId: string | null): TagflowAllowanceView & { poolName: string | null } {
+  const pool = modelId === null ? undefined : view.pools?.find((one) => Array.isArray(one.models) && one.models.includes(modelId));
+  return pool === undefined ? { ...view, poolName: null } : { ...view, limits: pool.limits, usage: pool.usage, poolName: pool.name };
 }

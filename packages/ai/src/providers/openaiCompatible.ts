@@ -19,7 +19,7 @@
  */
 import { effortFor } from "../effort.ts";
 import { allowedOutputSize } from "../outputSize.ts";
-import { localToolCalls } from "./localToolCalls.ts";
+import { createFencedCallFilter, localToolCalls } from "./localToolCalls.ts";
 import { parseToolArguments } from "./toolArguments.ts";
 import type {
   Provider,
@@ -63,6 +63,8 @@ interface WireProfile {
   readonly effort: "reasoning_effort" | "openrouter" | "none";
   /** Reasoning the provider requires back on the assistant message during a tool loop. */
   readonly echo: "none" | "reasoning_details" | "reasoning_content";
+  /** Sampling temperature for a request that offers tools; unset leaves the server's default. */
+  readonly toolTemperature?: number;
 }
 
 function profileFor(id: string): WireProfile {
@@ -75,7 +77,10 @@ function profileFor(id: string): WireProfile {
       return { sizeField: "max_tokens", effort: "reasoning_effort", echo: "reasoning_content" };
     case "ollama":
       // A local server mostly ignores effort, and a strict one rejects a field it does not know.
-      return { sizeField: "max_tokens", effort: "none", echo: "none" };
+      // Ollama samples at 0.8 unless told otherwise. Measured on qwen2.5-coder:7b with the
+      // lean /fix request: at 0.8 the first reply was a tool call 3 times in 6 (the rest were
+      // prose that never acted); at 0.2, 6 in 6 - each reading the right file.
+      return { sizeField: "max_tokens", effort: "none", echo: "none", toolTemperature: 0.2 };
     default:
       return { sizeField: "max_tokens", effort: "reasoning_effort", echo: "none" };
   }
@@ -263,6 +268,7 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
           // it is documented there, and an unknown field is a 400 on some compatible servers.
           ...(deps.id === "openai" ? { stream_options: { include_usage: true } } : {}),
           [profile.sizeField]: size,
+          ...(profile.toolTemperature !== undefined && request.tools.length > 0 ? { temperature: profile.toolTemperature } : {}),
           messages,
           ...(level === undefined
             ? {}
@@ -349,8 +355,11 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
       // Hold a possible local call until its whole envelope is known. Ordinary prose
       // streams immediately; structured tool_calls always take precedence.
       const recoverLocalCalls = deps.id === "ollama" && request.tools.length > 0;
+      const localIds = `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
       let localText = "";
       let localTextMode: "undecided" | "candidate" | "text" = recoverLocalCalls ? "undecided" : "text";
+      // Prose streams through this; calls written in json fences are lifted out of it.
+      const fenced = recoverLocalCalls ? createFencedCallFilter(request.tools, `${localIds}_fenced`) : null;
 
       let buffer = "";
       let finish: string | null = null;
@@ -425,14 +434,16 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
 
           if (typeof delta["content"] === "string" && delta["content"].length > 0) {
             if (localTextMode === "text") {
-              yield { kind: "text", text: delta["content"] };
+              const shown = fenced === null ? delta["content"] : fenced.push(delta["content"]);
+              if (shown.length > 0) yield { kind: "text", text: shown };
             } else {
               localText += delta["content"];
               const start = localText.trimStart();
               if (localTextMode === "undecided" && start.length > 0) {
                 localTextMode = /^[{[<]/.test(start) ? "candidate" : "text";
                 if (localTextMode === "text") {
-                  yield { kind: "text", text: localText };
+                  const shown = fenced === null ? localText : fenced.push(localText);
+                  if (shown.length > 0) yield { kind: "text", text: shown };
                   localText = "";
                 }
               }
@@ -472,14 +483,17 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
 
       if (signal.aborted) return;
 
-      const recovered = pending.size === 0 && finish !== "length" && finish !== "content_filter" && localText.length > 0
-        ? localToolCalls(localText, request.tools, `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`)
-        : null;
+      // Native calls are authoritative, and a reply cut short never runs what it was writing.
+      const trustLocalCalls = pending.size === 0 && finish !== "length" && finish !== "content_filter";
+      const opening = trustLocalCalls && localText.length > 0 ? localToolCalls(localText, request.tools, localIds) : null;
+      const tail = fenced?.finish() ?? { text: "", calls: [], raw: "" };
+      const fencedRun = trustLocalCalls && opening === null && tail.calls.length > 0 ? tail.calls : null;
+      const recovered = opening ?? fencedRun;
+      if (opening === null && localText.length > 0) yield { kind: "text", text: localText };
+      if (fencedRun === null && tail.raw.length > 0) yield { kind: "text", text: tail.raw };
       if (recovered !== null) {
         yield { kind: "status", text: "Recovering the local model's tool call" };
         for (const call of recovered) yield { kind: "tool-call", call };
-      } else if (localText.length > 0) {
-        yield { kind: "text", text: localText };
       }
 
       const reasoning: ProviderReasoning | undefined =

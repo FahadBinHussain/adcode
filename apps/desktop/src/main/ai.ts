@@ -75,6 +75,7 @@ import {
   CHANNELS,
   type AiAttachmentView,
   type AiCompactResultView,
+  type AiCheckpointView,
   type AiContextUsageView,
   type AiKeyCheck,
   type AiQuickConnectResult,
@@ -104,7 +105,7 @@ import { createKeychainStore } from "./keychain.ts";
 import { createAiToolRunner } from "./aiTools.ts";
 import { resolveSandboxPath } from "./aiSandbox.ts";
 import { createCheckpointStore, type UndoResult } from "./aiCheckpoints.ts";
-import { checkpointView } from "./aiCheckpointView.ts";
+import { checkpointView, checkpointsForSession } from "./aiCheckpointView.ts";
 import { ASSISTANT_EXTENSION_TOOLS, withAssistantExtensions } from "./assistantControls.ts";
 import { memoryForWorkspace } from "./memory.ts";
 import { currentSettings, writeSetting } from "./settings.ts";
@@ -149,6 +150,7 @@ import { askOllama, localModels, startOllama } from "./localModels.ts";
 import { apiBaseUrl } from "./backend.ts";
 import { buildTagflowProvider, refreshTagflowModels, tagflowCatalogue, tagflowDefaultModel } from "./tagflowAi.ts";
 import { recordModelOutcome } from "./modelOutcomes.ts";
+import { expandSlashCommand } from "../shared/slashCommands.ts";
 import { outcomeOfError } from "../shared/modelOutcomes.ts";
 import { preferredOllamaModel } from "../shared/quickConnect.ts";
 import { recordAiUsage } from "./aiUsage.ts";
@@ -1255,6 +1257,29 @@ function compactionFor(providerId: string, model: string): AgentCompaction {
 }
 
 /**
+ * A lean request's map of the project, from the same walk glob_files makes (ignored folders
+ * skipped). Asked to fix `subtotal`, a 7B local model read a guessed `subtotal.js` and then
+ * asked the user for the path; with the real paths in front of it, it opens `src/cart.js`.
+ * Built at most every 15 seconds - context is assembled for every request of a turn.
+ */
+let leanFilesHint: { readonly root: string; readonly at: number; readonly text: string | null } | null = null;
+async function projectFilesHint(root: string): Promise<string | null> {
+  if (leanFilesHint !== null && leanFilesHint.root === root && Date.now() - leanFilesHint.at < 15_000) return leanFilesHint.text;
+  const listed = await toolRunner()
+    .run({ type: "tool-call", id: "lean-files", name: "glob_files", input: { pattern: "**/*" } }, new AbortController().signal)
+    .catch(() => null);
+  const files = listed === null || listed.isError || listed.content === "No files match that pattern."
+    ? []
+    : listed.content.split("\n").filter((line) => line.length > 0);
+  const shown = files.slice(0, 60);
+  const text = shown.length === 0
+    ? null
+    : `Project files${files.length > shown.length ? ` (the first ${shown.length} of ${files.length}${files.length >= 500 ? "+" : ""})` : ""}: ${shown.join(", ")}. Use these exact paths.`;
+  leanFilesHint = { root, at: Date.now(), text };
+  return text;
+}
+
+/**
  * The chat's agent: the one it has, or a new one when there is none or the model changed.
  *
  * A new model or provider takes the current history, including its summary and tool
@@ -1277,10 +1302,18 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
   }
 
   const carried = agent === null ? null : historyForModelSwitch(agent.history());
+  /*
+   * A model running on this computer gets the lean request from the first turn: the core
+   * read, edit and run tools and a short prompt. Offered all of the tools, a 7B local model
+   * (qwen2.5-coder, measured) spent a /fix writing invented memories and never opened the
+   * file; with the core tools it reads, edits and runs the tests.
+   */
+  const lean = providerId === "ollama";
   const built = createAgent({
     provider,
     model,
     tools: chatTools(),
+    lean: () => lean,
     effort: configuredEffort(),
     ...outputBudget(providerId, model),
     compaction: compactionFor(providerId, model),
@@ -1298,9 +1331,11 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
       }
       return [
         aiWorkspaceContext(root, blocker, editorContext, configuredEditPolicy() === "review" ? "review" : "direct"),
+        lean && root !== null ? await projectFilesHint(root) : null,
         ...(root === null ? [] : [describePreviewForAi()]),
         describeBackgroundCommands(),
-        builtinSkillGuidance(designTasteOn()),
+        // A lean request does not offer the guide's tool, so it is not told about the guide.
+        lean ? null : builtinSkillGuidance(designTasteOn()),
       ].filter((line): line is string => line !== null).join("\n");
     },
     runner: withBuiltinSkills(withAssistantExtensions(toolRunner()), designTasteOn),
@@ -1404,7 +1439,9 @@ export async function aiSend(
     // base64 in a session file would bloat history on disk and re-send stale
     // pixels on every restore, while the names still tell the story.
     const { images, documentText, names } = splitAttachments(attachments);
-    const turnText = `${text}${documentText}`;
+    // `/fix the login bug` is recorded as typed - the bubble and the title read that way -
+    // and only the model is given the command's full instruction.
+    const turnText = `${expandSlashCommand(text)}${documentText}`;
     const recordedText =
       names.length === 0 ? text : `${text}\n[Attached: ${names.join(", ")}]`;
 
@@ -1423,7 +1460,7 @@ export async function aiSend(
     let toolCalls = 0;
     // Automatic mode writes as it goes; this turn's writes become one undoable checkpoint.
     const turnRoot = currentWorkspace()?.root ?? null;
-    if (turnRoot !== null && configuredEditPolicy() === "trusted") checkpoints.begin(turnRoot);
+    if (turnRoot !== null && configuredEditPolicy() === "trusted") checkpoints.begin(turnRoot, turnSession.id);
     recordDebug("info", "ai", `Turn started: ${providerId} / ${model}`);
 
     for await (const event of ready.send(turnText, { images })) {
@@ -1579,6 +1616,15 @@ export async function aiSend(
     currentTaskPrompt = null;
     sendInFlight = false;
   }
+}
+
+/** Restore only this project's recorded edits belonging to the requested conversation. */
+export async function aiSessionCheckpoints(sessionId: string): Promise<AiCheckpointView[]> {
+  const root = currentWorkspace()?.root ?? null;
+  if (root === null || !/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) return [];
+  const sessions = await readSessions(root);
+  if (!sessions.some(session => session.id === sessionId)) return [];
+  return checkpointsForSession(await checkpoints.list(root), sessions, sessionId).map(checkpointView);
 }
 
 /** Put back what an automatic-mode turn changed. `force` overrides the user's later edits. */

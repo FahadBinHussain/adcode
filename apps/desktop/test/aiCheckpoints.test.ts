@@ -33,6 +33,20 @@ async function assistantWrites(cp: ReturnType<typeof checkpoints>, path: string,
 }
 
 describe("undo checkpoints for applied edits", () => {
+  it("keeps conversation ownership through restart and lists only the requested project's checkpoints", async () => {
+    const cp = checkpoints();
+    cp.begin(project, "chat-a");
+    await assistantWrites(cp, "app.js", "first");
+    const saved = await cp.finish();
+    expect(saved?.sessionId).toBe("chat-a");
+    const restarted = checkpoints();
+    expect((await restarted.list(project)).map(entry => entry.id)).toEqual([saved!.id]);
+    expect(await restarted.list(join(project, "another-project"))).toEqual([]);
+    await restarted.undo(saved!.id, project, false);
+    expect((await restarted.list(project))[0]?.undone).toBe(true);
+    await writeFile(join(store, 'cp-badbadbad.json'), '{"id":"cp-badbadbad","root":null,"createdAt":1,"files":[]}');
+    expect(await restarted.list(project)).toHaveLength(1);
+  });
   it("brings back a deleted file and moves a moved one back, binary files byte for byte", async () => {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0xfe]);
     await writeFile(join(project, "notes.md"), "keep me");

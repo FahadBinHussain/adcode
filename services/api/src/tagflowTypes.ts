@@ -1,13 +1,9 @@
 /** Server-owned included AI configuration and accounting; never contains an API key. */
-import type { IncludedProviderId } from "./includedProviders.ts";
+import type { CustomProvider, IncludedProviderId, TagflowLimits } from "./includedProviders.ts";
 import type { ModelFeedbackRecord, ModelReportData, ModelReportRange, ModelRequestRecord } from "./tagflowReportTypes.ts";
 import type { ModelAudienceProfile } from "./modelAudience.ts";
-export interface TagflowLimits {
-  dailyRequests: number;
-  dailyTokens: number;
-  dailyCostMicros: number;
-  requestsPerMinute: number;
-}
+// Defined beside the providers, which can carry their own allowance, so neither file imports the other.
+export type { TagflowLimits } from "./includedProviders.ts";
 
 export interface TagflowModel {
   id: string;
@@ -33,6 +29,8 @@ export interface TagflowConfig {
   limits: TagflowLimits;
   maxInputTokens: number;
   maxOutputTokens: number;
+  /** Administrator-registered OpenAI-compatible providers; missing means none. */
+  providers?: CustomProvider[];
 }
 
 export interface TagflowConfigRecord {

@@ -11,7 +11,7 @@
  * Pure: no DOM, so every rule is tested against real provider wording.
  */
 
-export type AiFailureAction = "retry" | "models" | "usage" | "new-conversation" | "report";
+export type AiFailureAction = "retry" | "models" | "usage" | "new-conversation" | "report" | "sign-in";
 
 export interface AiFailure {
   readonly kind:
@@ -19,6 +19,7 @@ export interface AiFailure {
     | "daily-limit"
     | "too-large"
     | "auth"
+    | "sign-in"
     | "no-key"
     | "model-missing"
     | "tool-format"
@@ -90,9 +91,27 @@ export function describeAiFailure(raw: string): AiFailure {
       ["models", "new-conversation"],
     );
   }
+  /*
+   * Free AI has no key to get wrong: its 401 and 403 mean the account is not signed in, not
+   * verified, banned, or switched off by an administrator. Telling a newcomer their "key" was
+   * rejected sent them to Connect a model looking for a key they never had - on their very
+   * first message. Signing in fixes the common case, so that is the first button.
+   */
+  if (who === "Included AI" || /\bincluded AI\b/i.test(detail)) {
+    if (/\bbanned\b|code banned/i.test(detail) && !/verify/i.test(detail) && /HTTP 403|code banned/i.test(detail)) return make("auth", "Free AI isn't available for this account", "This account can't use ADCode's free AI. You can still use your own provider key or a model on this computer.", ["models"]);
+    if (/disabled for this account|code blocked/i.test(detail)) return make("auth", "Free AI is turned off for this account", "An administrator switched off free AI for this account. Use your own provider key or a local model, or contact the team.", ["models"]);
+    if (/HTTP 40[13]\b|missing-token|invalid-token|verify-account|sign in (?:in account )?to use included AI|sign in and verify/i.test(detail)) {
+      return make("sign-in", "Sign in to use free AI", "Free AI needs an ADCode account with a verified email, so it can give you your own daily allowance. Sign in with Google or GitHub - no API key or card - and your message sends again by itself.", ["sign-in", "models"]);
+    }
+  }
   if (who === "Included AI" && /\bdaily-limit\b|daily included AI allowance/i.test(detail)) {
     if (/cannot fit.*even after a reset/i.test(detail)) return make("daily-limit", "This request exceeds your free AI allowance", "The request is larger than your full daily allowance. Start a smaller conversation, choose another model, or ask an administrator to increase the allowance. A daily reset will not make this request fit.", ["usage", "new-conversation", "models"]);
-    return make("daily-limit", "Today's free AI allowance cannot cover this request", "Your remaining tokens, AI requests or service budget cannot cover this request and its reply. Check AI usage for your balance and reset time. Wait for the daily reset, or use your own connected model. All free models share this allowance.", ["usage", "models"]);
+    // Partner models can have their own allowance; the server names which one ran out.
+    const own = /([\w .-]{1,60}?) models have their own daily allowance/i.exec(detail)?.[1]?.trim();
+    const except = /except ([\w .-]{1,120}?) models, which have their own/i.exec(detail)?.[1]?.trim();
+    const shared = own ? `${own} models have their own daily allowance, so another free model may still have room.`
+      : except ? `Free models share this allowance, except ${except} models, which have their own.` : "All free models share this allowance.";
+    return make("daily-limit", "Today's free AI allowance cannot cover this request", `Your remaining tokens, AI requests or service budget cannot cover this request and its reply. Check AI usage for your balance and reset time. Wait for the daily reset, or use your own connected model. ${shared}`, ["usage", "models"]);
   }
   if (who === "Included AI" && /\b(?:rate|upstream-rate)-limit\b|HTTP 429/i.test(detail)) {
     if (/per-minute AI request allowance is zero/i.test(detail)) return make("rate-limit", "Included AI requests are disabled", "An administrator set this account's request allowance to zero. Ask them to change the allowance before continuing.", ["usage", "models"]);

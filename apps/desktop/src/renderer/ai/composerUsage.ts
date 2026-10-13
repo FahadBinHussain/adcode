@@ -1,6 +1,6 @@
 import type { AiUsageView } from "../../shared/aiUsage.ts";
 import { formatUsageCost } from "../../shared/aiUsage.ts";
-import type { TagflowAllowanceView } from "../../shared/tagflow.ts";
+import { allowanceForModel, type TagflowAllowanceView } from "../../shared/tagflow.ts";
 import { createComposerMeter, type ComposerMeterModel } from "./composerMeter.ts";
 import { formatTokens } from "./contextMeter.ts";
 import { allowanceSummary } from "./allowanceSummary.ts";
@@ -10,8 +10,11 @@ const count = (value: number): number => Number.isFinite(value) ? Math.max(0, va
 const percent = (used: number, limit: number): number => limit <= 0 || count(used) >= limit ? 100 : Math.min(99, Math.round(count(used) / limit * 100));
 const tone = (value: number): "ok" | "warn" | "full" => value >= 100 ? "full" : value >= 80 ? "warn" : "ok";
 
-/** Included quotas are shared across devices. Other providers expose counts, without a quota. */
-export function composerUsageModels(view: AiUsageView | null, allowance: TagflowAllowanceView | null, included: boolean): readonly [ComposerMeterModel, ComposerMeterModel] {
+/**
+ * Included quotas are shared across devices. A partner model with its own allowance shows that
+ * one instead of the main allowance. Other providers expose counts, without a quota.
+ */
+export function composerUsageModels(view: AiUsageView | null, allowance: TagflowAllowanceView | null, included: boolean, modelId: string | null = null): readonly [ComposerMeterModel, ComposerMeterModel] {
   if (included) {
     if (allowance === null || !allowance.available) {
       const unavailable = unknown("Unavailable", "Included AI allowance could not be checked. Open AI usage to retry.");
@@ -21,17 +24,19 @@ export function composerUsageModels(view: AiUsageView | null, allowance: Tagflow
       const blocked: ComposerMeterModel = { percent: null, value: "!", detail: "Disabled", tone: "full", tooltip: "Included AI is disabled for this account. Open AI usage for details." };
       return [blocked, blocked];
     }
-    const { usage, limits } = allowance;
+    const scoped = allowanceForModel(allowance, modelId);
+    const { usage, limits } = scoped;
+    const pool = scoped.poolName === null ? "" : `${scoped.poolName} models have their own daily allowance, separate from other free models. `;
     const tokens = count(usage.inputTokens) + count(usage.outputTokens) + count(usage.reservedTokens);
     const cost = count(usage.costMicros) + count(usage.reservedCostMicros);
     const tokenPercent = percent(tokens, limits.dailyTokens);
     const costPercent = percent(cost, limits.dailyCostMicros);
-    const summary = allowanceSummary(allowance);
+    const summary = allowanceSummary(scoped);
     const remaining = summary.remainingCost === 0 ? "Budget reached" : `${formatTokens(summary.remainingTokens)} left`;
     const reset = `Resets ${summary.reset}. Shared across devices; active replies temporarily hold ${formatTokens(summary.heldTokens)} tokens.`;
     const requestPercent = percent(usage.requests, limits.dailyRequests);
     return [
-      { percent: tokenPercent, value: `${tokenPercent}%`, detail: remaining, tone: tone(Math.max(tokenPercent, costPercent)), tooltip: `${tokenPercent}% of today's included AI tokens used or held for active replies. ${summary.remainingTokens.toLocaleString()} tokens left out of ${limits.dailyTokens.toLocaleString()}. ${count(usage.inputTokens).toLocaleString()} input (read), ${count(usage.outputTokens).toLocaleString()} output (written). Each AI step counts the history and tool results it reads again. Service budget: ${formatUsageCost(summary.remainingCost)} left of ${formatUsageCost(limits.dailyCostMicros)}; ADCode pays this cost. ${reset} Open AI usage for details.` },
+      { percent: tokenPercent, value: `${tokenPercent}%`, detail: remaining, tone: tone(Math.max(tokenPercent, costPercent)), tooltip: `${pool}${tokenPercent}% of today's included AI tokens used or held for active replies. ${summary.remainingTokens.toLocaleString()} tokens left out of ${limits.dailyTokens.toLocaleString()}. ${count(usage.inputTokens).toLocaleString()} input (read), ${count(usage.outputTokens).toLocaleString()} output (written). Each AI step counts the history and tool results it reads again. Service budget: ${formatUsageCost(summary.remainingCost)} left of ${formatUsageCost(limits.dailyCostMicros)}; ADCode pays this cost. ${reset} Open AI usage for details.` },
       summary.remainingRequests === null
         ? { percent: null, value: "∞", detail: "Unlimited", tone: "ok", tooltip: `${count(usage.requests).toLocaleString()} included AI requests used today. No daily request cap in ADCode. Your daily token allowance and provider limits still apply. Open AI usage for details.` }
         : { percent: requestPercent, value: `${requestPercent}%`, detail: `${summary.remainingRequests.toLocaleString()} left`, tone: tone(requestPercent), tooltip: `${count(usage.requests).toLocaleString()} of ${limits.dailyRequests.toLocaleString()} included AI requests used today. ${reset} Open AI usage for details.` },
@@ -63,6 +68,7 @@ export function createComposerUsage(api: UsageApi, onOpen: () => void) {
   requests.element.dataset["meter"] = "requests";
   for (const meter of [usage, requests]) meter.element.setAttribute("aria-haspopup", "dialog");
   let included = false;
+  let includedModel: string | null = null;
   let visible = false;
   let disposed = false;
   let generation = 0;
@@ -79,7 +85,7 @@ export function createComposerUsage(api: UsageApi, onOpen: () => void) {
     pending = (async () => {
       const [history, allowance] = await Promise.allSettled([api.read("today"), included ? api.allowance() : Promise.resolve(null)]);
       if (disposed || mine !== generation) return;
-      const models = composerUsageModels(history.status === "fulfilled" ? history.value : null, allowance.status === "fulfilled" ? allowance.value : null, included);
+      const models = composerUsageModels(history.status === "fulfilled" ? history.value : null, allowance.status === "fulfilled" ? allowance.value : null, included, includedModel);
       usage.update(models[0]);
       requests.update(models[1]);
     })().finally(() => {
@@ -92,9 +98,10 @@ export function createComposerUsage(api: UsageApi, onOpen: () => void) {
   return {
     elements: [usage.element, requests.element] as const,
     refresh,
-    setIncluded(next: boolean): void {
-      if (next === included) return;
+    setIncluded(next: boolean, model: string | null = null): void {
+      if (next === included && model === includedModel) return;
       included = next;
+      includedModel = model;
       generation += 1;
       checking();
       void refresh();

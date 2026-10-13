@@ -15,7 +15,8 @@ import type { AccountState, LinkOutcome } from "../../shared/api.ts";
 
 export interface AccountMenu {
   isOpen(): boolean;
-  open(): void;
+  /** `free-ai` explains the sign-in in terms of what the person was trying to do. */
+  open(reason?: "free-ai"): void;
   close(): void;
 }
 
@@ -122,6 +123,7 @@ export function createAccountMenu(
 
   let state: AccountState = { state: "anonymous" };
   let open = false;
+  let reason: "free-ai" | null = null;
 
   function place(): void {
     const rect = button.getBoundingClientRect();
@@ -166,9 +168,11 @@ export function createAccountMenu(
 
     button.title = "Sign in";
     button.setAttribute("aria-label", "Sign in");
-    heading.textContent = "Keep your earnings";
-    body.textContent =
-      "You're already earning — no account needed for that. Sign in to see your balance on the web and to withdraw it later.";
+    // Opened from a free AI request, the panel speaks to that; otherwise to earnings.
+    heading.textContent = reason === "free-ai" ? "Sign in for free AI" : "Keep your earnings";
+    body.textContent = reason === "free-ai"
+      ? "Free AI needs an account with a verified email. It takes a few seconds, and your message carries on once you're in. Your earnings come with you."
+      : "You're already earning — no account needed for that. Sign in to see your balance on the web and to withdraw it later.";
     actions.hidden = false;
     footnote.hidden = false;
     signInInstead.hidden = true;
@@ -178,8 +182,9 @@ export function createAccountMenu(
     if (glyph !== null) glyph.removeAttribute("hidden");
   }
 
-  function setOpen(next: boolean): void {
+  function setOpen(next: boolean, why: "free-ai" | null = null): void {
     open = next;
+    if (reason !== why) { reason = why; render(); }
     panel.hidden = !next;
     button.setAttribute("aria-expanded", next ? "true" : "false");
     if (next) place();
@@ -347,7 +352,7 @@ export function createAccountMenu(
 
   return {
     isOpen: () => open,
-    open: () => setOpen(true),
+    open: (why) => setOpen(true, why ?? null),
     close: () => setOpen(false),
   };
 }

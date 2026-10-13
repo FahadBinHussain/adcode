@@ -3,6 +3,17 @@
 All notable changes to ADCode. Dates are the date the version was prepared; a version is
 only public once its installers are attached to a GitHub release.
 
+## 2.3.1 — 2026-10-13
+
+- Slash commands typed with words (`/fix the login bug`) now work exactly like commands picked from the menu, and `/new hello` starts a fresh chat and sends "hello". Messages and history titles show the command you typed; only the model receives the full instruction.
+- `/review` and `/commit` send as soon as they are picked, and `/team` with no task waits in the composer for one. The composer hint mentions `/` and `@` again and no longer gets stuck after a fast send.
+- Images and files attached to a message stay visible after sending, and attachment names no longer appear in history titles.
+- The **Edited files** card with Undo shows at full size in long conversations, and reopening a chat from History restores its card and Undo state.
+- Local models (Ollama) get a smaller core toolset, a list of the project's files, and a lower temperature, and a tool call written as text is run when it names a real tool. Every edit stays undoable.
+- Answers render Markdown tables as real tables, and the main assistant shows its edit activity while a file is being written.
+- A first message to free AI before signing in no longer says your "key" was rejected. The chat offers **Sign in** with Google or GitHub, and sends the message again by itself once you are signed in.
+- Partner models with their own daily allowance, such as Heabsy, show that allowance in the composer meter and AI usage, and a limit message says which allowance ran out.
+
 ## 2.3.0 — 2026-10-12
 
 - Agent activity now scrolls inside the conversation instead of occupying a fixed panel above messages. Solo runs use a compact status card with the same Stop controls.

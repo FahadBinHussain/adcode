@@ -698,6 +698,8 @@ export interface Store extends TagflowStore {
    * Excludes zero-cost test receipts; counts active users only; no account data.
    */
   publicStats(now: number): Promise<{ impressions: number; clicks: number; activeCampaigns: number; developers: number; developersThisWeek: number }>;
+  /** Combined lifetime activity for the landing-page counter; separate from billed ad statistics. */
+  liveImpressions(): Promise<number>;
   /** Active users, sign-ups and ads shown, in rolling windows ending at `now`. Admin only. */
   growthStats(now: number): Promise<GrowthStats>;
   getUser(uid: string): Promise<UserRecord | null>;

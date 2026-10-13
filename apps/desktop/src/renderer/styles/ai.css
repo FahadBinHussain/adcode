@@ -2069,6 +2069,24 @@ button.chat-model[data-ready="false"]::before {
 
 .chat-md-para { margin: 0 0 12px; }
 .chat-md-para:last-child { margin-bottom: 0; }
+.chat-md-table-wrap {
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 0 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  white-space: normal;
+}
+.chat-md-table-wrap:last-child { margin-bottom: 0; }
+.chat-md-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-md-table { width: 100%; border-collapse: collapse; font-size: inherit; line-height: 1.5; }
+.chat-md-table :is(th, td) { min-width: 100px; padding: 10px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.chat-md-table th { font-weight: 650; color: var(--text-primary); background: var(--bg-elevated); }
+.chat-md-table tr:not(:last-child) td, .chat-md-table th { border-bottom: 1px solid var(--border-subtle); }
+.chat-md-table :is(th, td) + :is(th, td) { border-left: 1px solid var(--border-subtle); }
+.chat-md-table [data-align="center"] { text-align: center; }
+.chat-md-table [data-align="right"] { text-align: right; }
 .chat-md-heading { margin: 0 0 10px; font-weight: 650; }
 .chat-md-list { margin: 0 0 12px; padding-left: 22px; display: grid; gap: 6px; }
 .chat-md-list:last-child { margin-bottom: 0; }
@@ -4042,6 +4060,15 @@ button.chat-setup-action {
   color: var(--danger);
   font-size: 13px;
   font-weight: 800;
+}
+/* Signing in is the next step, not an error: a neutral card with an arrow. */
+.chat-failure[data-failure="sign-in"] {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+}
+.chat-failure[data-failure="sign-in"] .chat-failure-icon {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
 }
 .chat-failure-body { flex: 1; min-width: 0; }
 .chat-failure-title { margin: 0 0 4px; font-size: 14px; font-weight: 650; line-height: 1.4; }

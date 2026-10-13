@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { HeroInstall } from "@/components/HeroInstall";
 import { StickyInstall } from "@/components/StickyInstall";
 import { LandingBidBuilder } from "@/components/LandingBidBuilder";
-import { DeveloperCounter } from "@/components/DeveloperCounter";
-import { HeroCounter } from "@/components/HeroCounter";
+import { LiveImpressionsCounter } from "@/components/LiveImpressionsCounter";
 import { AppShowcase } from "@/components/AppShowcase";
 import { ModeShowcase } from "@/components/ModeShowcase";
 import { LiveAgentsShowcase } from "@/components/LiveAgentsShowcase";
@@ -64,15 +63,14 @@ export default function Home() {
       */}
       <ul className="hero-proof" aria-label="Before you install">
         <li>No card, no trial - free</li>
-        <li>A free AI key in about a minute</li>
+        <li>Free AI built in - no key</li>
         <li>Open source, Apache-2.0</li>
       </ul>
       <HeroInstall source="hero" tour="#how-it-works" />
       <p className="hero-team-note">Have a question before you start? <a href={TEAM.bookingUrl} target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a></p>
-      </div><DeveloperCounter /></div>
+      </div><LiveImpressionsCounter /></div>
       <AppShowcase />
       <Partners />
-      <HeroCounter />
       </div>
       </section>
 
@@ -89,8 +87,8 @@ export default function Home() {
             <p>One click from the Microsoft Store on Windows 10 and 11, or a .deb or AppImage on Linux. Updates arrive on their own.</p>
           </li>
           <li>
-            <h3>Connect a free AI</h3>
-            <p>Get a free Google Gemini key in about a minute, run a model on your own computer with Ollama, or paste a key you already have.</p>
+            <h3>Sign in - the AI is ready</h3>
+            <p><strong>Free models from our partners are built in</strong>, with a daily allowance and no key to find. Prefer your own? Run a model on your computer with Ollama, or paste any key you already have.</p>
           </li>
           <li>
             <h3>Describe it</h3>
@@ -107,7 +105,7 @@ export default function Home() {
       <section className="product-story marketplace-wrap" aria-labelledby="product-story-heading">
       <div className="product-story-heading"><p className="marketplace-eyebrow">THE SPACE TO BUILD</p><h2 id="product-story-heading">Everything you need.<br /><span>Nothing in your way.</span></h2><p>From the first idea to the final commit, make yourself at home in an editor built around your work.</p></div>
       <div className="product-features">
-      <article><span className="feature-symbol" aria-hidden="true">✧</span><span className="feature-number">01 / INTELLIGENCE</span><h3>A second mind.<br />Right beside your code.</h3><p>Start free with a Google Gemini key in about a minute, or a model on your own computer. Bring any key you already have - OpenAI, Anthropic, OpenRouter and more - and pick the model that fits the task.</p><Link href="/docs">Explore the workspace <span aria-hidden="true">↗</span></Link></article>
+      <article><span className="feature-symbol" aria-hidden="true">✧</span><span className="feature-number">01 / INTELLIGENCE</span><h3>A second mind.<br />Right beside your code.</h3><p>Free models from our partners are built in - sign in and start, with no key and no bill. Or bring any key you already have - OpenAI, Anthropic, OpenRouter and more - or a model on your own computer, and pick the one that fits the task.</p><Link href="/docs">Explore the workspace <span aria-hidden="true">↗</span></Link></article>
       <article><span className="feature-symbol" aria-hidden="true">⌘</span><span className="feature-number">02 / CRAFT</span><h3>Stay in flow.<br />Ship what matters.</h3><p>Monaco editing, real terminals, and integrated Git. The tools you reach for, together where you need them.</p><Link href="/free-ai-code-editor">Meet your new editor <span aria-hidden="true">↗</span></Link></article>
       <article><span className="feature-symbol" aria-hidden="true">↗</span><span className="feature-number">03 / YOUR SHARE</span><h3>Your attention.<br />Something in return.</h3><p>An occasional sponsored card keeps the editor free. Half of the ad revenue is credited to you, with every event itemized.</p><Link href="/earn-while-you-code">How earnings work <span aria-hidden="true">↗</span></Link></article>
       </div>
