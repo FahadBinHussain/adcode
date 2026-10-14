@@ -150,6 +150,23 @@ module.exports = {
       to: { path: "^(electron|monaco-editor|@xterm|xterm)" },
     },
     {
+      name: "host-has-no-electron",
+      comment:
+        "adcode-host runs the main process in a cloud sandbox with no Electron: `electron` " +
+        "resolves to src/host/electronShim.ts at build time, so host code imports the shim, never Electron itself.",
+      severity: "error",
+      from: { path: "^apps/desktop/src/host" },
+      to: { path: "^electron$|node_modules/electron/" },
+    },
+    {
+      name: "web-has-no-node",
+      comment:
+        "src/web runs in a browser tab. A Node built-in there builds and then fails in the browser.",
+      severity: "error",
+      from: { path: "^apps/desktop/src/web" },
+      to: { dependencyTypes: ["core"] },
+    },
+    {
       name: "no-circular",
       comment: "Cycles make modules impossible to reason about or test in isolation.",
       severity: "error",
@@ -172,7 +189,8 @@ module.exports = {
     // `.next` alongside `out` and `dist`: they are all build output, and Next's is the
     // noisiest - it was contributing 260 orphan warnings, which is enough to bury a real
     // violation in the scroll-back and make the firewall's output not worth reading.
-    exclude: { path: "(^|/)(__fixtures__|node_modules|out|dist|\\.next)/" },
+    // apps/cloud/public and apps/cloud/container/host are build outputs (npm run cloud:build).
+    exclude: { path: "(^|/)(__fixtures__|node_modules|out|dist|\\.next)/|^apps/cloud/(public|container/host)/" },
     tsConfig: { fileName: "tsconfig.json" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {

@@ -2,14 +2,29 @@
  * The Worker's bindings and settings. Values live in `wrangler.jsonc` (public) and in Wrangler
  * secrets (`PREVIEW_COOKIE_KEY`). Numbers arrive as strings, as every Worker var does.
  */
-import type { BudgetObject } from "./budgetObject.ts";
-import type { PreviewRoute } from "./previewRoute.ts";
-import type { UserSession } from "./userSession.ts";
+/*
+ * The Durable Objects' methods as the Worker calls them. Described here rather than imported
+ * from the classes, which import this file - so the bindings and the classes never form a cycle.
+ */
+export interface BudgetRpc extends Rpc.DurableObjectBranded {
+  admit(uid: string): Promise<{ ok: true } | { ok: false; reason: "full" | "busy" }>;
+  charge(uid: string, minutes: number): Promise<void>;
+  release(uid: string): Promise<void>;
+  stats(): Promise<{ month: string; spentUsd: number; capUsd: number; running: number; maxInstances: number }>;
+}
+
+export interface PreviewRouteRpc extends Rpc.DurableObjectBranded {
+  set(uid: string): Promise<void>;
+  owner(): Promise<string | null>;
+  mint(): Promise<string>;
+  consume(nonce: string): Promise<boolean>;
+}
 
 export interface Env {
-  readonly USER: DurableObjectNamespace<UserSession>;
-  readonly BUDGET: DurableObjectNamespace<BudgetObject>;
-  readonly PREVIEW: DurableObjectNamespace<PreviewRoute>;
+  /** UserSession: reached only through `fetch`. */
+  readonly USER: DurableObjectNamespace;
+  readonly BUDGET: DurableObjectNamespace<BudgetRpc>;
+  readonly PREVIEW: DurableObjectNamespace<PreviewRouteRpc>;
   readonly HOMES: R2Bucket;
   readonly ASSETS: Fetcher;
 
