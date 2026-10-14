@@ -138,6 +138,16 @@ try {
   const committed = await browser.evaluate("window.adcode.git.commit('Bakery page from the web smoke').then(() => window.adcode.git.log(1))").catch((error) => String(error));
   checks.commitWorks = JSON.stringify(committed).includes("Bakery page from the web smoke");
 
+  checks.uploadWorks = await browser.evaluate(`(async () => {
+    const root = await window.__adcodeTestOp("createProjectFolder", ["Uploaded site"]);
+    await window.__adcodeTestOp("writeFile", [root, "css/site.css", new TextEncoder().encode("h1 { color: red }")]);
+    const escaped = await window.__adcodeTestOp("writeFile", [root, "../outside.txt", new Uint8Array([1])]).then(() => true, () => false);
+    const projects = await window.__adcodeTestOp("projects", []);
+    return projects.some((project) => project.name === "uploaded-site") && !escaped;
+  })()`);
+  const download = await browser.evaluate("fetch('/__adcode/download?project=uploaded-site').then(async (response) => ({ status: response.status, bytes: (await response.arrayBuffer()).byteLength }))");
+  checks.downloadWorks = download.status === 200 && download.bytes > 50;
+
   const before = await browser.evaluate("window.adcode.chat.sessions().then((sessions) => sessions.length)");
   await browser.evaluate("window.__adcodeTestDrop(); true");
   await sleep(300);
@@ -163,7 +173,7 @@ try {
 console.log(JSON.stringify(checks, null, 2));
 const passed = checks.threw === undefined && checks.gateShown && checks.gateDevMode && checks.vibeVisible && checks.onboardingAsks && checks.modelReady && checks.sidebarShowsProject &&
   checks.chatReply && checks.fileWritten && checks.previewServes && checks.changesShowsFile && checks.commitWorks &&
-  checks.reconnectRestores && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
+  checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");
   console.log(stackLog.slice(-4000));

@@ -13,6 +13,7 @@ import { createPreviewResolver, primePreviewCookie, rewriteStatus } from "./prev
 import { DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
 import { createAskHandler } from "./asks.ts";
 import { gate, hideGate, showWaking } from "./gate.ts";
+import { importFromGitHub, uploadDialog } from "./projectActions.ts";
 import { pickProjectFolder, type ProjectSummary } from "./projectPicker.ts";
 import { createHostSocket, type HostSocket, type WebSocketLike } from "./socket.ts";
 import { mountStatusBar } from "./statusBar.ts";
@@ -149,7 +150,13 @@ async function boot(): Promise<void> {
       window.open(url, "_blank", "noopener");
     },
     rewriteUrl: (url) => socket.previewUrl(url),
-    pickFolder: () => pickProjectFolder({ listProjects: () => socket.op("projects", []) as Promise<ProjectSummary[]> }),
+    pickFolder: () => pickProjectFolder({
+      listProjects: () => socket.op("projects", []) as Promise<ProjectSummary[]>,
+      extras: [
+        { label: "Import from GitHub", run: () => importFromGitHub(socket) },
+        { label: "Upload a project", run: () => uploadDialog(socket) },
+      ],
+    }),
     pickFile: async () => null,
     confirm: async (message, detail, buttons) => {
       const accept = buttons.length > 1 ? buttons.length - 1 : 0;
@@ -167,6 +174,7 @@ async function boot(): Promise<void> {
 
   if (__ADCODE_WEB_DEV__) {
     (window as unknown as { __adcodeTestDrop?: () => void }).__adcodeTestDrop = () => socket.dropForTest();
+    (window as unknown as { __adcodeTestOp?: HostSocket["op"] }).__adcodeTestOp = (name, args) => socket.op(name, args);
   }
 
   await import("../renderer/main.ts");

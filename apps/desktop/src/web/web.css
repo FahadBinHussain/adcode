@@ -476,3 +476,25 @@
   opacity: 0;
   transform: translateY(6px);
 }
+
+/* ── Import and upload dialogs ───────────────────────────────────────────── */
+
+.web-action-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 20px 16px;
+  text-align: left;
+}
+
+.web-action-body .web-gate-lead {
+  font-size: 14px;
+}
+
+.web-action-status {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.4em;
+}
