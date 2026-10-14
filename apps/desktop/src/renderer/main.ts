@@ -173,6 +173,8 @@ import {
   resolveBindings,
 } from "../shared/keybindings.ts";
 import type { BindingOverrides } from "../shared/keybindings.ts";
+import { webShortcutOverrides } from "../shared/webShortcuts.ts";
+import { isWebSurface } from "./surface.ts";
 import { scaffoldFor, todoMarksIn } from "@adcode/structure";
 import { createAccountMenu } from "./workbench/accountMenu.ts";
 import { createOnboardingSheet } from "./onboarding/onboardingSheet.ts";
@@ -3484,8 +3486,11 @@ const missingRuntimeDialog = createMissingRuntimeDialog(document.body);
 let bindingOverrides: BindingOverrides = {};
 
 /** Every command and the shortcut it currently answers to. */
+/** On the web, chords the browser keeps (Ctrl+N, Ctrl+W, Ctrl+T...) move to Alt; the person's own still win. */
+const surfaceDefaults: BindingOverrides = isWebSurface() ? webShortcutOverrides(resolveBindings({})) : {};
+
 const currentBindings = (): ReturnType<typeof resolveBindings> =>
-  resolveBindings(bindingOverrides);
+  resolveBindings({ ...surfaceDefaults, ...bindingOverrides });
 
 const shortcutsDialog = createShortcutsDialog(document.body, {
   bindings: currentBindings,

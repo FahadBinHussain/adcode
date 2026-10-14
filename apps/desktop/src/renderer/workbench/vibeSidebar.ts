@@ -133,9 +133,11 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   });
   const shortcut = document.createElement("kbd");
   shortcut.className = "vibe-shortcut";
-  shortcut.textContent = "Ctrl+Shift+N";
+  // A browser opens a private window on Ctrl+Shift+N before the page sees it; the web uses Alt+N.
+  const newChord = isWebSurface() ? "Alt+N" : "Ctrl+Shift+N";
+  shortcut.textContent = newChord;
   newConversation.control.append(shortcut);
-  newConversation.control.title = "New conversation (Ctrl+Shift+N)";
+  newConversation.control.title = `New conversation (${newChord})`;
   const searchHost = document.createElement("div");
   searchHost.className = "vibe-search-host";
   const head = document.createElement("div");

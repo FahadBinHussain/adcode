@@ -22,6 +22,8 @@ import {
 import type { AiModelInfo, AiProviderInfo, AiStatus, LocalModelsView } from "../../shared/api.ts";
 import { pasteText } from "../clipboard.ts";
 import { createQuickConnect, type QuickConnect } from "./quickConnect.ts";
+import { localDescription as localDescriptionText, localLabel as localLabelText, WEB_LOCAL_MODELS } from "./localModelsText.ts";
+import { DESKTOP_DOWNLOAD_URL, isWebSurface } from "../surface.ts";
 
 export interface ConnectView {
   readonly element: HTMLElement;
@@ -78,21 +80,13 @@ export function modelFacts(model: AiModelInfo): string {
   return parts.join(" · ");
 }
 
-/** Ollama's row, in three words: what is true of this computer. */
+/** Ollama's row, in three words: what is true of this computer (on the web: that it needs the desktop app). */
 export function localLabel(local: LocalModelsView): string {
-  if (local.running) return local.models.length > 0 ? `Running · ${String(local.models.length)} model${local.models.length === 1 ? "" : "s"}` : "Running · no models";
-  return local.installed ? "Installed · not running" : "Not installed";
+  return localLabelText(local, isWebSurface());
 }
 
 function localDescription(local: LocalModelsView): string {
-  if (!local.installed) {
-    return "Ollama runs AI models on your own computer - free, private and offline. It is not installed here yet: download it, then come back and pick a model.";
-  }
-  if (!local.running) return "Ollama is installed but not running. Start it, and the models it has appear here.";
-  if (local.models.length === 0) {
-    return "Ollama is running but has no models yet. In a terminal, run: ollama pull qwen3-coder - then pick it here.";
-  }
-  return "Runs on your computer: free, private, and as fast as your machine. No API key needed.";
+  return localDescriptionText(local, isWebSurface());
 }
 
 let connectViewSequence = 0;
@@ -423,7 +417,9 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
       const group = document.createElement("section"); group.className = "connect-free-group";
       const title = document.createElement("h3"); title.textContent = "Models on this computer";
       const help = document.createElement("p"); help.className = "connect-free-note";
-      help.textContent = local.running ? "Install a model in Ollama, then check again. Local requests stay on your computer." : "Start Ollama to use local models without an API key.";
+      help.textContent = isWebSurface()
+        ? WEB_LOCAL_MODELS
+        : local.running ? "Install a model in Ollama, then check again. Local requests stay on your computer." : "Start Ollama to use local models without an API key.";
       group.append(title, help, localActions(local)); freePanel.append(group);
     }
   }
@@ -1228,6 +1224,12 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
       renderFreeModels();
     };
 
+    if (isWebSurface()) {
+      // The sandbox's own Ollama is never the person's: on the web the way forward is the desktop app.
+      action("Get the desktop app", true, async () => { window.open(DESKTOP_DOWNLOAD_URL, "_blank", "noopener"); });
+      row.append(note);
+      return row;
+    }
     if (!local.installed) {
       action("Download Ollama", true, async () => { await window.adcode.ai.openKeyPage("ollama"); });
     } else if (!local.running) {
