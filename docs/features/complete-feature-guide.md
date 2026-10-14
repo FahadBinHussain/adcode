@@ -1022,6 +1022,17 @@ Access: `All Features → Restore workspace`; `Turn on or off`; `Settings`.
 
 ## The workbench
 
+<!-- feature:workbench.webVersion -->
+### ADCode on the web
+
+ADCode's Vibe mode in a browser tab at web.bluethenics.com: describe what you want and the AI builds it, runs it and shows you, in a private cloud workspace. Nothing to install.
+
+Why use it: Not every computer can install an app - a Chromebook, a work laptop, a library or school machine - and sometimes you just want to start from a link. The web version is the same assistant, agents, Changes, Preview and earnings, on any computer with a browser.
+
+How to use it: Go to web.bluethenics.com and sign in with Google, GitHub or email - use the account you linked in the desktop app and your earnings stay in one balance. You get 60 minutes of cloud time a day, which only counts while your workspace is running: it sleeps when nothing is happening. The web version is Vibe only; the full code editor, terminal and local models (Ollama) are in the desktop app, which has no daily limit. Move projects between the two with GitHub, or download a project from the web and open it here.
+
+Access: `All Features → ADCode on the web`; `Open ADCode on the web`.
+
 <!-- feature:workbench.agentsBoard -->
 ### Agents board
 
@@ -1274,6 +1285,17 @@ Why use it: The fastest way to know whether a tool is any good is to watch it ma
 How to use it: On first launch, type your idea or pick one of the ideas under the box, then press Build it or Enter. If no AI model is connected yet, the next step offers a free one. ADCode then makes the project, opens it and sends your idea to the assistant. Skip or Escape closes it at any time; Open a folder uses a project you already have. Run Show Welcome from the command palette to see it again. Theme, ad frequency and account are in Settings.
 
 Access: `All Features → Welcome: what do you want to build?`; `Show welcome`.
+
+<!-- feature:workbench.cloudWorkspace -->
+### Your cloud workspace
+
+On the web version your projects and conversations live in a private cloud workspace. This panel shows the cloud time left today and lets you download projects, connect GitHub, or delete it all.
+
+Why use it: A computer in the cloud costs money while it runs, so each person gets a daily allowance - and you should always be able to see it, take your work with you, and remove it.
+
+How to use it: Click the time-left chip in the corner, or run Cloud Workspace from the command palette. The meter shows the minutes left today and when they reset; time only counts while your workspace is running, and it sleeps a few minutes after you stop using it, or 15 minutes after you last touched an open tab, unless an agent is still working. Your workspace is saved when it sleeps and comes back exactly as you left it. Download gives a project as a .tar.gz without node_modules. Connect GitHub lets Commit & Push and private imports work. Delete my cloud workspace removes every project and conversation in the cloud for good; your account and earnings stay. Workspaces nobody opens for 90 days are deleted.
+
+Access: `All Features → Your cloud workspace`; `Open Cloud workspace`.
 
 ## Appearance
 

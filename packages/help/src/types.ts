@@ -90,4 +90,6 @@ export interface FeatureRecord {
   readonly entry: HelpEntry;
   readonly actions: readonly FeatureAction[];
   readonly keywords: readonly string[];
+  /** Where the feature can be reached: the desktop app, the web version, or both. */
+  readonly surface: "desktop" | "web" | "both";
 }

@@ -512,3 +512,69 @@
   text-align: center;
   user-select: all;
 }
+
+/* ── Cloud workspace panel ───────────────────────────────────────────────── */
+
+.web-cloud-body {
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.web-cloud-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.web-cloud-section + .web-cloud-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.web-cloud-heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 640;
+}
+
+.web-cloud-meter {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  overflow: hidden;
+}
+
+.web-cloud-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #4c8dff);
+  transition: width 400ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.web-cloud-projects {
+  padding: 0;
+  max-height: 220px;
+}
+
+.web-cloud-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 4px;
+}
+
+.web-cloud-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.web-cloud-actions .web-gate-button {
+  flex: 1 1 160px;
+}
+
+.web-cloud-delete {
+  color: var(--danger, #ff5a5a);
+  border-color: color-mix(in srgb, var(--danger, #ff5a5a) 45%, transparent);
+}

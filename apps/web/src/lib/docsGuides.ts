@@ -1508,6 +1508,44 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Chat-first coding tools tend to show a list of conversations and little else, so you poll the diff view to learn whether anything happened. The Vibe sidebar puts project, branch, running work and uncommitted changes in one glance, next to the conversation that caused them.",
   },
 
+  "workbench-web-version": {
+    steps: [
+      "Go to web.bluethenics.com in any modern browser - Chrome, Edge, Safari or Firefox, on a laptop, a Chromebook or a phone.",
+      "Sign in with Google, GitHub or email. If you already use the desktop app, sign in with the account you linked there and your earnings stay in one balance.",
+      "Wait a few seconds while your private cloud workspace wakes up - the first time each day takes the longest.",
+      "Describe what you want to build in the box that appears and press Build it. ADCode makes the project, writes the code, runs it and opens it in Preview.",
+      "Keep asking for changes in the chat. Changes shows every file the assistant touched; Commit & Push sends it to GitHub after you connect GitHub once.",
+      "Watch the time-left chip in the corner: you have 60 minutes of cloud time a day, counted only while your workspace is running.",
+      "To take a project elsewhere, open Cloud workspace from the chip and choose Download, or push it to GitHub and clone it in the desktop app.",
+    ],
+    benefits: [
+      "Nothing to install: a work laptop, a school computer or a Chromebook is enough to build and run a real app.",
+      "The same assistant, agents, Changes and Preview as the desktop app's Vibe mode - not a cut-down demo.",
+      "Your workspace sleeps when you stop and comes back exactly as you left it, so idle minutes are not spent.",
+      "Previews are private: only you can open the app you are building until you choose to publish it elsewhere.",
+      "Ads and earnings work the same as on the desktop, in the same balance.",
+    ],
+    betterThan:
+      "Browser-based AI builders usually lock your project into their hosting. ADCode on the web is a full Linux workspace with git, npm and a real browser for the agent to check its work, and everything in it can be downloaded or pushed to your own GitHub at any time. When you outgrow the daily allowance, the desktop app is free with no limit and runs your projects on your own computer.",
+  },
+
+  "workbench-cloud-workspace": {
+    steps: [
+      "On the web version, click the time-left chip in the bottom corner, or open the command palette and run Cloud Workspace.",
+      "Read the meter: minutes left today, and the time they come back.",
+      "Under Projects, choose Download next to a project to save it as a .tar.gz (node_modules is left out; reinstall with npm install).",
+      "Under GitHub, choose Connect GitHub and type the code it shows at github.com/login/device, so Commit & Push and private imports work.",
+      "To remove everything, choose Delete my cloud workspace and confirm. Your account and earnings stay.",
+    ],
+    benefits: [
+      "You can always see what the free allowance has left before a long task, not after.",
+      "Your work is never stuck in the cloud: one click downloads it, and GitHub is one connection away.",
+      "Deleting your data is a button, not a support ticket.",
+    ],
+    betterThan:
+      "Hosted coding tools tend to hide their limits until you hit them and make leaving with your code a chore. The Cloud workspace panel puts the meter, the export and the delete button in one place, so the deal is visible and you stay in control of your work.",
+  },
+
   "workbench-ai-context": {
     steps: [
       "Just ask. Every message already tells the assistant which file you are on, where your cursor is, what you have selected, which tabs are open and which errors the editor shows.",

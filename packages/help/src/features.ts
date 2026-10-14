@@ -55,6 +55,14 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
     actions: [command("help.openSourceLicences", "Show licences")],
     keywords: ["open source", "license", "licence", "apache", "apache-2.0", "source code", "github", "fork", "third party", "credits", "attribution", "legal", "copyright"],
   },
+  "workbench.webVersion": {
+    actions: [command("help.openWebVersion", "Open ADCode on the web")],
+    keywords: ["web version", "browser", "online", "no install", "chromebook", "web.bluethenics.com", "use in browser", "cloud"],
+  },
+  "workbench.cloudWorkspace": {
+    actions: [command("cloud.workspace", "Open Cloud workspace")],
+    keywords: ["time left", "daily limit", "allowance", "minutes left", "download project", "delete my data", "connect github", "sign out", "cloud storage", "sleep"],
+  },
   "workbench.changes": {
     actions: [command("workspace.changes", "Open Changes")],
     keywords: ["uncommitted", "changed files", "what changed", "diff", "commit and push", "revert a file", "undo file changes", "discard changes", "git changes", "not a git repository", "dubious ownership", "safe directory", "trust this folder"],
@@ -537,6 +545,46 @@ export const FEATURE_COMMANDS: {
 const groupTitle = (entry: HelpEntry): string =>
   GROUPS.find((group) => group.id === entry.group)?.title ?? entry.group;
 
+/*
+ * Where each feature can be reached.
+ *
+ * The web version (web.bluethenics.com) is Vibe only: no code editor, no terminal panel, no
+ * second window, no local machine. Every help surface reads this catalogue, so this is the one
+ * place "not on the web" is decided. Whole groups that live in the code editor are desktop-only;
+ * the rest are named one by one.
+ */
+const DESKTOP_GROUPS: ReadonlySet<string> = new Set(["editing", "formatting", "navigation", "structure", "language"]);
+
+const DESKTOP_ONLY: ReadonlySet<string> = new Set([
+  "adcode.git.gutterDiff", "adcode.git.blame", "adcode.git.fileTimeline", "adcode.git.mergeConflict",
+  "adcode.session.autoSave", "adcode.session.localFileHistory", "adcode.session.crashRecovery",
+  "adcode.updates.auto", "adcode.appearance.zoom",
+  "ai.inlineEdit", "adcode.ai.inlineCompletion", "adcode.ai.terminalAgentDetection", "ai.terminalTeam", "adcode.ai.autoContinue", "adcode.ai.mcpServer",
+  "workbench.modes", "workbench.openIde", "workbench.aiContext", "workbench.terminal", "workbench.run", "workbench.collab",
+  "workbench.imagePreview", "workbench.webVersion", "gestures.multiSelect", "structure.popup", "structure.cssLinks",
+]);
+
+const WEB_ONLY: ReadonlySet<string> = new Set(["workbench.cloudWorkspace"]);
+
+export type FeatureSurface = "desktop" | "web";
+
+function surfaceOf(entry: HelpEntry): FeatureSurface | "both" {
+  if (WEB_ONLY.has(entry.id)) return "web";
+  if (DESKTOP_ONLY.has(entry.id) || DESKTOP_GROUPS.has(entry.group)) return "desktop";
+  return "both";
+}
+
+let currentSurface: FeatureSurface = "desktop";
+
+/** Which surface this renderer is: the web build calls this once, before anything reads the catalogue. */
+export function setFeatureSurface(surface: FeatureSurface): void {
+  currentSurface = surface;
+}
+
+export function surfaceAllows(surface: FeatureSurface | "both", current: FeatureSurface = currentSurface): boolean {
+  return surface === "both" || surface === current;
+}
+
 /**
  * The routes into one feature, best first.
  *
@@ -569,17 +617,26 @@ const records: readonly FeatureRecord[] = HELP_ENTRIES.map((entry) => {
     entry,
     actions,
     keywords: [groupTitle(entry), ...(metadata?.keywords ?? [])],
+    surface: surfaceOf(entry),
   };
 });
 
 const byId = new Map(records.map((record) => [record.entry.id, record]));
 
+/** The features this surface offers. */
 export function featureRecords(): readonly FeatureRecord[] {
-  return records;
+  return records.filter((record) => surfaceAllows(record.surface));
 }
 
 export function featureFor(id: string): FeatureRecord | undefined {
-  return byId.get(id);
+  const record = byId.get(id);
+  return record !== undefined && surfaceAllows(record.surface) ? record : undefined;
+}
+
+/** Whether a help entry belongs on this surface; the guide filters on it too. */
+export function entryOnSurface(id: string): boolean {
+  const record = byId.get(id);
+  return record === undefined || surfaceAllows(record.surface);
 }
 
 const STOP_WORDS = new Set(["a", "an", "and", "can", "do", "for", "i", "of", "the", "to"]);
@@ -614,10 +671,11 @@ function searchable(record: FeatureRecord): string {
 /** Search feature names, explanations, goals, groups, settings, commands, and access words. */
 export function searchFeatures(query: string): readonly FeatureRecord[] {
   const needle = query.trim().toLowerCase();
-  if (needle.length === 0) return records;
+  const offered = featureRecords();
+  if (needle.length === 0) return offered;
 
   const queryWords = words(needle);
-  return records
+  return offered
     .map((record, index) => {
       const haystack = searchable(record);
       const title = record.entry.title.toLowerCase();

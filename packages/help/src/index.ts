@@ -12,7 +12,8 @@ import { HELP_ENTRIES } from "./entries/index.ts";
 import type { HelpEntry, HelpGroupId } from "./types.ts";
 
 export { HELP_ENTRIES };
-export { FEATURE_COMMANDS, featureFor, featureRecords, searchFeatures } from "./features.ts";
+export { FEATURE_COMMANDS, entryOnSurface, featureFor, featureRecords, searchFeatures, setFeatureSurface, surfaceAllows, type FeatureSurface } from "./features.ts";
+import { entryOnSurface } from "./features.ts";
 export type {
   FeatureAction,
   FeatureCommandAction,
@@ -52,14 +53,14 @@ export function helpForSetting(settingId: string): HelpEntry | undefined {
 }
 
 export function helpForGroup(group: HelpGroupId): readonly HelpEntry[] {
-  return HELP_ENTRIES.filter((entry) => entry.group === group);
+  return HELP_ENTRIES.filter((entry) => entry.group === group && entryOnSurface(entry.id));
 }
 
 /** The groups that actually have entries, in catalogue order. */
 export function helpGroups(): readonly HelpGroupId[] {
   const seen: HelpGroupId[] = [];
   for (const entry of HELP_ENTRIES) {
-    if (!seen.includes(entry.group)) seen.push(entry.group);
+    if (entryOnSurface(entry.id) && !seen.includes(entry.group)) seen.push(entry.group);
   }
   return seen;
 }
@@ -74,9 +75,10 @@ export function helpGroups(): readonly HelpGroupId[] {
  */
 export function searchHelp(query: string): readonly HelpEntry[] {
   const needle = query.trim().toLowerCase();
-  if (needle.length === 0) return HELP_ENTRIES;
+  if (needle.length === 0) return HELP_ENTRIES.filter((entry) => entryOnSurface(entry.id));
 
   return HELP_ENTRIES.filter((entry) => {
+    if (!entryOnSurface(entry.id)) return false;
     const haystack =
       `${entry.id} ${entry.title} ${entry.plain} ${entry.why} ${entry.how}`.toLowerCase();
     return haystack.includes(needle);

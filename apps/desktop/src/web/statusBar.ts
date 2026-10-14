@@ -36,7 +36,7 @@ function toast(text: string, tone: "info" | "warn" = "info"): void {
   setTimeout(() => item.remove(), 6_600);
 }
 
-export function mountStatusBar(socket: HostSocket, session: WebSession): void {
+export function mountStatusBar(socket: HostSocket, session: WebSession): { status: () => CloudStatus | null } {
   const bar = document.createElement("div");
   bar.className = "web-connection";
   bar.setAttribute("role", "status");
@@ -157,4 +157,5 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): void {
   });
 
   setInterval(renderChip, TICK_MS);
+  return { status: () => last };
 }

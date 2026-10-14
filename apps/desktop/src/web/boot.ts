@@ -17,7 +17,9 @@ import { connectGitHub, needsGitHub } from "./githubConnect.ts";
 import { importFromGitHub, uploadDialog } from "./projectActions.ts";
 import { pickProjectFolder, type ProjectSummary } from "./projectPicker.ts";
 import { createHostSocket, type HostSocket, type WebSocketLike } from "./socket.ts";
-import { mountStatusBar } from "./statusBar.ts";
+import { mountStatusBar, OPEN_CLOUD_WORKSPACE_EVENT } from "./statusBar.ts";
+import { openCloudPanel } from "./cloudPanel.ts";
+import { setFeatureSurface } from "@adcode/help";
 import { createWebApi, type LocalOverrides } from "./webApi.ts";
 
 declare const __ADCODE_WEB_DEV__: boolean;
@@ -180,7 +182,15 @@ async function boot(): Promise<void> {
   Object.defineProperty(window, "adcode", { value: createWebApi(socket, localOverrides(socket, session.signOut)), configurable: false, writable: false });
   reportFocus(socket);
   reportInput(socket);
-  mountStatusBar(socket, session);
+  const bar = mountStatusBar(socket, session);
+  document.addEventListener(OPEN_CLOUD_WORKSPACE_EVENT, () => openCloudPanel({
+    socket,
+    status: bar.status,
+    token: () => session.refresh(false),
+    signOut: session.signOut,
+  }));
+  // Every help surface (Feature library, search, guide, settings) offers only what the web can reach.
+  setFeatureSurface("web");
 
   if (__ADCODE_WEB_DEV__) {
     (window as unknown as { __adcodeTestDrop?: () => void }).__adcodeTestDrop = () => socket.dropForTest();

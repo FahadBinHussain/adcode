@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { SETTINGS_SCHEMA, getSetting } from "@adcode/settings";
 import {
   HELP_ENTRIES,
+  entryOnSurface,
   helpFor,
   helpForGroup,
   helpForSetting,
@@ -162,8 +163,10 @@ describe("lookup", () => {
 });
 
 describe("search", () => {
-  it("returns everything for an empty query", () => {
-    expect(searchHelp("   ")).toHaveLength(HELP_ENTRIES.length);
+  it("returns everything this surface offers for an empty query", () => {
+    // The desktop is the default surface; only web-only entries (the cloud workspace) are left out.
+    expect(searchHelp("   ")).toHaveLength(HELP_ENTRIES.filter((entry) => entryOnSurface(entry.id)).length);
+    expect(searchHelp("   ").length).toBeGreaterThanOrEqual(HELP_ENTRIES.length - 1);
   });
 
   /*
