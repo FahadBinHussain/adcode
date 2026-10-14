@@ -11,7 +11,8 @@
  * Env: ADCODE_HOST_PORT (7300), ADCODE_WEB_PORT (5180), ADCODE_HOME (.tmp/web-vibe-home).
  */
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
@@ -23,6 +24,15 @@ const webPort = process.env["ADCODE_WEB_PORT"] ?? "5180";
 const home = process.env["ADCODE_HOME"] ?? join(REPO, ".tmp", "web-vibe-home");
 mkdirSync(home, { recursive: true });
 
+/*
+ * In the cloud each person's sealing key comes from their Durable Object. Locally there is none,
+ * so one is made once per dev home and kept beside it - otherwise saved API keys could not be
+ * read back after a restart.
+ */
+const sealFile = join(home, ".dev-seal-key");
+if (!existsSync(sealFile)) writeFileSync(sealFile, randomBytes(32).toString("base64"));
+const sealKey = process.env["ADCODE_SEAL_KEY"] ?? readFileSync(sealFile, "utf8").trim();
+
 if (!process.argv.includes("--no-build")) {
   const built = spawnSync(process.execPath, [vite, "build", "-c", "apps/desktop/vite.host.config.ts", "--logLevel", "warn"], { stdio: "inherit" });
   if (built.status !== 0) process.exit(built.status ?? 1);
@@ -31,7 +41,7 @@ if (!process.argv.includes("--no-build")) {
 const children = [
   spawn(process.execPath, ["apps/desktop/out/host/index.js"], {
     stdio: "inherit",
-    env: { ...process.env, ADCODE_HOME: home, ADCODE_CLOUD_DEV: "1", ADCODE_HOST_PORT: hostPort },
+    env: { ...process.env, ADCODE_HOME: home, ADCODE_CLOUD_DEV: "1", ADCODE_HOST_PORT: hostPort, ADCODE_SEAL_KEY: sealKey },
   }),
   spawn(process.execPath, [vite, "--config", "apps/desktop/vite.web.config.ts", "--port", webPort, "--strictPort"], {
     stdio: "inherit",

@@ -52,6 +52,7 @@
     "web:vibe:build": "vite build -c apps/desktop/vite.web.config.ts && vite build -c apps/desktop/vite.host.config.ts",
     "seo-audit": "node scripts/seo-audit.mjs",
     "smoke:vibe": "node scripts/smoke-vibe.mjs",
+    "smoke:web-vibe": "node scripts/smoke-web-vibe.mjs",
     "models:check": "node scripts/models-check.mjs"
   },
   "devDependencies": {
