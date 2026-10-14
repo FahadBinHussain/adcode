@@ -1,0 +1,83 @@
+/**
+ * The Cloudflare Worker that serves web.bluethenics.com: ADCode's Vibe mode in the browser.
+ *
+ * A separate Worker from `apps/web` (adcode.bluethenics.com and the live /v1 API), so nothing a
+ * sandbox does can take the site or the ads and payments API down.
+ *
+ * Nothing secret belongs in this file. `PREVIEW_COOKIE_KEY` is set with
+ * `npx wrangler secret put PREVIEW_COOKIE_KEY`. See docs/WEB-VERSION.md.
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "adcode-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "keep_vars": true,
+  "upload_source_maps": true,
+  "observability": { "enabled": true },
+
+  /*
+   * The page is the web build of the desktop renderer (`npm run web:vibe:build`). The Worker
+   * runs first for every request: preview hostnames must never be answered from these files,
+   * and the page needs its security headers.
+   */
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+
+  /*
+   * One sandbox per person. The `durable_object` scheduling policy lets each UserSession start
+   * its own container from the image below, and is what makes per-person sandboxes possible.
+   * The image is built locally by Wrangler, so Docker must be running for `deploy` and `dev`.
+   */
+  "containers": [
+    {
+      "class_name": "UserSession",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "adcode": { "dockerfile": "./container/Dockerfile" }
+      }
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER", "class_name": "UserSession" },
+      { "name": "BUDGET", "class_name": "BudgetObject" },
+      { "name": "PREVIEW", "class_name": "PreviewRoute" }
+    ]
+  },
+  "exports": {
+    "UserSession": { "type": "durable-object", "storage": "sqlite" },
+    "BudgetObject": { "type": "durable-object", "storage": "sqlite" },
+    "PreviewRoute": { "type": "durable-object", "storage": "sqlite" }
+  },
+
+  /* Each person's home folder, archived when their sandbox sleeps. A lifecycle rule deletes archives after 90 days. */
+  "r2_buckets": [
+    { "binding": "HOMES", "bucket_name": "adcode-cloud-homes" }
+  ],
+
+  "vars": {
+    "APP_HOST": "web.bluethenics.com",
+    "PREVIEW_SUFFIX": ".web.bluethenics.com",
+    "ALLOWED_ORIGINS": "https://web.bluethenics.com",
+    "FIREBASE_PROJECT_ID": "adcode-idle",
+    "FIREBASE_AUTH_DOMAIN": "adcode-idle.firebaseapp.com",
+    "ADMIN_UIDS": "",
+    "ADCODE_API_BASE": "",
+    "DAILY_ALLOWANCE_MIN": "60",
+    "IDLE_SLEEP_MIN": "5",
+    "UNTOUCHED_TAB_MIN": "15",
+    "SNAPSHOT_EVERY_MIN": "10",
+    "MONTHLY_CAP_USD": "20",
+    "MAX_INSTANCES": "20",
+    "INSTANCE_TYPE": "standard-1"
+  }
+}
