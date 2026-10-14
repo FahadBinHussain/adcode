@@ -578,3 +578,16 @@
   color: var(--danger, #ff5a5a);
   border-color: color-mix(in srgb, var(--danger, #ff5a5a) 45%, transparent);
 }
+
+/* ── The desktop chrome, on a phone ───────────────────────────────────────── */
+
+/*
+ * The menubar (File, Edit, Selection...) is the desktop window's; on a phone-width browser it
+ * crowds out Vibe's own top bar, which already has the project, search and Preview. The command
+ * palette and the Vibe sidebar reach every command it holds.
+ */
+@media (max-width: 760px) {
+  :root[data-surface="web"] #menubar-slot {
+    display: none;
+  }
+}
