@@ -10,12 +10,15 @@
  *   npx vite -c apps/desktop/vite.web.config.ts           -> dev server, /socket proxied to adcode-host
  */
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { alias } from "./electron.vite.config.ts";
 
 const DESKTOP = import.meta.dirname;
 const REPO = resolve(DESKTOP, "../..");
+// Resolved the way Node would, so the build also works from a worktree sharing the main checkout's node_modules.
+const DOMPURIFY = resolve(dirname(createRequire(import.meta.url).resolve("dompurify")), "purify.es.mjs");
 
 interface FirebaseWebConfig {
   readonly apiKey: string;
@@ -72,7 +75,7 @@ export default defineConfig(({ mode }) => ({
     alias: [
       { find: /^\/@web\//, replacement: `${resolve(DESKTOP, "src/web")}/` },
       // Monaco vendors its own DOMPurify copy; resolve it to the audited lockfile version, as the desktop does.
-      { find: "./dompurify/dompurify.js", replacement: resolve(REPO, "node_modules/dompurify/dist/purify.es.mjs") },
+      { find: "./dompurify/dompurify.js", replacement: DOMPURIFY },
       ...Object.entries(alias).map(([find, replacement]) => ({ find, replacement })),
     ],
   },

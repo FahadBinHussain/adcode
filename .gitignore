@@ -85,3 +85,8 @@ smoke-broken.ts
 
 # git ignore for the editing file
 how-to-edit-the-code-for-humans.md
+# ADCode on the web: build outputs
+apps/cloud/public/
+apps/cloud/container/host/
+apps/cloud/.dev.vars
+apps/cloud/.wrangler/

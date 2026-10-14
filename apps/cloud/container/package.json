@@ -1,0 +1,9 @@
+{
+  "name": "adcode-host-runtime",
+  "private": true,
+  "type": "module",
+  "description": "What adcode-host needs installed beside its bundle inside the sandbox image.",
+  "dependencies": {
+    "node-pty": "1.1.0"
+  }
+}

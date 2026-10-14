@@ -16,7 +16,7 @@ import { firebaseErrorText } from "./gateText.ts";
 declare const __ADCODE_WEB_DEV__: boolean;
 
 export interface WebSession {
-  /** Null only in development mode. */
+  /** A Firebase ID token; "dev" in development mode. */
   readonly token: string | null;
   readonly email: string | null;
   /** A current token, forcing a refresh when asked. */
@@ -188,7 +188,8 @@ export async function gate(): Promise<WebSession> {
   if (restored === null) {
     const outcome = await signInCard();
     if (outcome === "dev") {
-      return { token: null, email: null, refresh: async () => null, signOut: async () => location.reload() };
+      // "dev" is accepted only by a local Worker started with ALLOW_DEV_TOKEN=1; adcode-host ignores it.
+      return { token: "dev", email: null, refresh: async () => "dev", signOut: async () => location.reload() };
     }
   }
   const token = await idToken();
