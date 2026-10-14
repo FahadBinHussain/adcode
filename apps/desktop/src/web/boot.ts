@@ -8,7 +8,8 @@
  */
 import "../renderer/styles/tokens.css";
 import "./web.css";
-import { CHANNELS } from "../shared/api.ts";
+import { CHANNELS, type PreviewStatus } from "../shared/api.ts";
+import { createPreviewResolver, primePreviewCookie, rewriteStatus } from "./previewUrl.ts";
 import { DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
 import { createAskHandler } from "./asks.ts";
 import { gate, hideGate, showWaking } from "./gate.ts";
@@ -43,7 +44,15 @@ function socketUrl(): string {
 }
 
 function localOverrides(socket: HostSocket, signOut: () => Promise<void>): LocalOverrides {
+  // The sandbox's dev server says `localhost:5173`; the Preview pane is given the public address.
+  const resolvePreview = createPreviewResolver(socket, primePreviewCookie);
+  const rewrite = (status: unknown) => rewriteStatus(status as PreviewStatus, resolvePreview);
   return {
+    "preview.status": (() => socket.invoke(CHANNELS.previewStatus, []).then(rewrite)) as never,
+    "preview.start": ((mode?: unknown) => socket.invoke(CHANNELS.previewStart, [mode]).then(rewrite)) as never,
+    "preview.stop": (() => socket.invoke(CHANNELS.previewStop, []).then(rewrite)) as never,
+    "preview.onChange": ((listener: (status: PreviewStatus) => void) =>
+      socket.subscribe(CHANNELS.previewChanged, (status) => void rewrite(status).then(listener))) as never,
     "clipboard.writeText": ((text: string) => navigator.clipboard.writeText(text).then(() => undefined)) as never,
     "clipboard.readText": (() => navigator.clipboard.readText().catch(() => "")) as never,
     "files.pathForDropped": (() => "") as never,
