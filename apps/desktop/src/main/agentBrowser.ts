@@ -22,7 +22,7 @@
  * scripts: real mouse and keyboard events reach the page exactly as a person's would, and
  * console output and network failures arrive as events instead of being scraped.
  */
-import { BrowserWindow, nativeImage, session, type WebContents } from "electron";
+import { BrowserWindow, session, type WebContents } from "electron";
 import type { ImageBlock, ToolRunResult } from "@adcode/ai";
 // Keep the browser distribution verbatim. Bundlers rewrite CommonJS guards in axe.source's
 // function body, which can leave an unguarded `module.exports` inside the injected script.
@@ -47,6 +47,32 @@ import {
 /** In memory (no `persist:` prefix): nothing the agent's page stores outlives the app. */
 export const AGENT_BROWSER_PARTITION = "adcode-agent-browser";
 
+/**
+ * What the agent's page is driven through. On the desktop it is the offscreen Electron window
+ * below; the web version's sandbox has no Electron, so adcode-host supplies a headless Chromium
+ * speaking the same DevTools protocol (`host/cdpBrowser.ts`). Everything after `openPage`
+ * talks to this, never to a window.
+ */
+export interface PageTransport {
+  send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T>;
+  onEvent(listener: (method: string, params: Record<string, any>) => void): void;
+  /** The address of the top document. */
+  url(): string;
+  closed(): boolean;
+  close(): void;
+  /** The desktop's offscreen window: it must never be the reason the app stays open. */
+  readonly window?: BrowserWindow;
+}
+
+export type PageTransportFactory = () => Promise<PageTransport>;
+
+let transportFactory: PageTransportFactory = () => electronTransport();
+
+/** adcode-host's headless Chromium stands in for the offscreen window. The desktop never calls this. */
+export function setAgentPageTransport(factory: PageTransportFactory): void {
+  transportFactory = factory;
+}
+
 const IDLE_CLOSE_MS = 3 * 60_000;
 const LOAD_TIMEOUT_MS = 20_000;
 const QUIET_MS = 400;
@@ -57,7 +83,7 @@ const MAX_LOG_LINES = 60;
 const TRACKED_TYPES: ReadonlySet<string> = new Set(["Document", "Stylesheet", "Script", "Image", "Font", "XHR", "Fetch", "Media"]);
 
 interface AgentPage {
-  readonly window: BrowserWindow;
+  readonly transport: PageTransport;
   readonly send: <T = Record<string, unknown>>(method: string, params?: Record<string, unknown>) => Promise<T>;
   readonly console: string[];
   readonly failed: string[];
@@ -107,7 +133,7 @@ export function hardenAgentBrowser(contents: WebContents): void {
 }
 
 export function isAgentBrowserWindow(window: BrowserWindow): boolean {
-  return page !== null && page.window === window;
+  return page !== null && page.transport.window === window;
 }
 
 export function closeAgentBrowser(): void {
@@ -116,7 +142,7 @@ export function closeAgentBrowser(): void {
   const current = page;
   page = null;
   opening = null;
-  if (current !== null && !current.window.isDestroyed()) current.window.destroy();
+  if (current !== null && !current.transport.closed()) current.transport.close();
 }
 
 function touch(): void {
@@ -153,7 +179,8 @@ function where(url: string | undefined, line: number | undefined): string {
   return ` (${short || "/"}${line === undefined ? "" : `:${line + 1}`})`;
 }
 
-async function openPage(): Promise<AgentPage> {
+/** The desktop's page: an offscreen window in the locked session, driven through its debugger. */
+async function electronTransport(): Promise<PageTransport> {
   // Before the window: its contents are recognised by this session as they are created.
   const locked = lockedSession();
   const window = new BrowserWindow({
@@ -178,11 +205,31 @@ async function openPage(): Promise<AgentPage> {
   // The debugger needs a document to attach to.
   await contents.loadURL("about:blank");
   contents.debugger.attach("1.3");
+  // It must never be the reason the app stays open.
+  window.on("closed", () => {
+    if (page?.transport.window === window) page = null;
+  });
+  return {
+    window,
+    send: <T = Record<string, unknown>>(method: string, params?: Record<string, unknown>) => contents.debugger.sendCommand(method, params) as Promise<T>,
+    onEvent: (listener) => {
+      contents.debugger.on("message", (_event, method: string, params: Record<string, any>) => listener(method, params));
+    },
+    url: () => (window.isDestroyed() ? "" : contents.getURL()),
+    closed: () => window.isDestroyed(),
+    close: () => {
+      if (!window.isDestroyed()) window.destroy();
+    },
+  };
+}
+
+async function openPage(): Promise<AgentPage> {
+  const transport = await transportFactory();
   const send = <T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T> =>
-    withTimeout(contents.debugger.sendCommand(method, params) as Promise<T>, 30_000, method);
+    withTimeout(transport.send<T>(method, params), 30_000, method);
 
   const created: AgentPage = {
-    window,
+    transport,
     send,
     console: [],
     failed: [],
@@ -201,7 +248,7 @@ async function openPage(): Promise<AgentPage> {
     created.loadWaiters.clear();
   };
 
-  contents.debugger.on("message", (_event, method: string, params: Record<string, any>) => {
+  transport.onEvent((method, params) => {
     switch (method) {
       case "Runtime.consoleAPICalled": {
         const type = params["type"] === "warning" ? "warning" : String(params["type"] ?? "log");
@@ -270,16 +317,11 @@ async function openPage(): Promise<AgentPage> {
   await send("Log.enable");
   await send("Network.enable");
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-
-  // It must never be the reason the app stays open.
-  window.on("closed", () => {
-    if (page?.window === window) page = null;
-  });
   return created;
 }
 
 async function ensurePage(): Promise<AgentPage> {
-  if (page !== null && !page.window.isDestroyed()) return page;
+  if (page !== null && !page.transport.closed()) return page;
   opening ??= openPage().then((created) => {
     page = created;
     opening = null;
@@ -391,13 +433,13 @@ async function settle(target: AgentPage, before: string): Promise<string> {
   await delay(120);
   if (target.navigating) await waitForLoad(target, LOAD_TIMEOUT_MS);
   await waitForQuiet(target, 2_500);
-  const after = target.window.webContents.getURL();
+  const after = target.transport.url();
   return after !== before ? `, now on ${after}` : "";
 }
 
 /** Run one step; the line for the report, and whether to carry on. */
 async function runAction(target: AgentPage, action: PageAction): Promise<{ line: string; ok: boolean }> {
-  const before = target.window.webContents.getURL();
+  const before = target.transport.url();
   switch (action.type) {
     case "click":
     case "hover": {
@@ -464,15 +506,17 @@ async function runAction(target: AgentPage, action: PageAction): Promise<{ line:
 async function screenshot(target: AgentPage, snapshot: PageSnapshot, fullPage: boolean): Promise<ImageBlock | null> {
   const width = target.viewport.width;
   const height = fullPage ? Math.min(snapshot.scroll.height, target.viewport.height * 4, 8_000) : target.viewport.height;
+  // Big enough to read, small enough to send: wide screens are scaled down to 1280, and the
+  // protocol does the scaling and the JPEG, so no image library is needed on either surface.
+  const scale = Math.min(1, SCREENSHOT_MAX_WIDTH / Math.max(1, width));
   const shot = await target.send<{ data: string }>("Page.captureScreenshot", {
-    format: "png",
-    ...(fullPage ? { captureBeyondViewport: true, clip: { x: 0, y: 0, width, height, scale: 1 } } : {}),
+    format: "jpeg",
+    quality: 72,
+    ...(fullPage ? { captureBeyondViewport: true } : {}),
+    clip: { x: 0, y: 0, width, height, scale },
   });
-  let image = nativeImage.createFromBuffer(Buffer.from(shot.data, "base64"));
-  if (image.isEmpty()) return null;
-  // Big enough to read, small enough to send: wide screens are scaled down to 1280.
-  if (image.getSize().width > SCREENSHOT_MAX_WIDTH) image = image.resize({ width: SCREENSHOT_MAX_WIDTH, quality: "good" });
-  return { type: "image", mediaType: "image/jpeg", data: image.toJPEG(72).toString("base64") };
+  if (typeof shot.data !== "string" || shot.data.length === 0) return null;
+  return { type: "image", mediaType: "image/jpeg", data: shot.data };
 }
 
 export interface ViewPageDeps {
@@ -502,7 +546,7 @@ async function view(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortS
   }
 
   let address: string | null = null;
-  const current = target.window.webContents.getURL();
+  const current = target.transport.url();
   if (request.target.kind === "url") address = request.target.url;
   else if (request.target.kind === "preview" || !isLoopbackUrl(current)) {
     const root = await deps.previewUrl();

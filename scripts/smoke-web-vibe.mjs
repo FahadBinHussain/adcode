@@ -35,6 +35,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const PAGE = "<!doctype html><html><head><title>Bakery smoke</title></head><body><h1>Fresh bread daily</h1></body></html>";
 const requests = [];
+let viewPageReport = "";
 const fake = createServer(async (req, res) => {
   let body = "";
   for await (const chunk of req) body += chunk;
@@ -43,9 +44,14 @@ const fake = createServer(async (req, res) => {
   const messages = request.messages ?? [];
   const start = messages.findLastIndex((message) => message.role === "user" && String(message.content).includes(PROMPT));
   const answered = start === -1 ? 0 : messages.slice(start + 1).filter((message) => message.role === "tool").length;
+  // Write the page, then look at it with the agent's own browser, then answer.
+  const lastTool = start === -1 ? "" : String(messages.filter((message) => message.role === "tool").at(-1)?.content ?? "");
+  if (start !== -1 && answered === 2) viewPageReport = lastTool;
   const delta = start !== -1 && answered === 0
     ? { tool_calls: [{ index: 0, id: "write-1", function: { name: "propose_edit", arguments: JSON.stringify({ path: "index.html", contents: PAGE, summary: "Add the bakery page" }) } }] }
-    : { content: "Done - your bakery page is ready." };
+    : start !== -1 && answered === 1
+      ? { tool_calls: [{ index: 0, id: "look-1", function: { name: "view_page", arguments: JSON.stringify({ path: "index.html", width: 390, height: 844, screenshot: true }) } }] }
+      : { content: "Done - your bakery page is ready." };
   res.writeHead(200, { "content-type": "text/event-stream" });
   res.end(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: delta.tool_calls ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`);
 });
@@ -159,6 +165,8 @@ try {
   await shot("phone");
   checks.phoneOverflow = await browser.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth");
   checks.modelRequests = requests.length;
+  checks.viewPageSawPage = viewPageReport.includes("Fresh bread daily") || viewPageReport.includes("Bakery smoke");
+  if (!checks.viewPageSawPage) checks.viewPageReport = viewPageReport.slice(0, 400);
   checks.consoleErrors = browser.consoleErrors.filter((text) => !/127\.0\.0\.1:9|ERR_CONNECTION_REFUSED|Failed to load resource/.test(text));
 } catch (error) {
   checks.threw = String(error?.stack ?? error);
@@ -173,7 +181,7 @@ try {
 console.log(JSON.stringify(checks, null, 2));
 const passed = checks.threw === undefined && checks.gateShown && checks.gateDevMode && checks.vibeVisible && checks.onboardingAsks && checks.modelReady && checks.sidebarShowsProject &&
   checks.chatReply && checks.fileWritten && checks.previewServes && checks.changesShowsFile && checks.commitWorks &&
-  checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
+  checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");
   console.log(stackLog.slice(-4000));

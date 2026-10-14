@@ -42,6 +42,8 @@ import { BrowserWindow, app, dispatcher } from "./electronShim.ts";
 import { createBrowserAccount } from "./browserAccount.ts";
 import { createHostOps } from "./hostOps.ts";
 import { createGitHubOps, writeAskpass } from "./githubConnect.ts";
+import { chromiumTransportFactory } from "./cdpBrowser.ts";
+import { setAgentPageTransport } from "../main/agentBrowser.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { startHostServer } from "./server.ts";
@@ -117,6 +119,14 @@ if (process.platform !== "win32") {
   process.env["GIT_ASKPASS"] = await writeAskpass(userDataDir);
   process.env["GIT_TERMINAL_PROMPT"] = "0";
 }
+
+/*
+ * The agent's own browser (`view_page`): headless Chromium in the sandbox image, or Edge on a
+ * Windows development machine, in place of the desktop's offscreen Electron window.
+ */
+setAgentPageTransport(chromiumTransportFactory(
+  process.env["CHROMIUM_PATH"] ?? (process.platform === "win32" ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" : "/usr/bin/chromium"),
+));
 
 const run = promisify(execFile);
 async function setIdentityIfMissing(name: string, email: string): Promise<void> {
