@@ -13,6 +13,7 @@ import { createPreviewResolver, primePreviewCookie, rewriteStatus } from "./prev
 import { DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
 import { createAskHandler } from "./asks.ts";
 import { gate, hideGate, showWaking } from "./gate.ts";
+import { connectGitHub, needsGitHub } from "./githubConnect.ts";
 import { importFromGitHub, uploadDialog } from "./projectActions.ts";
 import { pickProjectFolder, type ProjectSummary } from "./projectPicker.ts";
 import { createHostSocket, type HostSocket, type WebSocketLike } from "./socket.ts";
@@ -48,7 +49,16 @@ function localOverrides(socket: HostSocket, signOut: () => Promise<void>): Local
   // The sandbox's dev server says `localhost:5173`; the Preview pane is given the public address.
   const resolvePreview = createPreviewResolver(socket, primePreviewCookie);
   const rewrite = (status: unknown) => rewriteStatus(status as PreviewStatus, resolvePreview);
+  // A push, pull or fetch that fails for want of GitHub credentials offers to connect, then tries once more.
+  const withGitHub = (channel: string) => (async () => {
+    const first = (await socket.invoke(channel, [])) as { ok: boolean; message?: string };
+    if (!needsGitHub(first) || !(await connectGitHub(socket))) return first;
+    return socket.invoke(channel, []);
+  }) as never;
   return {
+    "git.push": withGitHub(CHANNELS.gitPush),
+    "git.pull": withGitHub(CHANNELS.gitPull),
+    "git.fetch": withGitHub(CHANNELS.gitFetch),
     "preview.status": (() => socket.invoke(CHANNELS.previewStatus, []).then(rewrite)) as never,
     "preview.start": ((mode?: unknown) => socket.invoke(CHANNELS.previewStart, [mode]).then(rewrite)) as never,
     "preview.stop": (() => socket.invoke(CHANNELS.previewStop, []).then(rewrite)) as never,

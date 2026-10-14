@@ -41,6 +41,9 @@ import { CHANNELS } from "../shared/api.ts";
 import { BrowserWindow, app, dispatcher } from "./electronShim.ts";
 import { createBrowserAccount } from "./browserAccount.ts";
 import { createHostOps } from "./hostOps.ts";
+import { createGitHubOps, writeAskpass } from "./githubConnect.ts";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { startHostServer } from "./server.ts";
 
 /** Calls that run for as long as the work they start: while one is open, the sandbox is busy. */
@@ -104,6 +107,25 @@ void loadSettings()
   .then(() => getAdRuntime().start())
   .catch(() => undefined);
 
+/*
+ * Git in the sandbox asks this program for GitHub credentials (the token from "Connect GitHub"),
+ * and never prompts on a terminal nobody is watching. On a Windows development machine git
+ * keeps using the computer's own credential manager.
+ */
+const userDataDir = process.env["ADCODE_USER_DATA_DIR"] ?? "";
+if (process.platform !== "win32") {
+  process.env["GIT_ASKPASS"] = await writeAskpass(userDataDir);
+  process.env["GIT_TERMINAL_PROMPT"] = "0";
+}
+
+const run = promisify(execFile);
+async function setIdentityIfMissing(name: string, email: string): Promise<void> {
+  const existing = await run("git", ["config", "--global", "--get", "user.email"]).then((result) => result.stdout.trim(), () => "");
+  if (existing.length > 0) return;
+  await run("git", ["config", "--global", "user.name", name]);
+  await run("git", ["config", "--global", "user.email", email]);
+}
+
 const port = Number(process.env["ADCODE_HOST_PORT"] ?? "7300");
 const secret = process.env["ADCODE_HOST_SECRET"] ?? null;
 
@@ -115,7 +137,16 @@ const server = await startHostServer({
   busy,
   onAuth: (token) => account.accept(token),
   onFocusChange: (anyFocused) => getAdRuntime().setWindowFocused(anyFocused),
-  ops: createHostOps({ projectsHome: process.env["ADCODE_PROJECTS_HOME"] ?? "" }),
+  ops: {
+    ...createHostOps({ projectsHome: process.env["ADCODE_PROJECTS_HOME"] ?? "" }),
+    ...createGitHubOps({
+      userDataDir,
+      sealKey: () => process.env["ADCODE_SEAL_KEY"] ?? "",
+      fetcher: fetch,
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      setIdentity: setIdentityIfMissing,
+    }),
+  },
 });
 
 console.log(`adcode-host ${app.getVersion()} listening on ${server.port}`);

@@ -498,3 +498,17 @@
   font-variant-numeric: tabular-nums;
   min-height: 1.4em;
 }
+
+.web-github-code {
+  margin: 4px 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px dashed var(--border-hairline);
+  background: var(--bg-editor);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-align: center;
+  user-select: all;
+}
