@@ -11,6 +11,9 @@
  */
 
 const PREVIEW_HOST = /^p-(\d{4,5})-([a-z0-9]{10})$/;
+
+/** adcode-host's own port inside the sandbox: never a preview, whatever a hostname says. */
+export const HOST_PORT = 7300;
 const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 export interface PreviewCookie {
@@ -26,7 +29,7 @@ export function parsePreviewHost(host: string, suffix: string): { port: number; 
   const match = PREVIEW_HOST.exec(label);
   if (match === null) return null;
   const port = Number(match[1]);
-  if (port < 1024 || port > 65535) return null;
+  if (port < 1024 || port > 65535 || port === HOST_PORT) return null;
   return { port, previewId: match[2]! };
 }
 

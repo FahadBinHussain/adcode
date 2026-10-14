@@ -33,6 +33,10 @@ describe("preview hostnames", () => {
     }
   });
 
+  it("never treats adcode-host's own port as a preview", () => {
+    expect(parsePreviewHost("p-7300-abcdefghij.web.bluethenics.com", SUFFIX)).toBeNull();
+  });
+
   it("makes ids that fit the pattern and differ", () => {
     const a = newPreviewId();
     const b = newPreviewId();

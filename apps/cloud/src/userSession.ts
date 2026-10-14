@@ -18,10 +18,11 @@ import { DurableObject } from "cloudflare:workers";
 import { addUsage, dayKey, nextReset, remainingMs, shouldSleep, type Usage } from "./allowance.ts";
 import { verifyIdToken } from "./auth.ts";
 import { numberVar, type Env } from "./env.ts";
-import { newPreviewId, rewriteLoopbackUrl } from "./previewAuth.ts";
+import { HOST_PORT as PREVIEW_RESERVED_PORT, newPreviewId, rewriteLoopbackUrl } from "./previewAuth.ts";
 import { putStream } from "./r2Archive.ts";
 
-const HOST_PORT = 7300;
+// adcode-host listens here inside the sandbox (also refused as a preview port by previewAuth).
+const HOST_PORT = PREVIEW_RESERVED_PORT;
 const TICK_MS = 60_000;
 const HEALTH_TIMEOUT_MS = 90_000;
 /** After today's time runs out, a running agent step gets this long to finish. */
