@@ -11,6 +11,9 @@ import packageJson from "../../package.json";
 /** Swap this, or set NEXT_PUBLIC_SITE_ORIGIN, when the real domain is registered. */
 export const SITE_ORIGIN = process.env["NEXT_PUBLIC_SITE_ORIGIN"] ?? "https://adcode.bluethenics.com";
 
+/** ADCode's Vibe mode in the browser (apps/cloud), for anyone who cannot or would rather not install. */
+export const WEB_VERSION_URL = process.env["NEXT_PUBLIC_WEB_VERSION_URL"] ?? "https://web.bluethenics.com";
+
 /** The Firebase project everything is deployed into. */
 export const FIREBASE_PROJECT = process.env["NEXT_PUBLIC_FIREBASE_PROJECT_ID"] ?? "adcode-idle";
 

@@ -99,6 +99,19 @@ If you later choose to withdraw money, you can attach an email address to that s
 - **If you use invites:** your invite code, which code you joined with and when, and who joined with yours - the record your invite earnings are worked out from. Your invite page shows your first name only if you allow it, which you can turn off in Invite & earn. People you invite see that name, if shown; you see how many people joined and used ADCode, never who they are.
 - **If, and only if, you ask to be paid:** the payout details you enter — the full name on the receiving account, the country and currency, and either the email address on your Wise account or the bank details you give us. We store them so a person can make the transfer, and a copy is attached to each request so that editing your details later cannot redirect a payment already in progress. You can change or clear them at any time from the Payouts tab.
 
+## The web version
+
+ADCode on the web (web.bluethenics.com) runs the same assistant in a **private cloud workspace** for each signed-in person: a small Linux computer on Cloudflare that only your account can reach.
+
+- **What it holds:** your projects, your conversations with the assistant, your ADCode settings, and any API keys you save. Saved keys and a GitHub connection are encrypted with a key that is unique to you and kept separately from your files.
+- **When it sleeps:** a few minutes after you stop using it, your workspace is saved as one compressed archive in Cloudflare R2 storage and the computer stops. It is restored from that archive the next time you open the web version. We keep your three most recent archives.
+- **Previews** of the apps you build are reachable only from your own signed-in browser.
+- **Sign-in** uses the same Firebase account as the desktop app and this website: Google, GitHub, or email and password. The web version requires one; it does not create anonymous accounts.
+- **Usage:** we record how many minutes your workspace runs each day, to apply the daily allowance, and an estimate of what running it costs us.
+- **Download and delete:** the Cloud workspace panel downloads any project, and Delete my cloud workspace removes every project, conversation and archive straight away. Your account and earnings are not affected.
+
+We do not read your projects or conversations, use them to train models, or show them to advertisers. The assistant's requests to an AI provider work as described under AI features above.
+
 ## Cookies and analytics
 
 This website runs **no third-party analytics or advertising scripts**. Fonts are served from this site's own domain rather than a font CDN.
@@ -128,7 +141,7 @@ We use Google Cloud and Firebase to run the service, Dodo Payments to take payme
 
 ## Retention
 
-Ledger rows are kept as long as the account exists, because they are the record of what you were paid. Serve records expire automatically within hours. General support feedback is kept until it is resolved. Included AI reporting metadata is retained for usage and reliability reporting; it has no automatic expiry at present. Model feedback remains until its rating is removed or you request its deletion. You can request deletion of included AI reporting metadata through the contact below.
+Ledger rows are kept as long as the account exists, because they are the record of what you were paid. Serve records expire automatically within hours. General support feedback is kept until it is resolved. Included AI reporting metadata is retained for usage and reliability reporting; it has no automatic expiry at present. Model feedback remains until its rating is removed or you request its deletion. You can request deletion of included AI reporting metadata through the contact below. A web version workspace that nobody opens for 90 days is deleted, archives and all.
 
 ## Children
 
