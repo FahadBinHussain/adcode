@@ -511,6 +511,10 @@ export class UserSession extends DurableObject<Env> {
       }
     }
     this.tabs.clear();
+    // Time already used today is spent whatever happens to the files: deleting the workspace
+    // must not hand back a fresh daily allowance.
+    await this.accountTime(Date.now());
+    const usage = await this.usage();
     await this.ctx.container?.destroy().catch(() => undefined);
     const uid = await this.uid();
     let cursor: string | undefined;
@@ -522,6 +526,7 @@ export class UserSession extends DurableObject<Env> {
     await this.env.BUDGET.getByName("global").release(uid);
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
+    await this.ctx.storage.put({ uid, usage });
     return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
   }
 

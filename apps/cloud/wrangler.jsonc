@@ -13,8 +13,18 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
+  /* One way in: the custom domain. Sign-in, origins and preview cookies are all tied to it. */
+  "workers_dev": false,
   "preview_urls": false,
+  /*
+   * The app, and every preview host under it. A preview host is `p-<port>-<id>.web...`, a
+   * second-level wildcard: it needs a proxied `*.web` DNS record and a certificate that covers
+   * it (Advanced Certificate Manager), because Universal SSL stops at `*.bluethenics.com`.
+   */
+  "routes": [
+    { "pattern": "web.bluethenics.com", "custom_domain": true },
+    { "pattern": "*.web.bluethenics.com/*", "zone_name": "bluethenics.com" }
+  ],
   "keep_vars": true,
   "upload_source_maps": true,
   "observability": { "enabled": true },
@@ -79,5 +89,50 @@
     "MONTHLY_CAP_USD": "20",
     "MAX_INSTANCES": "20",
     "INSTANCE_TYPE": "standard-1"
+  },
+
+  /*
+   * A throwaway check of the Worker + container path before the public deploy: workers.dev
+   * only, its own bucket, and the development token accepted so a script can connect without a
+   * Firebase account. Deploy with `--env staging`, test, then `wrangler delete --env staging`.
+   */
+  "env": {
+    "staging": {
+      "name": "adcode-cloud-staging",
+      "workers_dev": true,
+      "routes": [],
+      "containers": [
+        {
+          "class_name": "UserSession",
+          "scheduling_policy": "durable_object",
+          "images": { "adcode": { "dockerfile": "./container/Dockerfile" } }
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "USER", "class_name": "UserSession" },
+          { "name": "BUDGET", "class_name": "BudgetObject" },
+          { "name": "PREVIEW", "class_name": "PreviewRoute" }
+        ]
+      },
+      "r2_buckets": [{ "binding": "HOMES", "bucket_name": "adcode-cloud-homes-staging" }],
+      "vars": {
+        "APP_HOST": "staging.invalid",
+        "PREVIEW_SUFFIX": ".staging.invalid",
+        "ALLOWED_ORIGINS": "https://staging.invalid",
+        "FIREBASE_PROJECT_ID": "adcode-idle",
+        "FIREBASE_AUTH_DOMAIN": "adcode-idle.firebaseapp.com",
+        "ADMIN_UIDS": "",
+        "ADCODE_API_BASE": "",
+        "ALLOW_DEV_TOKEN": "1",
+        "DAILY_ALLOWANCE_MIN": "60",
+        "IDLE_SLEEP_MIN": "5",
+        "UNTOUCHED_TAB_MIN": "15",
+        "SNAPSHOT_EVERY_MIN": "10",
+        "MONTHLY_CAP_USD": "2",
+        "MAX_INSTANCES": "2",
+        "INSTANCE_TYPE": "standard-1"
+      }
+    }
   }
 }

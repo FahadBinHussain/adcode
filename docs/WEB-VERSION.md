@@ -63,34 +63,56 @@ about $2.22 a month.
 
 ## One-time setup (Cloudflare and Firebase)
 
+Done on 2026-10-15 unless marked otherwise.
+
 1. **R2 bucket** `adcode-cloud-homes`, with a lifecycle rule deleting objects older than 90 days.
-2. **DNS + certificate**: proxied records for `web` and `*.web` on bluethenics.com, and Advanced
-   Certificate Manager for `*.web.bluethenics.com` (Universal SSL covers one wildcard level only).
-   Without it the app works; previews do not load.
-3. **Firebase Auth → Settings → Authorized domains**: add `web.bluethenics.com`. Without it the
-   Google and GitHub buttons fail; email sign-in still works.
-4. **Secret** `PREVIEW_COOKIE_KEY` (above).
-5. Docker Desktop running: `wrangler deploy` builds the image locally.
+2. **The app's domain**: `web.bluethenics.com` is a Workers custom domain (`routes` in
+   `wrangler.jsonc`); the first deploy created its DNS record and certificate itself.
+3. **Previews (still to do)**: a proxied `*.web` DNS record on bluethenics.com (AAAA `100::` is
+   enough; the Worker answers), and Advanced Certificate Manager for `*.web.bluethenics.com` -
+   Universal SSL covers one wildcard level only. The `*.web.bluethenics.com/*` route is already
+   in place. Without these the app works and previews do not load.
+4. **Firebase Auth → Settings → Authorized domains (still to do)**: add `web.bluethenics.com`.
+   Without it the Google and GitHub buttons fail; email sign-in still works.
+5. **Secret** `PREVIEW_COOKIE_KEY` (above).
+6. Docker Desktop running: `wrangler deploy` builds the image locally.
 
 ## Deploying
 
 ```
 cd apps/cloud && npx wrangler deployments list     # note the current version for rollback
 cd ../.. && npm run cloud:deploy                     # build page + host, then wrangler deploy
+node scripts/cloud-probe.mjs https://web.bluethenics.com
 ```
 
-First deploy: it creates the Worker `adcode-cloud`, its Durable Objects and the container application.
-The custom domain comes from `routes`; add `{ "pattern": "web.bluethenics.com", "custom_domain": true }`
-and `{ "pattern": "*.web.bluethenics.com/*", "zone_name": "bluethenics.com" }` once DNS and the
-certificate are ready.
+The probe prints what it checked: the page and its CSP, no development sign-in, and every door
+(API, socket, another site's origin) refusing a visitor without a token.
+
+The image is about 2 GB, so the first push of a new image takes several minutes. Cloudflare's
+registry times out on a single upload of a few hundred megabytes, which is why the Dockerfile
+installs its packages in three layers rather than one. A push that fails on
+`timeout awaiting response headers` is worth one retry: the layers already sent are kept.
 
 Rollback: `cd apps/cloud && npx wrangler rollback <version-id> -m "reason"`.
 
 A deploy does not restart running sandboxes; each picks up the new image the next time it wakes.
 Archives are plain tar.gz of `/home/adcode`, so they restore into any image version.
 
-After deploying, open the site, sign in, build something, open Preview, close the tab, wait for
-`IDLE_SLEEP_MIN`, come back and check the project is still there.
+### Trying a change on real Cloudflare first
+
+`env.staging` in `wrangler.jsonc` is a throwaway copy: workers.dev only, its own bucket, two
+sandboxes and a $2 cap, and it accepts the development token so a script can sign in.
+
+```
+npx wrangler r2 bucket create adcode-cloud-homes-staging
+cd apps/cloud && npx wrangler deploy --env staging --secrets-file <file with PREVIEW_COOKIE_KEY>
+node scripts/cloud-probe.mjs https://adcode-cloud-staging.<account>.workers.dev --staging --restore --delete
+npx wrangler delete --env staging && npx wrangler r2 bucket delete adcode-cloud-homes-staging
+```
+
+`--restore` waits for the sandbox to sleep and checks the project came back from R2; `--delete`
+ends with Delete my cloud workspace and checks the day's time stayed spent. Delete the staging
+Worker as soon as the probe has run: while it exists, anyone with its URL can open a sandbox.
 
 ## Watching it
 

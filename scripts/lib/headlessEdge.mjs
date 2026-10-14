@@ -21,13 +21,15 @@ const CANDIDATES = [
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function launchBrowser({ port = 9473, width = 1280, height = 820 } = {}) {
+/** `args`: extra browser switches, e.g. `--host-resolver-rules=MAP host address` to reach a site before DNS has. */
+export async function launchBrowser({ port = 9473, width = 1280, height = 820, args = [] } = {}) {
   const executable = CANDIDATES.find((path) => existsSync(path));
   if (executable === undefined) throw new Error("No Edge or Chromium found; set ADCODE_BROWSER");
   const profile = mkdtempSync(join(tmpdir(), "adcode-headless-"));
   const child = spawn(executable, [
     "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--no-first-run", "--no-default-browser-check", "--disable-extensions", `--window-size=${width},${height}`,
+    ...args,
     "about:blank",
   ], { stdio: "ignore" });
 

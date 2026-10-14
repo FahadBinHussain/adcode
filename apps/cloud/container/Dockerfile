@@ -6,11 +6,16 @@
 # Docker does, including on a laptop.
 FROM node:24-trixie-slim
 
+# Three layers, not one: Cloudflare's registry times out on a single upload past a few hundred
+# megabytes, and Chromium with its libraries is most of a gigabyte on its own.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      git tar gzip ca-certificates curl procps \
-      chromium fonts-liberation \
-      python3 make g++ \
+ && apt-get install -y --no-install-recommends git tar gzip ca-certificates curl procps \
+ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
 
 # A person's whole cloud workspace is this one home folder, archived to R2 when it sleeps.
