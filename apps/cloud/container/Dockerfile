@@ -2,8 +2,9 @@
 # with the tools Vibe's agent uses - Node, git, Chromium for looking at pages.
 #
 # Built by Wrangler from apps/cloud (see wrangler.jsonc "images"). `npm run cloud:build` puts the
-# adcode-host bundle in ./host first. Cloudflare's managed image already carries Node 24.
-FROM cloudflare/debian-trixie
+# adcode-host bundle in ./host first. The official Node 24 image on Debian trixie builds anywhere
+# Docker does, including on a laptop.
+FROM node:24-trixie-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
