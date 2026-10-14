@@ -36,6 +36,8 @@ export interface HostServerOptions {
   readonly onFocusChange?: (anyFocused: boolean) => void;
   readonly home?: string;
   readonly projectsHome?: string;
+  /** Web-only operations a tab may ask for by name; anything else is refused. */
+  readonly ops?: Readonly<Record<string, (...args: unknown[]) => Promise<unknown>>>;
 }
 
 /** How long a question to the browser waits; a project picker can stay open a while. */
@@ -175,6 +177,17 @@ export async function startHostServer(options: HostServerOptions): Promise<{ clo
         case "input":
           lastInputAt = Date.now();
           return;
+        case "op": {
+          const operation = Object.hasOwn(options.ops ?? {}, frame.op) ? options.ops![frame.op] : undefined;
+          if (operation === undefined) {
+            send({ t: "opRet", id: frame.id, ok: false, error: "Unknown operation" });
+            return;
+          }
+          void operation(...frame.args)
+            .then((value) => send({ t: "opRet", id: frame.id, ok: true, value }))
+            .catch((error: unknown) => send({ t: "opRet", id: frame.id, ok: false, error: error instanceof Error ? error.message : "Something went wrong" }));
+          return;
+        }
         case "previewUrl":
           // Without the cloud in front (local development), a preview is already reachable as is.
           send({ t: "previewUrl", id: frame.id, url: frame.url });

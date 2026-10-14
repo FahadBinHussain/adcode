@@ -204,3 +204,58 @@ describe("web api", () => {
     expect(seen).toEqual([{ a: 1 }]);
   });
 });
+
+describe("web-only operations over the socket", () => {
+  it("resolves an op with the host's answer", async () => {
+    const { socket, latest } = harness();
+    latest().open();
+    const answer = socket.op("projects", []);
+    const sent = latest().sent.find((frame) => frame.t === "op") as Extract<ClientFrame, { t: "op" }>;
+    latest().deliver({ t: "opRet", id: sent.id, ok: true, value: ["snake"] });
+    await expect(answer).resolves.toEqual(["snake"]);
+  });
+});
+
+describe("pausing", () => {
+  it("does not reconnect on its own after the cloud put the sandbox to sleep, until resumed", async () => {
+    const { socket, sockets, latest } = harness();
+    const states: string[] = [];
+    socket.onStatus((state) => states.push(state));
+    latest().open();
+    sockets[0]!.drop(4408);
+    await tick();
+    expect(sockets.length).toBe(1);
+    expect(socket.state()).toBe("paused");
+    socket.resume();
+    await tick();
+    expect(sockets.length).toBe(2);
+    latest().open();
+    expect(socket.state()).toBe("open");
+    expect(states).toEqual(["open", "paused", "connecting", "open"]);
+  });
+
+  it("treats a spent allowance and a full month as paused too", async () => {
+    for (const code of [4429, 4402]) {
+      const { socket, sockets, latest } = harness();
+      latest().open();
+      sockets[0]!.drop(code);
+      await tick();
+      expect(socket.state()).toBe("paused");
+      expect(sockets.length).toBe(1);
+    }
+  });
+
+  it("waits and tries again when every sandbox is busy", async () => {
+    const sockets: FakeSocket[] = [];
+    const socket = createHostSocket(() => {
+      const fake = new FakeSocket();
+      sockets.push(fake);
+      return fake;
+    }, { backoffMs: [0], busyRetryMs: 5 });
+    sockets[0]!.open();
+    sockets[0]!.drop(4503);
+    expect(socket.state()).toBe("reconnecting");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(sockets.length).toBe(2);
+  });
+});

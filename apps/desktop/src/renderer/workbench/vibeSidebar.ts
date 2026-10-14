@@ -20,6 +20,7 @@ import { createIcon, ICON } from "./icons.ts";
 import { attachContextMenuDismissal, createContextMenu, type ContextMenu, type ContextMenuNode } from "./contextMenu.ts";
 import { describeVibeProject, projectName, recentProjectsFor, summarizeVibeChanges, VIBE_PAGES, type VibePage } from "./vibeSidebarModel.ts";
 import { GIT_CHANGED_EVENT } from "./changesView.ts";
+import { isWebSurface } from "../surface.ts";
 
 /** Below this width the rail would squeeze the conversation, so it becomes a drawer. */
 export const VIBE_DOCK_MIN_WIDTH = 1120;
@@ -226,13 +227,15 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
 
   /* ── Footer ──────────────────────────────────────────────────────────── */
 
+  // On the web there is no second window: the same button offers the desktop app, which has the full IDE.
+  const web = isWebSurface();
   const ide = document.createElement("button");
   ide.type = "button";
   ide.className = "project-toolbar-action vibe-ide-button";
-  ide.title = "Open the full IDE in its own window - Vibe stays here";
-  ide.setAttribute("aria-label", "Open IDE in a separate window");
+  ide.title = web ? "The desktop app adds the full IDE, local models and no daily limit" : "Open the full IDE in its own window - Vibe stays here";
+  ide.setAttribute("aria-label", web ? "Get the desktop app" : "Open IDE in a separate window");
   const ideText = document.createElement("span");
-  ideText.textContent = "Open IDE";
+  ideText.textContent = web ? "Get the desktop app" : "Open IDE";
   const ideExternal = createIcon(ICON.external);
   ideExternal.classList.add("vibe-ide-external");
   ide.append(createIcon(PATH.ide), ideText, ideExternal);
@@ -293,8 +296,8 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   topSearchHost.className = "vibe-topbar-search";
   const topPreview = button("vibe-topbar-button vibe-topbar-preview", "Preview", PATH.preview, () => deps.togglePreview());
   topPreview.append(document.createTextNode("Preview"));
-  const topIde = button("vibe-topbar-button vibe-topbar-ide", "Open IDE in a separate window", PATH.ide, () => deps.run("workspace.openIde"));
-  topIde.append(document.createTextNode("Open IDE"));
+  const topIde = button("vibe-topbar-button vibe-topbar-ide", web ? "Get the desktop app" : "Open IDE in a separate window", PATH.ide, () => deps.run("workspace.openIde"));
+  topIde.append(document.createTextNode(web ? "Desktop app" : "Open IDE"));
   topbar.append(menuToggle, topProject, topSearchHost, topPreview, topIde);
 
   const scrim = document.createElement("div");

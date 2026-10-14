@@ -78,3 +78,11 @@ describe("frame validation", () => {
     expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
   });
 });
+
+describe("web-only host operations", () => {
+  it("carries an op request and its answer", () => {
+    expect(decodeFrame(encodeFrame({ t: "op", id: 3, op: "projects", args: [] }))).toEqual({ t: "op", id: 3, op: "projects", args: [] });
+    expect(decodeFrame(encodeFrame({ t: "opRet", id: 3, ok: true, value: [{ name: "snake" }] }))).toEqual({ t: "opRet", id: 3, ok: true, value: [{ name: "snake" }] });
+    expect(decodeFrame('{"t":"op","id":1,"args":[]}')).toBeNull();
+  });
+});

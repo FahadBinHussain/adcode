@@ -1,0 +1,478 @@
+/*
+ * The web version's own surfaces: the sign-in gate, the waking screen, pauses, the project
+ * picker, the connection bar, the time-left chip and toasts.
+ *
+ * Everything else on screen is the desktop renderer, styled by its own design system. These
+ * use the same tokens (`styles/tokens.css`, imported by `boot.ts` before this file) so the
+ * front door and the room behind it look like one product.
+ */
+
+/* ── Gate: sign-in, waking, pauses ───────────────────────────────────────── */
+
+.web-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+    radial-gradient(800px 500px at 100% 110%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
+    var(--bg-app, #141416);
+  color: var(--text-primary, #f2f2f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+.web-gate[hidden] {
+  display: none;
+}
+
+.web-gate-card {
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 28px;
+  animation: web-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.web-gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+}
+
+.web-gate-wordmark {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.web-gate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
+}
+
+.web-gate-title {
+  margin: 0;
+  font-size: clamp(26px, 6vw, 32px);
+  line-height: 1.15;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.web-gate-title-small {
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.web-gate-lead {
+  margin: 0;
+  color: var(--text-secondary, #b4b4bc);
+  font-size: 15px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.web-gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.web-gate-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border-hairline, rgb(255 255 255 / 0.12));
+  background: var(--bg-elevated, #222226);
+  color: var(--text-primary, #f2f2f4);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.web-gate-button:hover:not(:disabled) {
+  background: var(--bg-hover, #2a2a2f);
+  border-color: color-mix(in srgb, var(--text-primary) 22%, transparent);
+}
+
+.web-gate-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.web-gate-button:focus-visible,
+.web-gate-input:focus-visible,
+.web-gate-link:focus-visible,
+.web-picker-item:focus-visible,
+.web-time:focus-visible {
+  outline: 2px solid var(--accent, #4c8dff);
+  outline-offset: 2px;
+}
+
+.web-gate-button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.web-gate-button svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.web-gate-primary {
+  background: var(--accent, #4c8dff);
+  border-color: transparent;
+  color: var(--text-on-accent, #fff);
+}
+
+.web-gate-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, white);
+  border-color: transparent;
+}
+
+.web-gate-dev {
+  border-style: dashed;
+  color: var(--text-secondary);
+}
+
+.web-gate-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-tertiary, #85858e);
+  font-size: 13px;
+  margin: 6px 0;
+}
+
+.web-gate-divider::before,
+.web-gate-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-hairline, rgb(255 255 255 / 0.12));
+}
+
+.web-gate-email {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.web-gate-input {
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-hairline, rgb(255 255 255 / 0.12));
+  background: var(--bg-editor, #18181b);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 15px;
+}
+
+.web-gate-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.web-gate-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.web-gate-link {
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+.web-gate-link:hover {
+  color: var(--text-primary);
+}
+
+.web-gate-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger, #ff5a5a) 14%, transparent);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.web-gate-error[hidden] {
+  display: none;
+}
+
+.web-gate-fine {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.web-gate-fine a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+
+.web-gate-spinner {
+  width: 34px;
+  height: 34px;
+  margin: 4px auto 0;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent, #4c8dff);
+  animation: web-spin 900ms linear infinite;
+}
+
+@keyframes web-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes web-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-gate-card { animation: none; }
+  .web-gate-spinner { animation-duration: 2400ms; }
+}
+
+/* ── Project picker ──────────────────────────────────────────────────────── */
+
+.web-picker {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 48px));
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: 16px;
+  background: var(--bg-elevated, #222226);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-floating, 0 24px 60px rgb(0 0 0 / 0.45));
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+.web-picker::backdrop {
+  background: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.web-picker[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.web-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 10px;
+}
+
+.web-picker-header h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 640;
+}
+
+.web-picker-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.web-picker-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.web-picker-list {
+  margin: 0;
+  padding: 4px 10px;
+  list-style: none;
+  overflow-y: auto;
+  min-height: 80px;
+}
+
+.web-picker-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.web-picker-item:hover {
+  background: var(--bg-hover);
+}
+
+.web-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 540;
+}
+
+.web-picker-when {
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.web-picker-empty {
+  padding: 18px 12px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.web-picker-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 20px 18px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.web-picker-footer:empty {
+  display: none;
+}
+
+.web-picker-footer .web-gate-button {
+  flex: 1 1 180px;
+}
+
+/* ── Connection bar, time chip, toasts ───────────────────────────────────── */
+
+.web-connection {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  z-index: 9000;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warning, #f4b740) 90%, black);
+  color: #1b1405;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  max-width: calc(100vw - 32px);
+}
+
+.web-connection[hidden] {
+  display: none;
+}
+
+.web-time {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 8000;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--text-secondary);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 12.5px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.web-time[hidden] {
+  display: none;
+}
+
+.web-time[data-tone="low"] {
+  color: #1b1405;
+  background: var(--warning, #f4b740);
+  border-color: transparent;
+}
+
+.web-time[data-tone="last"] {
+  color: #fff;
+  background: var(--danger, #ff5a5a);
+  border-color: transparent;
+}
+
+.web-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 9500;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(440px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.web-toast {
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: var(--shadow-floating, 0 16px 40px rgb(0 0 0 / 0.4));
+  animation: web-rise 260ms ease-out both;
+  transition: opacity 500ms ease, transform 500ms ease;
+}
+
+.web-toast-warn {
+  border-color: color-mix(in srgb, var(--warning, #f4b740) 55%, transparent);
+}
+
+.web-toast-leaving {
+  opacity: 0;
+  transform: translateY(6px);
+}

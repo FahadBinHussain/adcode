@@ -40,6 +40,7 @@ import { useBackendAccount } from "../main/backend.ts";
 import { CHANNELS } from "../shared/api.ts";
 import { BrowserWindow, app, dispatcher } from "./electronShim.ts";
 import { createBrowserAccount } from "./browserAccount.ts";
+import { createHostOps } from "./hostOps.ts";
 import { startHostServer } from "./server.ts";
 
 /** Calls that run for as long as the work they start: while one is open, the sandbox is busy. */
@@ -114,6 +115,7 @@ const server = await startHostServer({
   busy,
   onAuth: (token) => account.accept(token),
   onFocusChange: (anyFocused) => getAdRuntime().setWindowFocused(anyFocused),
+  ops: createHostOps({ projectsHome: process.env["ADCODE_PROJECTS_HOME"] ?? "" }),
 });
 
 console.log(`adcode-host ${app.getVersion()} listening on ${server.port}`);

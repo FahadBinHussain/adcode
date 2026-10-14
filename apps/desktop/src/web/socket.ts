@@ -28,7 +28,7 @@ export interface WebSocketLike {
   onclose: ((event: { code: number }) => void) | null;
 }
 
-export type ConnectionState = "connecting" | "open" | "reconnecting" | "auth-failed" | "closed";
+export type ConnectionState = "connecting" | "open" | "reconnecting" | "paused" | "auth-failed" | "closed";
 
 export interface HostSocket {
   invoke(channel: string, args: readonly unknown[]): Promise<unknown>;
@@ -36,6 +36,8 @@ export interface HostSocket {
   subscribe(channel: string, listener: (...args: unknown[]) => void): () => void;
   /** A frame of the protocol's own (auth, focus, input). Dropped while disconnected, except auth. */
   raw(frame: ClientFrame): void;
+  /** A web-only host operation, such as listing projects or writing an uploaded file. */
+  op(name: string, args: readonly unknown[]): Promise<unknown>;
   /** Ask the cloud for the public address of a sandbox-local preview URL. */
   previewUrl(url: string): Promise<string>;
   onStatus(listener: (state: ConnectionState) => void): () => void;
@@ -44,6 +46,8 @@ export interface HostSocket {
   /** Resolves with the host's greeting the first time the connection is ready. */
   ready(): Promise<HostHello>;
   state(): ConnectionState;
+  /** Connect again after the cloud paused the sandbox (asleep, no time left, full). */
+  resume(): void;
   /** Test hook: drop the connection as a network failure would. */
   dropForTest(): void;
   close(): void;
@@ -51,6 +55,16 @@ export interface HostSocket {
 
 /** Close code the cloud uses for a refused or expired sign-in. */
 export const AUTH_FAILED_CODE = 4401;
+
+/*
+ * Close codes after which reconnecting on its own would be wrong: the sandbox went to sleep
+ * (4408), today's time is spent (4429), or the month is full (4402). Reconnecting would wake
+ * it again and spend time nobody asked to spend, so the tab waits for the person to resume.
+ */
+export const PAUSE_CODES: ReadonlySet<number> = new Set([4408, 4429, 4402]);
+
+/** Every sandbox is in use; this one waits its turn and tries again. */
+export const BUSY_CODE = 4503;
 
 const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000];
 const PREVIEW_URL_TIMEOUT_MS = 5_000;
@@ -82,10 +96,12 @@ interface Pending {
   sent: boolean;
 }
 
-export function createHostSocket(open: () => WebSocketLike, options: { backoffMs?: readonly number[] } = {}): HostSocket {
+export function createHostSocket(open: () => WebSocketLike, options: { backoffMs?: readonly number[]; busyRetryMs?: number } = {}): HostSocket {
   const backoff = options.backoffMs ?? DEFAULT_BACKOFF_MS;
+  const busyRetryMs = options.busyRetryMs ?? 30_000;
   const pending = new Map<number, Pending>();
   const previewWaits = new Map<number, (url: string) => void>();
+  const opWaits = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   const subscribers = new Map<string, Set<(...args: unknown[]) => void>>();
   const statusListeners = new Set<(state: ConnectionState) => void>();
   const cloudListeners = new Set<(status: CloudStatus) => void>();
@@ -166,6 +182,14 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
       case "cloud":
         for (const listener of cloudListeners) listener(frame.status);
         return;
+      case "opRet": {
+        const wait = opWaits.get(frame.id);
+        opWaits.delete(frame.id);
+        if (wait === undefined) return;
+        if (frame.ok) wait.resolve(frame.value);
+        else wait.reject(new Error(frame.error ?? "Something went wrong"));
+        return;
+      }
       case "previewUrl": {
         const wake = previewWaits.get(frame.id);
         previewWaits.delete(frame.id);
@@ -187,6 +211,8 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
       setState("auth-failed");
       return;
     }
+    for (const wait of opWaits.values()) wait.reject(new Error(LOST));
+    opWaits.clear();
     for (const [id, entry] of pending) {
       if (!entry.sent) continue;
       if (READ_CHANNELS.has(entry.channel)) {
@@ -196,8 +222,12 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
         entry.reject(new Error(LOST));
       }
     }
+    if (PAUSE_CODES.has(code)) {
+      setState("paused");
+      return;
+    }
     setState("reconnecting");
-    const delay = backoff[Math.min(attempt, backoff.length - 1)] ?? 1000;
+    const delay = code === BUSY_CODE ? busyRetryMs : backoff[Math.min(attempt, backoff.length - 1)] ?? 1000;
     attempt += 1;
     setTimeout(connect, delay);
   };
@@ -250,6 +280,16 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
       if (frame.t === "auth") latestAuth = frame;
       transmit(frame);
     },
+    op(name, args) {
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        opWaits.set(id, { resolve, reject });
+        if (!transmit({ t: "op", id, op: name, args })) {
+          opWaits.delete(id);
+          reject(new Error("Not connected. Try again in a moment."));
+        }
+      });
+    },
     previewUrl(url) {
       return new Promise((resolve) => {
         const id = nextId++;
@@ -283,6 +323,12 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
       return hello !== null && state === "open" ? Promise.resolve(hello) : new Promise((resolve) => readyWaiters.push(resolve));
     },
     state: () => state,
+    resume() {
+      if (state !== "paused") return;
+      attempt = 0;
+      setState("connecting");
+      connect();
+    },
     dropForTest() {
       socket?.close(4000, "test drop");
     },

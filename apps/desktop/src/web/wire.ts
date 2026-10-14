@@ -39,7 +39,9 @@ export type ClientFrame =
   | { readonly t: "auth"; readonly token: string }
   | { readonly t: "focus"; readonly focused: boolean }
   | { readonly t: "input" }
-  | { readonly t: "previewUrl"; readonly id: number; readonly url: string };
+  | { readonly t: "previewUrl"; readonly id: number; readonly url: string }
+  /** A web-only host operation (listing projects, uploads): not an IPC channel, so the desktop never sees it. */
+  | { readonly t: "op"; readonly id: number; readonly op: string; readonly args: readonly unknown[] };
 
 export type ServerFrame =
   | { readonly t: "ready"; readonly host: HostHello }
@@ -48,7 +50,8 @@ export type ServerFrame =
   | { readonly t: "evt"; readonly ch: string; readonly args: readonly unknown[] }
   | { readonly t: "ask"; readonly id: number; readonly kind: AskKind; readonly payload: unknown }
   | { readonly t: "cloud"; readonly status: CloudStatus }
-  | { readonly t: "previewUrl"; readonly id: number; readonly url: string };
+  | { readonly t: "previewUrl"; readonly id: number; readonly url: string }
+  | { readonly t: "opRet"; readonly id: number; readonly ok: boolean; readonly value?: unknown; readonly error?: string };
 
 export type Frame = ClientFrame | ServerFrame;
 
@@ -144,6 +147,8 @@ function wellFormed(frame: Record<string, unknown>): boolean {
     case "ready": return typeof frame["host"] === "object" && frame["host"] !== null;
     case "ask": return isInteger(frame["id"]) && isString(frame["kind"]);
     case "cloud": return typeof frame["status"] === "object" && frame["status"] !== null;
+    case "op": return isInteger(frame["id"]) && isString(frame["op"]) && Array.isArray(frame["args"]);
+    case "opRet": return isInteger(frame["id"]) && typeof frame["ok"] === "boolean";
     default: return false;
   }
 }

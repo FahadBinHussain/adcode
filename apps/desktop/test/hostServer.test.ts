@@ -110,3 +110,17 @@ describe("host server", () => {
     tab.socket.close();
   });
 });
+
+describe("web-only operations", () => {
+  it("answers a known op and refuses an unknown one", async () => {
+    const started = await startHostServer({ port: 0, host: "127.0.0.1", secret: null, hello: () => HELLO, ops: { projects: async () => [{ name: "snake" }] } });
+    closers.push(started.close);
+    const tab = await connect(started.port);
+    await tab.next();
+    tab.socket.send(encodeFrame({ t: "op", id: 1, op: "projects", args: [] }));
+    expect(await tab.next()).toEqual({ t: "opRet", id: 1, ok: true, value: [{ name: "snake" }] });
+    tab.socket.send(encodeFrame({ t: "op", id: 2, op: "rm -rf", args: [] }));
+    expect(await tab.next()).toEqual({ t: "opRet", id: 2, ok: false, error: "Unknown operation" });
+    tab.socket.close();
+  });
+});
