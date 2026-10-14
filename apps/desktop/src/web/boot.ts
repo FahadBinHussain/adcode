@@ -12,7 +12,7 @@ import { CHANNELS, type PreviewStatus } from "../shared/api.ts";
 import { createPreviewResolver, primePreviewCookie, rewriteStatus } from "./previewUrl.ts";
 import { DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
 import { createAskHandler } from "./asks.ts";
-import { gate, hideGate, showWaking } from "./gate.ts";
+import { gate, showWaking } from "./gate.ts";
 import { connectGitHub, needsGitHub } from "./githubConnect.ts";
 import { importFromGitHub, uploadDialog } from "./projectActions.ts";
 import { pickProjectFolder, type ProjectSummary } from "./projectPicker.ts";
@@ -155,6 +155,10 @@ async function boot(): Promise<void> {
   }
   socket.subscribe(TOKEN_NEEDED_CHANNEL, () => void sendToken(true));
 
+  // Before waiting for the sandbox: if the cloud refuses (no time left, the month is full, signed
+  // out), the sandbox never says hello, and only the status bar can tell the person why.
+  const bar = mountStatusBar(socket, session);
+
   await socket.ready();
 
   socket.onAsk(createAskHandler({
@@ -182,7 +186,6 @@ async function boot(): Promise<void> {
   Object.defineProperty(window, "adcode", { value: createWebApi(socket, localOverrides(socket, session.signOut)), configurable: false, writable: false });
   reportFocus(socket);
   reportInput(socket);
-  const bar = mountStatusBar(socket, session);
   document.addEventListener(OPEN_CLOUD_WORKSPACE_EVENT, () => openCloudPanel({
     socket,
     status: bar.status,
@@ -198,7 +201,7 @@ async function boot(): Promise<void> {
   }
 
   await import("../renderer/main.ts");
-  hideGate();
+  bar.rendererLoaded();
 }
 
 void boot().catch((error: unknown) => {

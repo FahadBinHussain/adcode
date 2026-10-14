@@ -36,7 +36,13 @@ function toast(text: string, tone: "info" | "warn" = "info"): void {
   setTimeout(() => item.remove(), 6_600);
 }
 
-export function mountStatusBar(socket: HostSocket, session: WebSession): { status: () => CloudStatus | null } {
+export function mountStatusBar(socket: HostSocket, session: WebSession): { status: () => CloudStatus | null; rendererLoaded: () => void } {
+  // Mounted before the sandbox answers, so a refusal (no time left, signed out) is shown at once;
+  // the gate is only lifted once the renderer is there to show instead.
+  let loaded = false;
+  const lift = (): void => {
+    if (loaded) hideGate();
+  };
   const bar = document.createElement("div");
   bar.className = "web-connection";
   bar.setAttribute("role", "status");
@@ -126,7 +132,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
       ]);
     }
     if (state === "paused") showPause();
-    if (state === "open" && (last === null || last.state === "ready")) hideGate();
+    if (state === "open" && (last === null || last.state === "ready")) lift();
     renderChip();
   });
 
@@ -141,10 +147,10 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
         showWaking("Waiting for a free sandbox…", "Everyone's building right now. You're next - this page keeps trying.");
         break;
       case "ready":
-        hideGate();
+        lift();
         break;
       case "restarted":
-        hideGate();
+        lift();
         toast("Your workspace restarted. Edits from the last few minutes may be missing.", "warn");
         break;
       case "sleeping":
@@ -157,5 +163,11 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
   });
 
   setInterval(renderChip, TICK_MS);
-  return { status: () => last };
+  return {
+    status: () => last,
+    rendererLoaded: () => {
+      loaded = true;
+      if (socket.state() === "open" && (last === null || last.state === "ready" || last.state === "restarted")) hideGate();
+    },
+  };
 }

@@ -178,10 +178,51 @@ try {
   await rm(home, { recursive: true, force: true }).catch(() => undefined);
 }
 
+/*
+ * When the cloud refuses a tab - here, today's time is spent - the sandbox never says hello.
+ * The page must still say why, not sit on "Waking your workspace…" for ever.
+ */
+if (checks.threw === undefined) {
+  const { WebSocketServer } = require("ws");
+  const refuser = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  refuser.on("connection", (socket) => {
+    socket.send(JSON.stringify({ t: "cloud", status: { state: "spent", allowanceMs: 3_600_000, usedMs: 3_600_000, resetsAt: Date.now() + 3_600_000 } }));
+    socket.close(4429, "spent");
+  });
+  await new Promise((resolve) => refuser.once("listening", resolve));
+  const refusedPort = String(Number(WEB_PORT) + 1);
+  const page = spawn(process.execPath, [vite, "--config", "apps/desktop/vite.web.config.ts", "--port", refusedPort, "--strictPort"], {
+    env: { ...process.env, ADCODE_HOST_PORT: String(refuser.address().port) },
+    stdio: "ignore",
+  });
+  const second = await launchBrowser({ port: Number(process.env["ADCODE_SMOKE_PORT"] ?? 9473) + 1 });
+  try {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${refusedPort}/`)).ok) break;
+      } catch {
+        // starting
+      }
+      await sleep(500);
+    }
+    await second.goto(`http://localhost:${refusedPort}/`);
+    await second.waitFor("document.querySelector('.web-gate-card')", { timeoutMs: 60_000 });
+    await second.evaluate(`(() => { [...document.querySelectorAll('button')].find((b) => b.textContent.includes('dev mode'))?.click(); return true; })()`);
+    checks.refusalExplained = await second.waitFor("document.querySelector('#web-gate')?.textContent.includes(\"That's today's cloud time\")", { timeoutMs: 30_000 });
+    if (SHOTS !== null) await second.screenshot(join(SHOTS, "web-refused.png"));
+  } catch (error) {
+    checks.refusalExplained = `THREW: ${error}`;
+  } finally {
+    await second.close();
+    page.kill();
+    refuser.close();
+  }
+}
+
 console.log(JSON.stringify(checks, null, 2));
 const passed = checks.threw === undefined && checks.gateShown && checks.gateDevMode && checks.vibeVisible && checks.onboardingAsks && checks.modelReady && checks.sidebarShowsProject &&
   checks.chatReply && checks.fileWritten && checks.previewServes && checks.changesShowsFile && checks.commitWorks &&
-  checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
+  checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.refusalExplained === true && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");
   console.log(stackLog.slice(-4000));
