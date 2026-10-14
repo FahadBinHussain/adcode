@@ -125,6 +125,16 @@ describe("provider report and feedback endpoints",() => {
     expect(await send("reviewer")).toMatchObject({ country:"IN",aiPersona:"reviewer",useCase:"code-review",platform:"win32" });
     const arbitrary = await send("Secret custom agent name"); expect(arbitrary).toMatchObject({ country:"IN",aiPersona:"unknown",useCase:"agent-workflow" }); expect(JSON.stringify(arbitrary)).not.toContain("Secret custom");
   });
+  it("counts the web version as its own platform, apart from the desktop operating systems",async () => {
+    const { store } = await setup();
+    const handle = createFetchHandler({ store,verifier,clock:{ now:() => from+3600000 },tagflow:{ apiKey:"test-key",country:() => "IN",fetchImpl:async () => new Response(JSON.stringify({ choices:[{ message:{ content:"OK" },finish_reason:"stop" }],usage:{ prompt_tokens:10,completion_tokens:2 } })) } });
+    const send = async (platform:string) => {
+      const result = await handle(new Request("https://adcode.test/v1/ai/tagflow/chat/completions",{ method:"POST",headers:{ authorization:"Bearer user","content-type":"application/json","x-adcode-ai-source":"agent","x-adcode-platform":platform },body:JSON.stringify({ model:"coder",messages:[{ role:"user",content:"hi" }],stream:false,max_tokens:20 }) }));
+      await result.text(); return store.getModelRequest(result.headers.get("x-adcode-request-id")!);
+    };
+    expect(await send("web")).toMatchObject({ platform:"web" });
+    expect(await send("android")).toMatchObject({ platform:"unknown" });
+  });
   it("separates upstream rate limits and quota rejection from successful usage",async () => {
     const { store,call,chat } = await setup(async () => new Response("test-key raw private error",{ status:429 }));
     const response = await chat(); expect(response.status).toBe(429);

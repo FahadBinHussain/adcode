@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 /** Deviation D6: no npm workspaces on FAT32, so local packages resolve by alias. */
@@ -106,7 +107,8 @@ export default defineConfig({
       alias: [
         // Monaco vendors its own DOMPurify copy, so updating its npm dependency alone
         // does not patch the editor. Resolve that import to our audited lockfile version.
-        { find: "./dompurify/dompurify.js", replacement: resolve(import.meta.dirname, "../../node_modules/dompurify/dist/purify.es.mjs") },
+        // Resolved the way Node would, so a worktree that shares the main checkout's node_modules builds too.
+        { find: "./dompurify/dompurify.js", replacement: resolve(dirname(createRequire(import.meta.url).resolve("dompurify")), "purify.es.mjs") },
         ...Object.entries(alias).map(([find, replacement]) => ({ find, replacement })),
       ],
     },

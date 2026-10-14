@@ -312,7 +312,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         const aiPersona = audienceChoice(request.headers.get("x-adcode-ai-persona"),AI_PERSONAS);
         let country = "unknown"; try { country = audienceCountry(deps.country?.(request)); } catch { /* Geography must never fail an AI request. */ }
         metric = { id: randomUUID(), uid: auth.uid, modelId: selected.id, modelName: selected.name, provider: modelProvider(selected), upstreamModel: selected.upstreamModel ?? selected.id,
-          country, aiPersona, useCase: observedUse(sourceValue,aiPersona), platform: audienceChoice(request.headers.get("x-adcode-platform"),["win32","darwin","linux"]),
+          country, aiPersona, useCase: observedUse(sourceValue,aiPersona), platform: audienceChoice(request.headers.get("x-adcode-platform"),["win32","darwin","linux","web"]),
           startedAt: deps.clock.now(), finishedAt: null, providerStartedAt: null, outcome: "pending", errorCode: null, upstreamStatus: null, source: sourceValue,
           streamed: isRecord(raw) && raw["stream"] !== false, toolsOffered: isRecord(raw) && Array.isArray(raw["tools"]) && raw["tools"].length > 0,
           toolCalls: 0, finishReason: null, contextWindow: selected.contextWindow, requestedOutput: 0, estimatedInput: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimated: false, durationMs: null, firstTokenMs: null };

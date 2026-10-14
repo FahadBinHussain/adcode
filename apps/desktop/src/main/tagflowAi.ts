@@ -5,6 +5,7 @@ import { DiskFileStore, FetchHttpTransport, SystemClock } from "./adPorts.ts";
 import { apiBaseUrl, createBackendTokens } from "./backend.ts";
 import type { TagflowAllowanceView, TagflowFeedbackInput, TagflowFeedbackResult } from "../shared/tagflow.ts";
 import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, includedAiPersona, includedTokenError, type TagflowAudienceInput, type TagflowAudienceResult } from "../shared/tagflow.ts";
+import { reportedPlatform } from "../shared/reportedPlatform.ts";
 
 let offered: CatalogueProvider | null = null;
 let defaultModel = "";
@@ -73,7 +74,7 @@ export async function buildTagflowProvider(source = "unknown", onRequest?: (requ
       headers.set("authorization", `Bearer ${credential}`);
       headers.set("x-adcode-ai-source",source);
       headers.set("x-adcode-ai-persona",includedAiPersona(source,roleId));
-      headers.set("x-adcode-platform",process.platform);
+      headers.set("x-adcode-platform",reportedPlatform(process.env,process.platform));
       const response = await fetch(input, { ...init, headers });
       const requestId = response.headers.get("x-adcode-request-id");
       if (requestId !== null && /^[0-9a-f-]{36}$/i.test(requestId)) onRequest?.(requestId);
