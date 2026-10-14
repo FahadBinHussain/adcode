@@ -81,6 +81,20 @@ describe("dispatcher", () => {
     expect(seen).toEqual([[connection.id, "first-build"]]);
   });
 
+  it("counts calls still running, by channel", async () => {
+    const local = new Dispatcher();
+    let finish: () => void = () => undefined;
+    local.handle(CHANNELS.aiSend, () => new Promise<void>((resolve) => { finish = resolve; }));
+    local.handle(CHANNELS.appInfo, () => "quick");
+    const turn = local.call(fakeConnection(), { t: "call", id: 5, ch: CHANNELS.aiSend, args: ["build"] });
+    await local.call(fakeConnection(), { t: "call", id: 6, ch: CHANNELS.appInfo, args: [] });
+    expect(local.inFlight(new Set([CHANNELS.aiSend]))).toBe(1);
+    expect(local.inFlight(new Set([CHANNELS.appInfo]))).toBe(0);
+    finish();
+    await turn;
+    expect(local.inFlight(new Set([CHANNELS.aiSend]))).toBe(0);
+  });
+
   it("drops sends on unknown channels without throwing", () => {
     const local = new Dispatcher();
     expect(() => local.deliver(fakeConnection(), { t: "send", ch: "nope", args: [] })).not.toThrow();

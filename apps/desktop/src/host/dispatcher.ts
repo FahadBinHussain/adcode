@@ -150,16 +150,30 @@ export class Dispatcher {
     return this;
   }
 
+  /** How many calls on these channels are still running - an agent turn awaits its whole run. */
+  inFlight(channels: ReadonlySet<string>): number {
+    let count = 0;
+    for (const [channel, running] of this.running) if (channels.has(channel)) count += running;
+    return count;
+  }
+
+  private readonly running = new Map<string, number>();
+
   /** Runs the handler for one `call` frame and returns the `ret` frame that answers it. */
   async call(connection: HostConnection, frame: Extract<ClientFrame, { t: "call" }>): Promise<ServerFrame> {
     if (!KNOWN_CHANNELS.has(frame.ch)) return { t: "ret", id: frame.id, ok: false, error: "Unknown channel" };
     const handler = this.handlers.get(frame.ch);
     if (handler === undefined) return { t: "ret", id: frame.id, ok: false, error: `No handler registered for '${frame.ch}'` };
+    this.running.set(frame.ch, (this.running.get(frame.ch) ?? 0) + 1);
     try {
       const value = await handler(eventFor(connection), ...frame.args);
       return { t: "ret", id: frame.id, ok: true, value };
     } catch (error) {
       return { t: "ret", id: frame.id, ok: false, error: messageOf(error) };
+    } finally {
+      const left = (this.running.get(frame.ch) ?? 1) - 1;
+      if (left <= 0) this.running.delete(frame.ch);
+      else this.running.set(frame.ch, left);
     }
   }
 

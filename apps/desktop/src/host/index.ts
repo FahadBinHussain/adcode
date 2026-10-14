@@ -1,0 +1,133 @@
+/**
+ * adcode-host: ADCode's main process, without Electron, for the web version.
+ *
+ * This mirrors `main/index.ts`'s start-up, minus everything that is about windows on a desktop:
+ * no `BrowserWindow`, no `app://` protocol, no menu, no auto-update, no single-instance lock.
+ * What is left registers the same IPC handlers the desktop does, and the socket server routes
+ * each browser tab's calls to them. Module order matters for the same reason it does there:
+ * `cloudEnv` sets the paths before anything reads them, and `debugLog` wraps `ipcMain.handle`
+ * before any handler is registered.
+ */
+import "./cloudEnv.ts";
+import "../main/profileBootstrap.ts";
+import { describeDebugContext, registerDebugLogIpc } from "../main/debugLog.ts";
+import { registerIpc } from "../main/ipc.ts";
+import { closeAssistantControls } from "../main/assistantControls.ts";
+import { registerSupportIpc } from "../main/supportIpc.ts";
+import { registerActivityIpc } from "../main/activity.ts";
+import { registerOnboardingIpc } from "../main/onboarding.ts";
+import { registerMilestoneIpc } from "../main/milestones.ts";
+import { registerReferralIpc } from "../main/referrals.ts";
+import { registerRatingIpc } from "../main/ratingAsk.ts";
+import { registerPinPromptIpc } from "../main/pinPrompt.ts";
+import { registerUpdateIpc } from "../main/autoUpdate.ts";
+import { startNoticePolling } from "../main/notices.ts";
+import { startReleasePolling } from "../main/releases.ts";
+import { registerLicenceIpc } from "../main/licences.ts";
+import { refreshMcpServer } from "../main/memory.ts";
+import { registerAccountIpc } from "../main/accountIpc.ts";
+import { loadKeybindings } from "../main/keybindings.ts";
+import { disposeAllTerminals } from "../main/terminal.ts";
+import { shutdownAllServers } from "../main/lsp.ts";
+import { stopPreview } from "../main/preview.ts";
+import { aiStopToolProcesses, aiTeamList, refreshModelLists } from "../main/ai.ts";
+import { flushModelOutcomes } from "../main/modelOutcomes.ts";
+import { flushAiUsage } from "../main/aiUsage.ts";
+import { getAdRuntime } from "../main/adRuntime.ts";
+import { loadSettings } from "../main/settings.ts";
+import { currentWorkspace } from "../main/workspace.ts";
+import { useBackendAccount } from "../main/backend.ts";
+import { CHANNELS } from "../shared/api.ts";
+import { BrowserWindow, app, dispatcher } from "./electronShim.ts";
+import { createBrowserAccount } from "./browserAccount.ts";
+import { startHostServer } from "./server.ts";
+
+/** Calls that run for as long as the work they start: while one is open, the sandbox is busy. */
+const LONG_CHANNELS: ReadonlySet<string> = new Set([
+  CHANNELS.aiSend,
+  CHANNELS.aiCompact,
+  CHANNELS.aiInlineEdit,
+  CHANNELS.aiWorkspaceApply,
+  CHANNELS.aiTeamStart,
+  CHANNELS.gitClone,
+  CHANNELS.gitPush,
+  CHANNELS.gitPull,
+  CHANNELS.gitFetch,
+  CHANNELS.workspaceCreateProject,
+]);
+
+/** The channel a tab listens on for "send a fresh sign-in token". */
+export const TOKEN_NEEDED_CHANNEL = "cloud:token-needed";
+
+/*
+ * Whoever is signed in, in the browser, owns this sandbox's earnings and AI allowance. The
+ * desktop's anonymous account is never created here.
+ */
+const account = createBrowserAccount({
+  now: () => Date.now(),
+  requestToken: () => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send(TOKEN_NEEDED_CHANNEL);
+  },
+  waitMs: 15_000,
+});
+useBackendAccount(account);
+
+async function busy(): Promise<boolean> {
+  if (dispatcher.inFlight(LONG_CHANNELS) > 0) return true;
+  const teams = await aiTeamList();
+  return teams.some((team) => team.state === "preparing" || team.state === "running" || team.state === "merging");
+}
+
+registerIpc(() => undefined);
+registerSupportIpc();
+registerDebugLogIpc();
+describeDebugContext({ projectRoot: () => currentWorkspace()?.root ?? null });
+registerActivityIpc();
+registerOnboardingIpc();
+registerMilestoneIpc();
+registerReferralIpc();
+registerRatingIpc();
+registerPinPromptIpc();
+registerUpdateIpc();
+registerAccountIpc();
+// The desktop listens for this to deliver launch intents; a browser tab has none, so it is only acknowledged.
+dispatcher.on(CHANNELS.windowRendererReady, () => undefined);
+
+startNoticePolling();
+startReleasePolling();
+registerLicenceIpc();
+void refreshMcpServer().catch(() => undefined);
+void refreshModelLists().catch(() => undefined);
+void loadKeybindings().catch(() => undefined);
+void loadSettings()
+  .then(() => getAdRuntime().start())
+  .catch(() => undefined);
+
+const port = Number(process.env["ADCODE_HOST_PORT"] ?? "7300");
+const secret = process.env["ADCODE_HOST_SECRET"] ?? null;
+
+const server = await startHostServer({
+  port,
+  host: process.env["ADCODE_HOST_BIND"] ?? (secret === null ? "127.0.0.1" : "0.0.0.0"),
+  secret,
+  hello: () => ({ version: app.getVersion(), surface: "web", projectsHome: process.env["ADCODE_PROJECTS_HOME"] ?? "" }),
+  busy,
+  onAuth: (token) => account.accept(token),
+  onFocusChange: (anyFocused) => getAdRuntime().setWindowFocused(anyFocused),
+});
+
+console.log(`adcode-host ${app.getVersion()} listening on ${server.port}`);
+
+let stopping = false;
+async function shutdown(): Promise<void> {
+  if (stopping) return;
+  stopping = true;
+  await Promise.allSettled([flushModelOutcomes(), flushAiUsage(), closeAssistantControls(), shutdownAllServers(), stopPreview()]);
+  disposeAllTerminals();
+  aiStopToolProcesses();
+  await server.close();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown());
+process.on("SIGINT", () => void shutdown());

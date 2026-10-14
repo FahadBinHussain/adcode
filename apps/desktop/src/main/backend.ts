@@ -98,6 +98,17 @@ export function createBackendTokens(deps: {
 }
 
 /**
+ * Use this account instead of the anonymous one this machine would make.
+ *
+ * Only adcode-host calls it: on the web the person is already signed in, in the browser, and
+ * their earnings belong on that account (`src/host/browserAccount.ts`). The desktop never calls
+ * it and keeps its own identity exactly as before.
+ */
+export function useBackendAccount(account: FirebaseAuth): void {
+  shared = account;
+}
+
+/**
  * The account itself, for linking and profile reads.
  *
  * Null against a dev server with no auth emulator, or with no Firebase key: there is no

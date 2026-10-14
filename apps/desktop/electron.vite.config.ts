@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 /** Deviation D6: no npm workspaces on FAT32, so local packages resolve by alias. */
-const alias = {
+export const alias = {
   "@adcode/ads": resolve(import.meta.dirname, "../../packages/ads/src/index.ts"),
   "@adcode/memory": resolve(import.meta.dirname, "../../packages/memory/src/index.ts"),
   "@adcode/settings": resolve(import.meta.dirname, "../../packages/settings/src/index.ts"),
