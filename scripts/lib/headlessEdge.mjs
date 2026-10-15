@@ -101,7 +101,9 @@ export async function launchBrowser({ port = 9473, width = 1280, height = 820, a
       const started = Date.now();
       while (Date.now() - started < timeoutMs) {
         try {
-          if (await this.evaluate(`Boolean(${expression})`, { timeoutMs: 5_000 })) return true;
+          // Awaited first: `Boolean(promise)` is true at once, so a check written as a promise
+          // (`window.adcode.ai.runs().then(...)`) used to pass without ever being looked at.
+          if (await this.evaluate(`Promise.resolve(${expression}).then(Boolean)`, { timeoutMs: 5_000 })) return true;
         } catch {
           // page not ready
         }

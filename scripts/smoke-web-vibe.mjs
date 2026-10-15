@@ -16,7 +16,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -245,6 +245,9 @@ try {
 
   /* ── Chats that keep working ──────────────────────────────────────────── */
 
+  /** Where the run is, as it goes: a smoke that hangs says where. */
+  const phase = async (name) => console.log(`[smoke ${new Date().toISOString().slice(11, 19)}] ${name} - runs: ${JSON.stringify(await browser.evaluate("window.adcode.ai.runs().then((runs) => runs.map((run) => run.title + (run.shown ? ' (shown)' : '')))").catch(() => "?"))}`);
+
   const newChat = () => browser.evaluate(`(() => { document.querySelector('[aria-label="Start a new conversation"]').click(); return true; })()`);
   const sendInChat = (text) => browser.evaluate(`(() => {
     const input = document.querySelector('.chat-card .chat-input');
@@ -254,6 +257,24 @@ try {
     return true;
   })()`);
   const bubbleSays = (words) => `[...document.querySelectorAll('.chat-bubble-assistant')].some((bubble) => bubble.textContent.includes(${JSON.stringify(words)}))`;
+  // A chat's mark in the list, as drawn: the right kind, a real size, and a colour that shows.
+  // (A spinner once passed every check while drawn in a colour that did not exist there.)
+  const markDrawn = (id, status) => `(() => {
+    const icon = document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(id)}] .chat-history-status');
+    if (icon === null || icon.dataset.status !== ${JSON.stringify(status)}) return false;
+    const mark = getComputedStyle(icon, '::before');
+    const ink = ${JSON.stringify(status)} === 'working' ? mark.borderTopColor : mark.backgroundColor;
+    const box = icon.getBoundingClientRect();
+    return box.width > 0 && getComputedStyle(icon).display !== 'none' && parseFloat(mark.width) >= 6 && ink !== 'rgba(0, 0, 0, 0)' && ink !== 'transparent';
+  })()`;
+  /** The conversation list, at twice its size, to see the marks themselves. */
+  const listShot = async (name) => {
+    if (SHOTS === null) return;
+    const box = await browser.evaluate("(() => { const list = document.querySelector('.vibe-history-host') ?? document.querySelector('.chat-history'); const r = list?.getBoundingClientRect(); return r ? { x: r.x, y: r.y, width: Math.max(1, r.width), height: Math.max(1, Math.min(r.height, 400)) } : null; })()");
+    if (box === null) return;
+    const { data } = await browser.cdp("Page.captureScreenshot", { format: "png", clip: { ...box, scale: 2 } });
+    await writeFile(join(SHOTS, `web-${name}.png`), Buffer.from(data, "base64"));
+  };
 
   // One chat working slowly; a second sent while it works, which finishes first.
   await newChat();
@@ -267,13 +288,15 @@ try {
   checks.twoChatsAtOnce = await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 2)", { timeoutMs: 10_000 });
   checks.fastChatAnswered = await browser.waitFor(bubbleSays("Fast chat done."), { timeoutMs: 20_000 });
   checks.slowChatStillWorking = await browser.evaluate(`window.adcode.ai.runs().then((runs) => runs.some((run) => run.sessionId === ${JSON.stringify(slowId)}))`);
-  checks.slowChatMarkedWorking = await browser.waitFor(`document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(slowId)}] .chat-history-status')?.dataset.status === 'working'`, { timeoutMs: 5_000 });
+  checks.slowChatMarkedWorking = await browser.waitFor(markDrawn(slowId, "working"), { timeoutMs: 5_000 });
   await shot("chats-at-once");
+  await listShot("list-working");
   // Opening the working chat shows its turn so far, then its answer when it comes.
   await browser.evaluate(`(() => { document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(slowId)}] .chat-history-open').click(); return true; })()`);
   checks.workingChatReplays = await browser.waitFor(`document.querySelector('.chat-turn[data-state="running"]') !== null || ${bubbleSays("Slow chat done.")}`, { timeoutMs: 10_000 });
   checks.slowChatAnswered = await browser.waitFor(bubbleSays("Slow chat done."), { timeoutMs: 20_000 });
   checks.fastAnswerNotInSlowChat = !(await browser.evaluate(bubbleSays("Fast chat done.")));
+  await phase("failing chat");
   // A chat that fails while another is on screen is marked as needing the person, not as done.
   await newChat();
   await sleep(300);
@@ -282,8 +305,21 @@ try {
   const failId = await browser.evaluate("window.adcode.ai.runs().then((runs) => runs[0]?.sessionId ?? null)");
   await newChat();
   await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 0)", { timeoutMs: 30_000 });
-  checks.failedChatMarked = await browser.waitFor(`document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(failId)}] .chat-history-status')?.dataset.status === 'attention'`, { timeoutMs: 5_000 });
+  checks.failedChatMarked = await browser.waitFor(markDrawn(failId, "attention"), { timeoutMs: 5_000 });
+  await phase("left chat");
+  // A chat left while it works, that finishes elsewhere: a dot, until it is opened.
+  await sendInChat(`${SLOW_PROMPT}: and another one`);
+  await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 1)", { timeoutMs: 15_000 });
+  const leftId = await browser.evaluate("window.adcode.ai.runs().then((runs) => runs[0]?.sessionId ?? null)");
+  await newChat();
+  checks.leftChatSpinsThenDots = await browser.waitFor(markDrawn(leftId, "working"), { timeoutMs: 5_000 });
+  await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 0)", { timeoutMs: 30_000 });
+  checks.leftChatSpinsThenDots = checks.leftChatSpinsThenDots && await browser.waitFor(markDrawn(leftId, "finished"), { timeoutMs: 5_000 });
+  await listShot("list-finished");
+  await browser.evaluate(`(() => { document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(leftId)}] .chat-history-open').click(); return true; })()`);
+  checks.dotClearsWhenOpened = await browser.waitFor(`document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(leftId)}] .chat-history-status')?.dataset.status !== 'finished'`, { timeoutMs: 5_000 });
 
+  await phase("long job");
   // A long job past its step limit, with the page frozen solid: only the main process can
   // carry it on. The page comes back to the finished answer.
   await newChat();
@@ -297,6 +333,7 @@ try {
   await sleep(1_000);
   await browser.cdp("Page.setWebLifecycleState", { state: "active" });
   checks.keptGoingWhilePageFrozen = keptGoingAt > frozenAt;
+  await phase("coming back");
   // Coming back. The dev server reloads a page whose live-reload socket dropped while it was
   // frozen - which is the tab coming back after being away, so the job must be there either way.
   await sleep(1_500);
@@ -310,6 +347,7 @@ try {
   checks.noChatLeftWorking = await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 0)", { timeoutMs: 10_000 });
   await shot("kept-going");
 
+  await phase("phone");
   await browser.viewport(390, 844, true);
   await sleep(1200);
   await shot("phone");
@@ -384,7 +422,7 @@ const passed = checks.threw === undefined && checks.gateShown && checks.gateDevM
   checks.timeline?.heading === "Worked" && checks.timeline.folded && checks.timeline.answerOutsideFold && checks.timeline.textBetweenStepsInFold &&
   checks.timeline.thought === "Planning the bakery page" && checks.timeline.mascotsLeft === 0 && checks.unfolds &&
   checks.twoChatsAtOnce && checks.fastChatAnswered && checks.slowChatStillWorking && checks.slowChatMarkedWorking && checks.workingChatReplays &&
-  checks.slowChatAnswered && checks.fastAnswerNotInSlowChat && checks.failedChatMarked && checks.keptGoingWhilePageFrozen && checks.longJobFinished && checks.noChatLeftWorking &&
+  checks.slowChatAnswered && checks.fastAnswerNotInSlowChat && checks.failedChatMarked && checks.leftChatSpinsThenDots && checks.dotClearsWhenOpened && checks.keptGoingWhilePageFrozen && checks.longJobFinished && checks.noChatLeftWorking &&
   checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.refusalExplained === true && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");
