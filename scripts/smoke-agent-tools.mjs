@@ -238,7 +238,7 @@ try {
     planCardDrawn: await evaluate("(document.querySelector('.chat-plan')?.getBoundingClientRect().height ?? 0) > 50"),
     mostMascotsWhileWorking: mostWhileLooking,
     mascotsAfter: await mascots(),
-    settledMarks: await evaluate("document.querySelectorAll('.chat-transcript .chat-activity-settled:not([hidden])').length"),
+    finishedTurns: await evaluate("document.querySelectorAll('.chat-transcript .chat-turn[data-state=done]').length"),
   };
   await evaluate("[...document.querySelectorAll('.chat-live-preview button')].find((button) => button.textContent.trim() === 'Close preview')?.click()");
   await evaluate("window.adcode.preview.stop()");
@@ -288,7 +288,7 @@ try {
   for (const [name, value] of Object.entries({ ...look, ...Object.fromEntries(Object.entries(files).map(([key, item]) => [`files.${key}`, item])), ...Object.fromEntries(Object.entries(quality).map(([key, item]) => [`quality.${key}`, item])) })) {
     if (name === "mostMascotsWhileWorking" || name === "files.mostMascotsWhileWorking") assert.ok(value <= 1, `${name}: at most one mascot while working, saw ${value}`);
     else if (name === "mascotsAfter") assert.equal(value, 0, "No mascot is left once the turn is over");
-    else if (name === "settledMarks") assert.ok(value >= 1, "Finished blocks show their mark");
+    else if (name === "finishedTurns") assert.ok(value >= 1, "A finished turn keeps its folded timeline");
     else if (name === "planCards") assert.equal(value, 1, "One plan card per turn");
     else if (name === "planSummary") assert.equal(value, "All 2 steps done");
     else if (name === "agentViewVerdict") assert.match(value, /problems? found/);

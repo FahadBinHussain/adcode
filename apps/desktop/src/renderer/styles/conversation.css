@@ -157,17 +157,17 @@
   flex-shrink: 0;
 }
 
-/* The turn's working cards (activity, plan, live preview, Undo) brought their own outer
+/* The turn's working cards (timeline, plan, live preview, Undo) brought their own outer
    margins on top of the transcript's gap, so a plan sat 35px under "Worked for" and the
    preview 50px under the plan. The gap is the only spacing between blocks. */
-:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-transcript > :is(.chat-activity, .chat-plan, .chat-live-preview, .chat-checkpoint, .chat-failure) {
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-transcript > :is(.chat-turn, .chat-plan, .chat-live-preview, .chat-checkpoint, .chat-failure) {
   margin-block: 0;
 }
 
 /* The hover row already sits between this message and the next, so the next one needs
    less of the turn gap: 8px, the row, 16px - not 8px, the row, and a full 24px. The
    class list in `:is()` is there for weight, to outrank the reset just above. */
-:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-transcript > .chat-message-actions + :is(.chat-bubble, .chat-activity, .chat-plan, .chat-live-preview, .chat-checkpoint, .chat-failure, *) {
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-transcript > .chat-message-actions + :is(.chat-bubble, .chat-turn, .chat-plan, .chat-live-preview, .chat-checkpoint, .chat-failure, *) {
   margin-top: calc(16px - var(--chat-turn-gap));
 }
 
@@ -469,3 +469,367 @@
     --chat-turn-gap: 20px;
   }
 }
+
+/* ── The turn's timeline ───────────────────────────────────────────────── */
+
+/*
+ * One timeline per assistant turn (`ai/chatTimeline.ts`): the heading ("Working for 54s"),
+ * then each step on a guide line - thinking, a run of one tool, the text written between
+ * them. The line runs through the centre of the 16px step icons, so it sits at x = 8.
+ */
+
+.chat-card .chat-turn {
+  align-self: stretch;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+}
+
+.chat-card .chat-turn-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-sm);
+}
+
+.chat-card .chat-turn-face {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.chat-card .chat-turn-face:empty { display: none; }
+.chat-card .chat-turn-face .chat-mascot { width: 24px; height: 24px; }
+.chat-card .chat-turn-face .chat-mascot-svg { width: 24px; height: 24px; }
+
+.chat-card .chat-turn-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: 400 14px/20px var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.chat-card .chat-turn-face:not(:empty) + .chat-turn-toggle { margin-left: 0; }
+.chat-card .chat-turn-toggle:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.chat-card .chat-turn-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.chat-card .chat-turn-lead { flex: none; color: var(--text-primary); font-weight: 600; }
+.chat-card .chat-turn[data-outcome="failed"] .chat-turn-lead { color: var(--danger); }
+.chat-card .chat-turn-rest { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.chat-card .chat-turn-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-card .chat-turn-status[hidden] { display: none; }
+.chat-card .chat-turn-status::before { content: "· "; }
+
+.chat-card .chat-turn-chevron {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  transition: transform 220ms var(--ease-sheet);
+}
+
+.chat-card .chat-turn[data-collapsed="true"] .chat-turn-chevron { transform: rotate(-90deg); }
+
+.chat-card :is(.chat-turn-chevron, .chat-step-icon, .chat-step-chevron, .chat-step-call-mark) svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The words that are live shimmer: the turn's "Working", a thought still arriving. */
+.chat-card .chat-turn[data-state="running"] .chat-turn-lead,
+.chat-card .chat-step.is-thinking[data-state="running"] .chat-step-label {
+  background: linear-gradient(90deg, var(--text-secondary) 0%, var(--text-secondary) 35%, var(--text-primary) 50%, var(--text-secondary) 65%, var(--text-secondary) 100%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: chat-text-shimmer 2.4s linear infinite;
+}
+
+@keyframes chat-text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+
+/* Folding: grid rows from 1fr to 0fr, so the height animates without being measured. */
+.chat-card .chat-turn-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 300ms var(--ease-sheet), opacity 220ms ease;
+}
+
+.chat-card .chat-turn[data-collapsed="true"] .chat-turn-collapse {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.chat-card .chat-turn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 4px;
+  transition: visibility 0s;
+}
+
+/* Folded steps are out of the tab order once the fold has finished moving. */
+.chat-card .chat-turn[data-collapsed="true"] .chat-turn-body {
+  visibility: hidden;
+  transition: visibility 0s linear 300ms;
+}
+
+/* Text written between steps reads as prose, a little apart from the rows around it. */
+.chat-card .chat-turn-body > .chat-bubble {
+  margin: 8px 0;
+  padding: 0;
+}
+
+/* ── Steps ── */
+
+.chat-card .chat-step {
+  position: relative;
+  min-width: 0;
+  animation: chat-step-in 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes chat-step-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The guide line: from under one step's icon down to the next step's. Text breaks it. */
+.chat-card .chat-step:has(+ .chat-step)::after {
+  content: "";
+  position: absolute;
+  top: 28px;
+  bottom: -6px;
+  left: 7.5px;
+  width: 1px;
+  background: var(--border-hairline);
+  pointer-events: none;
+}
+
+.chat-card .chat-step-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 4px 6px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 400 13px/20px var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-card .chat-step-row:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.chat-card .chat-step-row:hover .chat-step-label { color: var(--text-primary); }
+.chat-card .chat-step-row:hover .chat-step-chevron { opacity: 1; }
+
+.chat-card .chat-step-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+}
+
+.chat-card .chat-step[data-state="error"] .chat-step-icon { color: var(--danger); }
+
+.chat-card .chat-step-label {
+  flex: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 120ms ease;
+}
+
+.chat-card .chat-step-count { flex: none; color: var(--text-secondary); white-space: nowrap; }
+.chat-card .chat-step-count[hidden] { display: none; }
+
+.chat-card .chat-step-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-card .chat-step-chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+  transition: transform 220ms var(--ease-sheet), opacity 120ms ease;
+}
+
+.chat-card .chat-step[data-open="true"] .chat-step-chevron { transform: rotate(90deg); }
+
+.chat-card .chat-step-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms var(--ease-sheet);
+}
+
+.chat-card .chat-step[data-open="true"] .chat-step-collapse { grid-template-rows: 1fr; }
+
+.chat-card .chat-step-detail {
+  min-height: 0;
+  margin-left: 26px;
+  padding: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: padding 260ms var(--ease-sheet), visibility 0s linear 260ms;
+}
+
+.chat-card .chat-step[data-open="true"] .chat-step-detail {
+  padding: 2px 0 10px;
+  visibility: visible;
+  transition: padding 260ms var(--ease-sheet), visibility 0s;
+}
+
+/* A thought, opened: the model's own words, quieter than the reply. */
+.chat-card .chat-step-detail.is-thought {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chat-card .chat-step-detail.is-thought.is-rendered { white-space: normal; }
+.chat-card .chat-step-detail.is-thought :is(p, ul, ol) { margin: 0 0 6px; }
+.chat-card .chat-step-detail.is-thought :is(strong, b) { color: var(--text-secondary); font-weight: 600; }
+
+.chat-card .chat-step-calls {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-card .chat-step-call {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 24px;
+  color: var(--text-tertiary);
+  font: 400 12px/18px var(--font-mono);
+}
+
+.chat-card .chat-step-call-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--chat-success, var(--success));
+}
+
+.chat-card .chat-step-call[data-state="error"] .chat-step-call-mark { color: var(--danger); }
+
+.chat-card .chat-step-call-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── The pixel spinner ── */
+
+/*
+ * A 3x3 mosaic whose cells light in a scattered order: "still working", without a face.
+ * Square cells on a fixed gap, so it stays crisp at any zoom.
+ */
+.chat-pixel-spinner {
+  --pixel: 3px;
+  display: inline-grid;
+  grid-template-columns: repeat(3, var(--pixel));
+  grid-auto-rows: var(--pixel);
+  gap: 1px;
+  flex: none;
+  color: var(--chat-success, var(--success));
+}
+
+.chat-pixel-spinner.is-turn {
+  --pixel: 6px;
+  gap: 2px;
+  color: var(--text-tertiary);
+}
+
+.chat-pixel-spinner i {
+  border-radius: 0.5px;
+  background: currentColor;
+  opacity: 0.18;
+  animation: chat-pixel 1.6s steps(1, end) infinite;
+}
+
+.chat-pixel-spinner i:nth-child(1) { animation-delay: -0.2s; }
+.chat-pixel-spinner i:nth-child(2) { animation-delay: -1.0s; }
+.chat-pixel-spinner i:nth-child(3) { animation-delay: -0.6s; }
+.chat-pixel-spinner i:nth-child(4) { animation-delay: -1.4s; }
+.chat-pixel-spinner i:nth-child(5) { animation-delay: -0.4s; }
+.chat-pixel-spinner i:nth-child(6) { animation-delay: -1.2s; }
+.chat-pixel-spinner i:nth-child(7) { animation-delay: -0.8s; }
+.chat-pixel-spinner i:nth-child(8) { animation-delay: 0s; }
+.chat-pixel-spinner i:nth-child(9) { animation-delay: -1.5s; }
+
+@keyframes chat-pixel {
+  0% { opacity: 1; }
+  25% { opacity: 0.55; }
+  50% { opacity: 0.18; }
+  100% { opacity: 0.18; }
+}
+
+/* ── Stillness ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-card :is(.chat-turn-collapse, .chat-turn-body, .chat-step-collapse, .chat-step-detail, .chat-turn-chevron, .chat-step-chevron) { transition: none; }
+  .chat-card .chat-step { animation: none; }
+  .chat-card .chat-turn[data-state="running"] .chat-turn-lead,
+  .chat-card .chat-step.is-thinking[data-state="running"] .chat-step-label { animation: none; background: none; color: var(--text-primary); }
+  .chat-pixel-spinner i { animation: none; opacity: 0.55; }
+}
+
+:root[data-reduced-motion="true"] .chat-turn :is(.chat-turn-collapse, .chat-turn-body, .chat-step-collapse, .chat-step-detail, .chat-turn-chevron, .chat-step-chevron) { transition: none; }
+:root[data-reduced-motion="true"] .chat-turn .chat-step { animation: none; }
+:root[data-reduced-motion="true"] .chat-turn[data-state="running"] .chat-turn-lead,
+:root[data-reduced-motion="true"] .chat-turn .chat-step.is-thinking[data-state="running"] .chat-step-label { animation: none; background: none; color: var(--text-primary); }
+:root[data-reduced-motion="true"] .chat-pixel-spinner i { animation: none; opacity: 0.55; }

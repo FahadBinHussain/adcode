@@ -807,8 +807,8 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
     steps: [
       "Open Assistant from the workbench or command palette.",
       "Ask about the code in front of you - the assistant can see the open project.",
-      "While it works, the answer builds in the order it happens, as in Claude: a block of work, the text it led to, the next block of work, more text. In a running block the blue mascot bounces as the header names the current step with elapsed time, and tool calls stream in as bordered rows. Hover the mascot and its white eyes follow you; click it for a morale-boosting quip.",
-      "As soon as the assistant writes again, the block before it collapses to Worked for Ns - select its header to expand that step's trace again.",
+      "While it works, the answer builds as a timeline in the order it happens, as in Claude: under a Working for Ns heading come Thinking rows (a one-line summary - open one to read the whole thought), the steps it takes, and the text it writes between them. A run of the same tool is one row, such as Search project · 11 calls; open it to see each call with a tick. The blue mascot sits in the heading - hover it and its white eyes follow you, click it for a morale-boosting quip - and a small pixel mosaic marks whatever is still running.",
+      "When the turn ends, the timeline folds to Worked for Ns with the answer below it - select the heading to unfold the whole process again.",
       "Scroll up mid-stream and the view stays pinned while a Jump to latest pill appears with a count of new messages - select it to return to the tail.",
       "If you stop a turn, the interrupted banner offers Edit prompt (your last message back in the composer) and Try again.",
       "If a turn fails, a card in the conversation names the problem - a rate limit, a request too large for the model, a rejected key, a broken tool call or a network problem - with Try again, Switch model, Start fresh or Report problem, and the provider’s exact message under Details. Choose another model after an out-of-credit or rejected-key card and the request carries on with it by itself - no need to ask again.",

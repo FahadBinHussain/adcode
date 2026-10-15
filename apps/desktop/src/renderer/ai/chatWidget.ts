@@ -68,14 +68,8 @@ import {
   groupChatSessions,
   renderChatMessageHtml,
 } from "./chatMarkdown.ts";
-import {
-  createActivityBlock,
-  createResultImage,
-  formatFailedLabel,
-  summarizeToolInput,
-  toolHeaderLabel,
-  type ActivityBlockHandle,
-} from "./chatActivity.ts";
+import { createResultImage, summarizeToolInput, toolHeaderLabel } from "./chatActivity.ts";
+import { createPixelSpinner, createTurnTimeline, type TurnTimeline } from "./chatTimeline.ts";
 import { createFrameTask } from "../frameTask.ts";
 import { attachChatLayout } from "./chatLayout.ts";
 import {
@@ -2350,10 +2344,9 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const workingText = document.createElement("span");
   workingText.className = "chat-working-text";
   workingText.textContent = "Thinking";
-  const workingDots = document.createElement("span");
-  workingDots.className = "chat-working-dots";
-  workingDots.setAttribute("aria-hidden", "true");
-  workingDots.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
+  // The pixel mosaic at the foot of the conversation: the assistant is still at it.
+  const workingDots = createPixelSpinner("turn");
+  workingDots.classList.add("chat-working-spinner");
   // Ticks every second, so it is kept out of the live region: a screen reader would read it.
   const workingElapsed = document.createElement("span");
   workingElapsed.className = "chat-working-elapsed";
@@ -2518,87 +2511,72 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   let waitingForIncludedLimit = false;
   let includedWaitGeneration = 0;
 
-  /* ── Agent activity: one collapsible block per assistant turn ──────────
+  /* ── The turn's timeline: what the assistant thought, did and said, in order ──
    *
    * The backend already streams everything this needs — `thinking`, `tool-call`,
-   * `tool-result`, `text` — so the block is a pure presentation mapping. No new
-   * message model, no new IPC: thinking events become muted thought rows, tool
-   * calls become tool rows (spinner → green check), and the active tool's label
-   * becomes the header label. `trace()` below stays for persisted Team /
-   * workspace traces and for errors; live turns use this block instead.
+   * `tool-result`, `text` — so the timeline is a pure presentation mapping. No new
+   * message model, no new IPC: thinking becomes thinking rows, a run of one tool becomes one
+   * grouped row, and the text written between steps stays in the timeline with them.
+   * `trace()` below stays for persisted Team / workspace traces and for errors.
+   *
+   * One timeline per turn. When the turn ends it folds to "Worked for 2m 31s" and the text
+   * after its last step - the answer - is left below it, outside the fold.
    */
-  let activeActivity: ActivityBlockHandle | null = null;
-  const activityToolRows = new Map<string, true>();
+  let timeline: TurnTimeline | null = null;
 
-  /*
-   * A turn reads in the order it happened, as in Claude: a block of work, the text it led
-   * to, the next block of work, more text. A block is one unbroken run of tool calls. Text
-   * closes it - collapsed to "Worked for Ns" - and the next tool call opens a new block
-   * below that text. (One block per turn, kept above the newest text, used to pile every
-   * step of a long turn at the top with the words stacked underneath.)
-   */
-  function ensureActivity(): ActivityBlockHandle {
-    if (activeActivity !== null) return activeActivity;
+  function ensureTimeline(): TurnTimeline {
+    if (timeline !== null) return timeline;
     // Who is replying goes above the work it did, not below it.
     ensureAuthor();
-    // The activity block names the step and keeps the time, so the "is writing" row
-    // underneath shows only Stop rather than a second, competing "Thinking" and clock.
+    // The timeline names the step and keeps the time, so the "is writing" row underneath
+    // shows only the spinner and Stop rather than a second, competing clock.
     working.dataset["activity"] = "open";
-    const block = createActivityBlock({ label: "Thinking" });
-    transcript.append(block.element);
-    activeActivity = block;
+    timeline = createTurnTimeline();
+    transcript.append(timeline.element);
     scrollToEnd();
-    return block;
+    return timeline;
   }
 
-  /** Text is starting: the work before it is done. A "Thinking" placeholder with no steps just goes. */
-  function closeActivitySegment(): void {
-    delete working.dataset["activity"];
-    if (activeActivity === null) return;
-    if (activityToolRows.size === 0) {
-      activeActivity.destroy();
-      activeActivity = null;
+  /**
+   * Where the turn's text goes. Inside the timeline once it has steps; before that, a
+   * "Working" heading over nothing but text is a placeholder, and the text replaces it.
+   */
+  function placeText(node: HTMLElement): void {
+    if (timeline === null) return;
+    if (!timeline.hasSteps()) {
+      dropTimeline();
       return;
     }
-    finishActivity();
+    timeline.appendText(node);
   }
 
-  function finishActivity(label?: string): void {
+  function finishTimeline(outcome: Parameters<TurnTimeline["finish"]>[0] = "auto"): void {
     delete working.dataset["activity"];
-    if (activeActivity === null) return;
-    // A block with no steps in it has nothing to report: "Worked for 3s" over an empty box
-    // is noise, and it used to leave a second mascot behind. A failure keeps its block.
-    if (label === undefined && activityToolRows.size === 0) {
-      activeActivity.destroy();
-      activeActivity = null;
-      return;
-    }
-    const elapsed = (Date.now() - activeActivity.startedAt) / 1000;
-    activeActivity.finalize(elapsed, label);
-    activeActivity = null;
-    activityToolRows.clear();
+    if (timeline === null) return;
+    timeline.finish(outcome);
+    timeline = null;
     scrollToEnd();
   }
 
-  /** Drop a live block without finalizing (reset / resume replace the transcript). */
+  function dropTimeline(): void {
+    delete working.dataset["activity"];
+    timeline?.destroy();
+    timeline = null;
+  }
+
+  /** Drop a live timeline without finishing it (reset / resume replace the transcript). */
   function resetActivity(): void {
     waitingForIncludedLimit = false;
     includedWaitGeneration += 1;
-    delete working.dataset["activity"];
     streamPaint.cancel();
     dirtyMessages.clear();
-    if (activeActivity !== null) {
-      activeActivity.destroy();
-      activeActivity = null;
-    }
-    activityToolRows.clear();
+    dropTimeline();
   }
 
-  /** A collapsed errored turn never claims it worked. */
+  /** A failed turn never claims it worked. */
   function finishActivityFailed(): void {
     planCard?.finish("failed");
-    if (activeActivity === null) return;
-    finishActivity(formatFailedLabel((Date.now() - activeActivity.startedAt) / 1000));
+    finishTimeline("failed");
   }
 
   /*
@@ -4197,7 +4175,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     // Code being written or a command running: watch it in the turn's live window.
     const liveWindow = live.chatWindow.handle(event);
     if (liveWindow !== null) {
-      ensureActivity();
+      ensureTimeline();
       streamingBubble?.classList.remove("is-streaming");
       streamingBubble = null;
       transcript.append(liveWindow);
@@ -4207,18 +4185,20 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       const path = typeof event["path"] === "string" ? event["path"] : null;
       const label = path === null ? "Writing a file" : `Writing ${path}`;
       workingText.textContent = label;
-      ensureActivity().setLabel(label);
+      ensureTimeline().setStatus(label);
       return;
     }
 
     switch (event.kind) {
       case "text": {
         workingText.textContent = "Writing response";
-        // New text after work: that work is finished, and the text goes below it.
-        if (streamingBubble === null) closeActivitySegment();
         // Append to the live bubble rather than creating one per delta. The
         // bubble streams with a blinking orange caret (CSS) until turn-end.
-        streamingBubble ??= bubble("assistant", "");
+        if (streamingBubble === null) {
+          streamingBubble = bubble("assistant", "");
+          // Text between steps belongs to the timeline, in order with them.
+          placeText(streamingBubble);
+        }
         messageSources.set(streamingBubble, `${messageSources.get(streamingBubble) ?? ""}${String(event["text"])}`);
         dirtyMessages.add(streamingBubble);
         if (open && !document.hidden) streamPaint.schedule();
@@ -4232,20 +4212,23 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         if (/^Free AI (?:allowance reached|is temporarily limited)\./.test(text)) waitingForIncludedLimit = true;
         else if (text === "Checking the limit and resuming this task automatically…") waitingForIncludedLimit = false;
         workingText.textContent = text;
-        ensureActivity().setLabel(text);
+        ensureTimeline().setStatus(text);
         break;
       }
 
       case "compacting": {
         workingText.textContent = "Compacting the conversation";
-        ensureActivity().setLabel("Compacting the conversation");
+        ensureTimeline().setStatus("Compacting the conversation");
         break;
       }
 
       case "thinking": {
-        workingText.textContent = "Planning next steps";
-        const block = ensureActivity();
-        block.setLabel("Planning next steps");
+        workingText.textContent = "Thinking";
+        // Thinking after text: that text is finished.
+        streamingBubble?.classList.remove("is-streaming");
+        streamingBubble = null;
+        ensureTimeline().thinking(String(event["text"] ?? ""));
+        scrollToEnd();
         break;
       }
 
@@ -4262,14 +4245,9 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
             planCard.update(steps);
           }
         }
-        const label = toolHeaderLabel(call.name);
-        workingText.textContent = label;
-        const block = ensureActivity();
-        block.setLabel(label);
-        const detail = summarizeToolInput(call.input);
+        workingText.textContent = toolHeaderLabel(call.name);
         const rowId = typeof call.id === "string" && call.id.length > 0 ? call.id : `${call.name}-${String(Date.now())}`;
-        block.addRow({ kind: "tool", text: detail.length > 0 ? `${call.name} · ${detail}` : call.name, status: "running", id: rowId, detail });
-        activityToolRows.set(rowId, true);
+        ensureTimeline().toolCall({ id: rowId, name: call.name, detail: summarizeToolInput(call.input) });
         // That bubble is finished: without this its streaming caret blinked forever.
         streamingBubble?.classList.remove("is-streaming");
         streamingBubble = null;
@@ -4280,7 +4258,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       case "tool-result": {
         workingText.textContent = "Reviewing results";
         const isError = event["isError"] === true;
-        const block = ensureActivity();
         const toolCallId = typeof event["toolCallId"] === "string" ? event["toolCallId"] : null;
         if (toolCallId !== null && previewCalls.delete(toolCallId)) {
           try {
@@ -4302,13 +4279,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
           }
           viewCard.update({ image: `data:${picture.mediaType};base64,${picture.data}`, report: String(event["content"] ?? "") });
         }
-        if (toolCallId !== null && activityToolRows.has(toolCallId)) {
-          block.completeRow(toolCallId, !isError);
-        } else {
-          const latest = [...activityToolRows.keys()].pop();
-          if (latest !== undefined) block.completeRow(latest, !isError);
-        }
-        block.setLabel("Reviewing results");
+        ensureTimeline().toolResult(toolCallId, !isError);
         scrollToEnd();
         break;
       }
@@ -4318,7 +4289,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         planCard?.finish("stopped");
         streamingBubble?.classList.remove("is-streaming");
         streamingBubble = null;
-        finishActivity("Declined");
+        finishTimeline("declined");
         setSendMode("send");
         bubble("assistant", `The model declined this request. ${String(event["detail"] ?? "")}`.trim());
         break;
@@ -4375,8 +4346,9 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       case "cancelled":
         waitingForIncludedLimit = false;
         planCard?.finish("stopped");
+        streamingBubble?.classList.remove("is-streaming");
         streamingBubble = null;
-        finishActivity();
+        finishTimeline("stopped");
         setSendMode("send");
         // Stopped to send a queued follow-up now: the follow-up is the way forward.
         if (sendAfterCancel !== null) {
@@ -4395,8 +4367,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         const finished = streamingBubble;
         finished?.classList.remove("is-streaming");
         streamingBubble = null;
-        // Collapse the block to "Worked for Ns" before the actions row lands.
-        finishActivity();
+        // Fold the timeline to "Worked for Ns", leaving the answer below it, before the actions row lands.
+        finishTimeline();
         setSendMode("send");
         if (finished && !finished.nextElementSibling?.classList.contains("chat-message-actions")) {
           finished.after(messageActions(finished));
@@ -4567,7 +4539,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     streamingBubble = null;
     // Default "Thinking" state before the first backend event arrives.
     resetActivity();
-    ensureActivity();
+    ensureTimeline();
   }
 
   /* Drag-drop and paste share the strip: whatever brought the file, it lands pending. */
@@ -4679,7 +4651,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       setSendMode("stop");
       streamingBubble = null;
       resetActivity();
-      ensureActivity();
+      ensureTimeline();
     }
     void window.adcode.ai.send(text, payload.length === 0 ? undefined : payload, currentEditorContext()).then(
       (ok) => {

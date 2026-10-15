@@ -110,7 +110,7 @@ app.whenReady().then(async () => {
       const beforeWait=sent.length;
       emit('ai.onEvent',{kind:'status',text:'Free AI allowance reached. This task will resume automatically after tomorrow. Keep ADCode open; press Stop to cancel.'});
       await pause(80);
-      result.automaticWaitVisible=document.querySelector('.chat-composer .chat-send').dataset.mode==='stop'&&document.querySelector('.chat-activity-label')!==null&&document.body.textContent.includes('This task will resume automatically');
+      result.automaticWaitVisible=document.querySelector('.chat-composer .chat-send').dataset.mode==='stop'&&document.querySelector('.chat-turn')!==null&&document.body.textContent.includes('This task will resume automatically');
       document.querySelector('.chat-model').click();await waitFor(()=>[...document.querySelectorAll('.menu-item')].some(node=>node.textContent.includes('Tagflow Next')),'Next model menu');
       [...document.querySelectorAll('.menu-item')].find(node=>node.textContent.includes('Tagflow Next')).click();
       await waitFor(()=>sent.length===beforeWait+1,'Waiting task model switch');

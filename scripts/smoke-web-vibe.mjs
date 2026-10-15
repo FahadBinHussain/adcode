@@ -47,13 +47,23 @@ const fake = createServer(async (req, res) => {
   // Write the page, then look at it with the agent's own browser, then answer.
   const lastTool = start === -1 ? "" : String(messages.filter((message) => message.role === "tool").at(-1)?.content ?? "");
   if (start !== -1 && answered === 2) viewPageReport = lastTool;
-  const delta = start !== -1 && answered === 0
-    ? { tool_calls: [{ index: 0, id: "write-1", function: { name: "propose_edit", arguments: JSON.stringify({ path: "index.html", contents: PAGE, summary: "Add the bakery page" }) } }] }
+  // The first step thinks and says what it will do before writing, as a real model does, so
+  // the turn's timeline has a thought, text between steps, and tool rows to show.
+  const deltas = start !== -1 && answered === 0
+    ? [
+      { reasoning_content: "**Planning the bakery page**\nOne index.html with a headline, then check it on a phone." },
+      { content: "I will write the page, then check it on a phone." },
+      { tool_calls: [{ index: 0, id: "write-1", function: { name: "propose_edit", arguments: JSON.stringify({ path: "index.html", contents: PAGE, summary: "Add the bakery page" }) } }] },
+    ]
     : start !== -1 && answered === 1
-      ? { tool_calls: [{ index: 0, id: "look-1", function: { name: "view_page", arguments: JSON.stringify({ path: "index.html", width: 390, height: 844, screenshot: true }) } }] }
-      : { content: "Done - your bakery page is ready." };
+      ? [{ tool_calls: [{ index: 0, id: "look-1", function: { name: "view_page", arguments: JSON.stringify({ path: "index.html", width: 390, height: 844, screenshot: true }) } }] }]
+      : [{ content: "Done - your bakery page is ready." }];
+  // A beat before looking at the page, so the smoke can see the turn while it is still working.
+  if (start !== -1 && answered === 1) await sleep(2_500);
+  const last = deltas.at(-1);
+  const finish = last.tool_calls ? "tool_calls" : "stop";
   res.writeHead(200, { "content-type": "text/event-stream" });
-  res.end(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: delta.tool_calls ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`);
+  res.end(`${deltas.map((delta) => `data: ${JSON.stringify({ choices: [{ delta, finish_reason: delta === last ? finish : null }] })}\n\n`).join("")}data: [DONE]\n\n`);
 });
 await new Promise((resolve) => fake.listen(0, "127.0.0.1", resolve));
 const endpoint = `http://127.0.0.1:${fake.address().port}/v1`;
@@ -118,7 +128,45 @@ try {
     document.querySelector('dialog.onboarding .onboarding-next').click();
     return true;
   })()`);
+  // While it works: one timeline with its heading live, the pixel spinner at the foot.
+  checks.timelineWhileWorking = await browser.waitFor(`document.querySelector('.chat-turn[data-state="running"] .chat-step.is-tools') !== null`, { timeoutMs: 90_000 });
+  checks.liveHeading = await browser.evaluate(`document.querySelector('.chat-turn[data-state="running"] .chat-turn-lead')?.textContent ?? null`);
+  checks.spinnerAtFoot = await browser.evaluate(`(() => {
+    const spinner = document.querySelector('.chat-working:not([hidden]) .chat-pixel-spinner');
+    return spinner !== null && spinner.getBoundingClientRect().width > 0;
+  })()`);
+  checks.mascotsWhileWorking = await browser.evaluate("document.querySelectorAll('.chat-transcript .chat-mascot').length");
+  await shot("chat-working");
   checks.chatReply = await browser.waitFor("[...document.querySelectorAll('.chat-bubble-assistant')].some((bubble) => bubble.textContent.includes('bakery page is ready'))", { timeoutMs: 90_000 });
+  // Once it is done: folded to "Worked for", the answer below the fold, the steps inside it.
+  await browser.waitFor(`document.querySelector('.chat-turn[data-state="done"]') !== null`, { timeoutMs: 20_000 });
+  checks.timeline = await browser.evaluate(`(() => {
+    const turn = document.querySelector('.chat-turn[data-state="done"]');
+    if (turn === null) return null;
+    const bubbles = [...document.querySelectorAll('.chat-bubble-assistant')];
+    const answer = bubbles.find((bubble) => bubble.textContent.includes('bakery page is ready'));
+    const between = bubbles.find((bubble) => bubble.textContent.includes('then check it on a phone'));
+    return ({
+      heading: turn.querySelector('.chat-turn-lead').textContent,
+      folded: turn.dataset.collapsed === 'true',
+      answerOutsideFold: answer !== undefined && !turn.contains(answer),
+      textBetweenStepsInFold: between !== undefined && turn.contains(between),
+      thought: turn.querySelector('.chat-step.is-thinking .chat-step-summary')?.textContent ?? null,
+      toolRows: [...turn.querySelectorAll('.chat-step.is-tools .chat-step-label')].map((label) => label.textContent),
+      mascotsLeft: document.querySelectorAll('.chat-transcript .chat-mascot').length,
+    });
+  })()`);
+  // Unfolding shows the steps again; opening a step shows its calls.
+  checks.unfolds = await browser.evaluate(`(async () => {
+    const turn = document.querySelector('.chat-turn[data-state="done"]');
+    turn.querySelector('.chat-turn-toggle').click();
+    turn.querySelector('.chat-step.is-tools .chat-step-row').click();
+    turn.querySelector('.chat-step.is-thinking .chat-step-row').click();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const call = turn.querySelector('.chat-step.is-tools .chat-step-call');
+    return turn.dataset.collapsed === 'false' && call !== null && call.getBoundingClientRect().height > 0 && call.dataset.state === 'done';
+  })()`);
+  await shot("chat-timeline");
   const project = await browser.evaluate("window.adcode.workspace.current()");
   checks.projectCreated = project?.name ?? null;
   checks.sidebarShowsProject = await browser.evaluate(`document.querySelector('.vibe-sidebar')?.textContent.includes(${JSON.stringify(project?.name ?? "?")}) ?? false`);
@@ -222,6 +270,9 @@ if (checks.threw === undefined) {
 console.log(JSON.stringify(checks, null, 2));
 const passed = checks.threw === undefined && checks.gateShown && checks.gateDevMode && checks.vibeVisible && checks.onboardingAsks && checks.modelReady && checks.sidebarShowsProject &&
   checks.chatReply && checks.fileWritten && checks.previewServes && checks.changesShowsFile && checks.commitWorks &&
+  checks.timelineWhileWorking && checks.liveHeading === "Working" && checks.spinnerAtFoot && checks.mascotsWhileWorking <= 1 &&
+  checks.timeline?.heading === "Worked" && checks.timeline.folded && checks.timeline.answerOutsideFold && checks.timeline.textBetweenStepsInFold &&
+  checks.timeline.thought === "Planning the bakery page" && checks.timeline.mascotsLeft === 0 && checks.unfolds &&
   checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.refusalExplained === true && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");

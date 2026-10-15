@@ -130,6 +130,27 @@ export const ICON = {
   /** Pencil for Edit prompt. Diagonal, crossing near (8, 8). */
   edit: "M4 12l1-4L11.5 2.5a1.4 1.4 0 0 1 2 2L7 11z M10.8 3.2l2 2",
 
+  /* ── Chat timeline: what each step of the assistant's work was ──────────── */
+
+  /** Thinking: a four-point star, symmetric about (8, 8) on both axes. */
+  sparkle: "M8 2.5c.4 2.6 2.9 5.1 5.5 5.5c-2.6.4-5.1 2.9-5.5 5.5c-.4-2.6-2.9-5.1-5.5-5.5c2.6-.4 5.1-2.9 5.5-5.5z",
+  /** A lens and its handle; the ink spans (3, 3)-(13, 13), so it centres on (8, 8). */
+  search: "M7 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM10 10l3 3",
+  globe: "M8 2.5a5.5 5.5 0 1 0 0 11a5.5 5.5 0 1 0 0-11zM2.5 8h11M8 2.5c-1.6 1.6-2.3 3.5-2.3 5.5s.7 3.9 2.3 5.5M8 2.5c1.6 1.6 2.3 3.5 2.3 5.5s-.7 3.9-2.3 5.5",
+  /** A page with its corner folded; (4.5, 2.5)-(11.5, 13.5). */
+  file: "M4.5 2.5h4.5l2.5 2.5v8.5h-7zM9 2.5V5h2.5",
+  terminal: "M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10H11",
+  eye: "M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8zM8 6.2a1.8 1.8 0 1 0 0 3.6a1.8 1.8 0 1 0 0-3.6z",
+  checklist: "M7 4.5h6.5M7 8h6.5M7 11.5h6.5M2.5 4.5l1 1 1.5-2M2.5 8l1 1 1.5-2M2.5 11.5l1 1 1.5-2",
+  /** A plug: two prongs, the body, the lead. (4.5, 2.5)-(11.5, 13.5). */
+  plug: "M6 2.5v3M10 2.5v3M4.5 5.5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11.5v2",
+  tool: "M10.5 2.5a3 3 0 0 0-2.8 4.1L2.8 11.5a1.2 1.2 0 0 0 1.7 1.7l4.9-4.9a3 3 0 0 0 4.1-2.8l-1.8 1.8-1.7-.3-.3-1.7z",
+  /** A finished step. The tick's ink spans (3.5, 4.5)-(12.5, 11.5). */
+  check: "M3.5 8.5l3 3 6-7",
+  /** Disclosure chevrons, each centred on (8, 8). */
+  chevronRight: "M6.25 4.5L9.75 8l-3.5 3.5",
+  chevronDown: "M4.5 6.25L8 9.75l3.5-3.5",
+
   /* ── Filtering ──────────────────────────────────────────────────────────── */
 
   /**

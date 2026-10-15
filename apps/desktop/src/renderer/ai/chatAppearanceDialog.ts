@@ -7,6 +7,7 @@
  * classes, so what it shows is what the chat will do.
  */
 import { createAgentMascot } from "../agents/agentMascot.ts";
+import { createPixelSpinner } from "./chatTimeline.ts";
 import { MASCOT_COLORS, MASCOT_SHAPES } from "../agents/mascotStyle.ts";
 import { button, el, field, openFormModal } from "../dialogs/formDialog.ts";
 import {
@@ -64,9 +65,9 @@ export async function openChatAppearanceDialog(options: { readonly openAgents?: 
     answer.append(el("p", "chat-md-para", "Done. The header is now sticky, with a soft shadow once the page scrolls under it."));
     // As in the chat: the face signs the reply; the row at work has none of its own.
     const workingRow = el("div", "chat-working");
-    const dots = el("span", "chat-working-dots");
-    dots.append(el("i", ""), el("i", ""), el("i", ""));
-    workingRow.append(dots, el("span", "chat-working-text", "Checking the page"));
+    const spinner = createPixelSpinner("turn");
+    spinner.classList.add("chat-working-spinner");
+    workingRow.append(spinner, el("span", "chat-working-text", "Checking the page"));
     previewTranscript.append(ask, author, answer, workingRow);
     preview.append(previewTranscript);
 

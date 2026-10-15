@@ -52,7 +52,7 @@ app.whenReady().then(async () => {
       // transcript's items stopped shrinking to fit, it really overflows.)
       transcript.scrollTop = transcript.scrollHeight; transcript.dispatchEvent(new Event('scroll')); await pause(20);
       const live = transcript.querySelector('.live-window-inline');
-      const typingInline = live.parentElement === transcript && live.querySelector('.live-window-status').textContent === 'Typing' && live.querySelector('.live-code-tab').textContent === 'app.js' && document.querySelector('.chat-activity-label').textContent === 'Writing app.js' && !!live.querySelector('.live-caret');
+      const typingInline = live.parentElement === transcript && live.querySelector('.live-window-status').textContent === 'Typing' && live.querySelector('.live-code-tab').textContent === 'app.js' && document.querySelector('.chat-turn-status').textContent === 'Writing app.js' && !!live.querySelector('.live-caret');
       emit('ai.onEvent', { kind: 'tool-draft', id: 'write-1', name: 'propose_edit', path: 'app.js', edit: 0, append: Array.from({length: 7}, (_, index) => 'const row' + index + ' = ' + index + ';').join('\\n') + '\\n' });
       await waitFor(() => live.querySelector('.live-code-lines').textContent.includes('row6'), 'Growing code'); await pause(100);
       const followsGrowingCode = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 3;

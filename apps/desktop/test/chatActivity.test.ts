@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  formatElapsedLabel,
-  formatFailedLabel,
-  formatWorkedLabel,
   isSafeImageSrc,
   summarizeToolInput,
   toolHeaderLabel,
@@ -24,13 +21,6 @@ const styles = readFileSync(
 ).replace(/\r\n/g, "\n");
 
 describe("ActivityBlock model (pure, no DOM)", () => {
-  it("formats the collapsed and live timer labels", () => {
-    expect(formatWorkedLabel(7.4)).toBe("Worked for 7s");
-    expect(formatWorkedLabel(0.2)).toBe("Worked for 1s");
-    expect(formatFailedLabel(302.1)).toBe("Failed after 302s");
-    expect(formatElapsedLabel(2.5)).toBe("2.5s");
-  });
-
   it("summarizes tool input to one scannable line", () => {
     expect(summarizeToolInput({ path: "src/main.ts", contents: "x".repeat(500) })).toBe("src/main.ts");
     expect(summarizeToolInput("direct string")).toBe("direct string");
@@ -72,41 +62,14 @@ describe("ActivityBlock model (pure, no DOM)", () => {
 });
 
 describe("Agent Chat v2 wiring", () => {
-  // One mascot in the chat, the working one: a finished block hands its place to a mark, and
-  // the mascot's pointer listener and blink timers go with it.
-  it("removes a finished block's mascot instead of keeping a copy per block", () => {
-    const finalize = activitySource.slice(activitySource.indexOf("finalize(totalSeconds?: number, customLabel"), activitySource.indexOf("destroy(): void {"));
-    expect(finalize.length).toBeGreaterThan(0);
-    expect(finalize).toContain("mascot.destroy()");
-    expect(finalize).not.toContain("mascot.setMood");
-    expect(activitySource).toContain("chat-activity-settled");
-    expect(styles).not.toContain("The finished block keeps its mascot");
-    // A block with no steps in it is dropped at the end of the turn, not collapsed empty.
-    expect(widgetSource).toContain('if (label === undefined && activityToolRows.size === 0)');
-  });
-
-  it("builds one collapsible block per run of work, in order with the text", () => {
-    expect(activitySource).toContain("chat-activity-header");
-    expect(activitySource).toContain('aria-expanded');
-    expect(activitySource).toContain("chat-activity-loader");
-    expect(activitySource).toContain("chat-activity-timer");
-    expect(activitySource).toContain("250");
-    expect(activitySource).toContain("chat-activity-row-icon");
-    expect(widgetSource).toContain("ensureActivity()");
-    expect(widgetSource).toContain("finishActivity()");
+  // The turn itself - heading, thinking, grouped tools, the fold - is tested in
+  // chatTimeline.test.ts; this file keeps the chat around it.
+  it("draws each turn as a timeline, not one block per run of work", () => {
+    expect(widgetSource).toContain("ensureTimeline()");
+    expect(widgetSource).toContain("finishTimeline()");
     expect(widgetSource).toContain("resetActivity()");
-    // Text closes the work before it; the next tool call opens a new block below that text.
-    expect(widgetSource).toContain("closeActivitySegment()");
-    expect(widgetSource).not.toContain("transcript.insertBefore(block.element, streamingBubble)");
-  });
-
-  it("shows work status without exposing internal thinking text", () => {
-    const thinking = widgetSource.slice(widgetSource.indexOf('case "thinking":'), widgetSource.indexOf('case "tool-call":'));
-    expect(thinking).toContain('Planning next steps');
-    expect(thinking).not.toContain('event["text"]');
-    expect(widgetSource).toContain('kind: "tool"');
-    expect(widgetSource).toContain("toolHeaderLabel(call.name)");
-    expect(widgetSource).toContain("completeRow(");
+    expect(widgetSource).not.toContain("closeActivitySegment()");
+    expect(activitySource).not.toContain("createActivityBlock");
   });
 
   it("keeps the v2 composer contract", () => {
@@ -132,13 +95,10 @@ describe("Agent Chat v2 wiring", () => {
     for (const token of ["#151515", "#100f0c", "#1c1b19", "#ebe8e1", "#8f8c85", "#5f5d58", "#2d2b28", "#ece9e2", "#6fb98f"]) {
       expect(tokens).toContain(token);
     }
-    expect(styles).toContain("chat-dot-wave");
-    expect(styles).toContain("chat-shimmer");
     expect(styles).toContain("chat-caret-blink");
     expect(styles).toContain("chat-result-reveal");
     expect(styles).toContain("grid-template-rows");
     expect(styles).toContain("prefers-reduced-motion");
-    expect(styles).toContain("chat-activity-header:focus-visible");
     expect(styles).toContain(".chat-transcript");
     expect(widgetSource).toContain('role", "log"');
     expect(widgetSource).toContain('aria-live", "polite"');
@@ -147,13 +107,11 @@ describe("Agent Chat v2 wiring", () => {
   it("stays professional: no nested focus ring, no empty box, no duplicate status", () => {
     expect(styles).toContain(".chat-card .chat-input:focus-visible");
     expect(styles).toContain("outline: none");
-    expect(styles).toContain(".chat-activity-body:empty");
-    expect(activitySource).toContain('role", "status"');
     expect(widgetSource).toContain("working.hidden = true");
   });
 
   it("fails loudly and guides: failed labels, connect nudge, setup steps", () => {
-    expect(activitySource).toContain("formatFailedLabel");
+    expect(widgetSource).toContain('finishTimeline("failed")');
     expect(widgetSource).toContain("finishActivityFailed()");
     expect(widgetSource).toContain("connectNudge(");
     expect(widgetSource).toContain("chat-setup-steps");
@@ -174,7 +132,6 @@ describe("Agent Chat v2 wiring", () => {
 
   it("reads like a working log, and arrives smoothly", () => {
     expect(styles).toContain(".chat-card .chat-bubble-user");
-    expect(styles).toContain(".chat-card .chat-activity-body");
     expect(styles).toContain(".chat-card .chat-conversation-title");
     expect(styles).toContain("chat-popup-in 300ms");
     expect(styles).toContain("chat-menu-in");

@@ -2306,216 +2306,11 @@ button.chat-model[data-ready="false"]::before {
   50% { opacity: 0; }
 }
 
-/* ── Activity block ─────────────────────────────────────────────────── */
-
-.chat-activity {
-  align-self: stretch;
-  min-width: 0;
-  margin: 2px 0 4px;
-}
-
-.chat-activity-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 2px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.chat-activity-header:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.chat-activity-loader {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 3px;
-  flex: none;
-  height: 14px;
-  padding-bottom: 2px;
-}
-
-.chat-activity-loader i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--chat-accent);
-  animation: chat-dot-wave 1.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
-  will-change: transform, opacity;
-}
-
-.chat-activity-loader i:nth-child(1) { margin-bottom: 3px; }
-.chat-activity-loader i:nth-child(2) { margin-bottom: 0; animation-delay: 0.15s; }
-.chat-activity-loader i:nth-child(3) { margin-bottom: 2px; animation-delay: 0.3s; }
-
-@keyframes chat-dot-wave {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
-  30% { transform: translateY(-3px) scale(1.12); opacity: 1; }
-  60% { transform: translateY(1px) scale(0.94); opacity: 0.75; }
-}
-
-.chat-activity[data-state="done"] .chat-activity-loader {
-  display: none;
-}
-
-.chat-activity-label {
-  position: relative;
-  flex: none;
-  max-width: 60%;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Shimmer sweep while running: a translated overlay (transform only). */
-.chat-activity[data-state="running"] .chat-activity-label {
-  overflow: hidden;
-}
-
-.chat-activity[data-state="running"] .chat-activity-label::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.16) 50%, transparent 80%);
-  transform: translateX(-100%);
-  animation: chat-shimmer 2.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
-  will-change: transform;
-  pointer-events: none;
-}
-
-@keyframes chat-shimmer {
-  0% { transform: translateX(-100%); }
-  60%, 100% { transform: translateX(100%); }
-}
-
-.chat-activity-label.is-final {
-  color: var(--text-secondary);
-}
-
-.chat-activity-timer {
-  flex: none;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.chat-activity-chevron {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin-left: auto;
-  border-right: 1.5px solid var(--text-tertiary);
-  border-bottom: 1.5px solid var(--text-tertiary);
-  transform: translateY(-2px) rotate(45deg);
-  transition: transform 200ms var(--ease-sheet);
-}
-
-.chat-activity[data-collapsed="true"] .chat-activity-chevron {
-  transform: translateY(1px) rotate(-45deg);
-}
-
-/* Collapse with grid-template-rows 1fr→0fr per the reference. */
-.chat-activity-collapse {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 240ms var(--ease-sheet);
-}
-
-.chat-activity[data-collapsed="true"] .chat-activity-collapse {
-  grid-template-rows: 0fr;
-}
-
-.chat-activity-body {
-  min-height: 0;
-  overflow: hidden;
-  display: grid;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 12px;
-  background: var(--bg-elevated);
-}
-
-.chat-activity[data-collapsed="true"] .chat-activity-body {
-  margin-top: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-top-width: 0;
-  border-bottom-width: 0;
-  opacity: 0;
-}
-
-.chat-activity-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  animation: chat-activity-fade-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  will-change: transform, opacity;
-}
+/* ── Arrival and spin, shared by the chat (the turn timeline is in conversation.css) ── */
 
 @keyframes chat-activity-fade-in {
   from { opacity: 0; transform: translateY(6px) scale(0.99); }
   to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.chat-activity-row.is-text .chat-activity-row-text {
-  color: var(--text-secondary);
-}
-
-.chat-activity-row.is-tool .chat-activity-row-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-activity-row-chevron {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-right: 1.5px solid var(--text-tertiary);
-  border-bottom: 1.5px solid var(--text-tertiary);
-  transform: translateY(-1px) rotate(-45deg);
-}
-
-.chat-activity-row-icon {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--chat-success);
-}
-
-/* Small running spinner (border rotation = transform only). */
-.chat-activity-row.is-running .chat-activity-row-icon::before {
-  content: "";
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--chat-accent) 25%, transparent);
-  border-top-color: var(--chat-accent);
-  animation: chat-spin 0.8s linear infinite;
 }
 
 @keyframes chat-spin {
@@ -2779,18 +2574,6 @@ button.chat-model[data-ready="false"]::before {
     padding: 12px;
   }
 
-  .chat-activity-header {
-    gap: 8px;
-  }
-
-  .chat-activity-label {
-    max-width: 52%;
-  }
-
-  .chat-activity-body {
-    padding: 8px 10px;
-  }
-
   .chat-result {
     max-width: 100%;
   }
@@ -2807,14 +2590,10 @@ button.chat-model[data-ready="false"]::before {
 /* ── Reduced motion: stillness for wave, shimmer, caret, spins ──────── */
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-activity-loader i,
-  .chat-activity[data-state="running"] .chat-activity-label::after,
   .chat-card .chat-bubble-assistant.is-streaming::after,
-  .chat-activity-row.is-running .chat-activity-row-icon::before,
   .chat-card .chat-composer .chat-send[data-mode="stop"]::after,
   .chat-history-status[data-status="working"]::before,
   .chat-result-image,
-  .chat-activity-row,
   .chat-card .chat-bubble-assistant,
   .chat-mascot-svg,
   .chat-mascot-bubble {
@@ -2822,10 +2601,6 @@ button.chat-model[data-ready="false"]::before {
   }
 
   .chat-transcript { scroll-behavior: auto; }
-
-  .chat-activity-collapse {
-    transition: none;
-  }
 
   .chat-result-image {
     opacity: 1;
@@ -2836,21 +2611,13 @@ button.chat-model[data-ready="false"]::before {
   .chat-mascot-svg { transform: none; }
 }
 
-:root[data-reduced-motion="true"] .chat-activity-loader i,
-:root[data-reduced-motion="true"] .chat-activity[data-state="running"] .chat-activity-label::after,
 :root[data-reduced-motion="true"] .chat-card .chat-bubble-assistant.is-streaming::after,
-:root[data-reduced-motion="true"] .chat-activity-row.is-running .chat-activity-row-icon::before,
 :root[data-reduced-motion="true"] .chat-card .chat-composer .chat-send[data-mode="stop"]::after,
 :root[data-reduced-motion="true"] .chat-history-status[data-status="working"]::before,
 :root[data-reduced-motion="true"] .chat-result-image,
-:root[data-reduced-motion="true"] .chat-activity-row,
 :root[data-reduced-motion="true"] .chat-mascot-svg,
 :root[data-reduced-motion="true"] .chat-mascot-bubble {
   animation: none !important;
-}
-
-:root[data-reduced-motion="true"] .chat-activity-collapse {
-  transition: none;
 }
 
 :root[data-reduced-motion="true"] .chat-transcript { scroll-behavior: auto; }
@@ -2881,15 +2648,6 @@ button.chat-model[data-ready="false"]::before {
 .chat-card .chat-input:focus,
 .chat-card .chat-input:focus-visible {
   outline: none;
-}
-
-/* Activity body with no rows yet is not an empty box — it is nothing. */
-.chat-activity-body:empty {
-  display: none;
-}
-
-.chat-activity-body {
-  transition: opacity 200ms var(--ease-sheet);
 }
 
 /* Memory strip: a quiet fact line, not a pill bar. */
@@ -3176,7 +2934,7 @@ button.chat-setup-action {
 /* ══ Readout restyle: prompt panel, quiet thought lines, titled header ══
  *
  * The transcript reads like a working log: the user's prompt is a full-width
- * rounded field at the top of its turn, the activity block is borderless
+ * rounded field at the top of its turn, the turn timeline is borderless
  * muted lines (thoughts, tool runs with their checks), and the header names
  * the conversation first. Structure is untouched — same elements, same
  * classes — so every behaviour and test keeps holding.
@@ -3210,42 +2968,6 @@ button.chat-setup-action {
   border-radius: 14px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-}
-
-/* The activity block is quiet lines, not a boxed panel. */
-.chat-card .chat-activity {
-  margin: 0;
-}
-
-.chat-card .chat-activity-header {
-  min-height: 28px;
-  padding: 4px 2px;
-}
-
-.chat-card .chat-activity-body {
-  margin-top: 2px;
-  padding: 4px 0 4px 2px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.chat-card .chat-activity[data-collapsed="true"] .chat-activity-body {
-  margin-top: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.chat-card .chat-activity-row {
-  font-size: 13px;
-}
-
-.chat-card .chat-activity-row.is-tool .chat-activity-row-text {
-  color: var(--text-secondary);
-}
-
-.chat-card .chat-activity-row-chevron {
-  display: none;
 }
 
 /* Composer: one tight pill once the conversation is underway — but the
@@ -3440,84 +3162,6 @@ button.chat-setup-action {
  * squash the eye group. Reduced motion stills everything.
  */
 
-/* Header is now a div holding the mascot button + a toggle button, so the
- * blob is valid HTML and poking it never collapses the block. */
-.chat-activity-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 2px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  text-align: left;
-}
-
-.chat-activity-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  min-height: 32px;
-  padding: 6px 2px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.chat-activity-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Keep the historical class name; the three <i> dots are gone. */
-.chat-activity-loader {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  height: 24px;
-  padding-bottom: 0;
-}
-
-/* A finished block hands its place to a small mark: one mascot in the chat, the working one. */
-.chat-activity[data-state="done"] .chat-activity-loader {
-  display: inline-flex;
-  width: 26px;
-}
-
-.chat-activity-settled {
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--chat-success);
-  background: color-mix(in srgb, var(--chat-success) 14%, transparent);
-}
-
-.chat-activity-settled[hidden] {
-  display: none;
-}
-
-.chat-activity-settled[data-tone="error"] {
-  color: var(--danger, #e5484d);
-  background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
-}
-
 .chat-mascot {
   position: relative;
   display: inline-grid;
@@ -3664,51 +3308,6 @@ button.chat-setup-action {
 }
 
 /* ── Claude-style steps box ─────────────────────────────────────────── */
-
-.chat-card .chat-activity-header {
-  min-height: 28px;
-  padding: 4px 2px;
-  gap: 8px;
-}
-
-.chat-card .chat-activity-label {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-.chat-card .chat-activity-body {
-  margin-top: 6px;
-  padding: 0;
-  border: 1px solid var(--border-hairline);
-  border-radius: 12px;
-  background: var(--bg-elevated);
-  overflow: hidden;
-}
-
-.chat-card .chat-activity[data-collapsed="true"] .chat-activity-body {
-  margin-top: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-top-width: 0;
-  border-bottom-width: 0;
-  opacity: 0;
-}
-
-.chat-card .chat-activity-row {
-  padding: 10px 14px;
-  font-size: 13px;
-  line-height: 1.5;
-  border-bottom: 1px solid var(--border-hairline);
-  animation: chat-activity-fade-in 220ms var(--ease-sheet);
-}
-
-.chat-card .chat-activity-row:last-child {
-  border-bottom: 0;
-}
-
-.chat-card .chat-activity-row.is-text .chat-activity-row-text {
-  color: var(--text-secondary);
-}
 
 /* ── User bubble: Claude-like prompt pill ───────────────────────────── */
 

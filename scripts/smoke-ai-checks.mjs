@@ -391,7 +391,7 @@ export async function checkAi({ evaluate, send, waitFor, sleep, artifacts }) {
       planCard: await evaluate("document.querySelector('.chat-plan-summary')?.textContent === 'All 2 steps done' && document.querySelectorAll('.chat-plan').length === 1"),
       mostMascotsDuringTurn: mostMascots,
       mascotsAfterTurn: await evaluate("document.querySelectorAll('.chat-transcript .chat-mascot').length"),
-      settledMarks: await evaluate("document.querySelectorAll('.chat-transcript .chat-activity-settled:not([hidden])').length"),
+      finishedTurns: await evaluate("document.querySelectorAll('.chat-transcript .chat-turn[data-state=done]').length"),
     };
     process.stdout.write('viewPageEvidence: ' + JSON.stringify(viewPageEvidence) + '\n');
     await evaluate("document.querySelector('.chat-agent-view')?.scrollIntoView({block:'center'})");
@@ -400,7 +400,7 @@ export async function checkAi({ evaluate, send, waitFor, sleep, artifacts }) {
     for (const [check, value] of Object.entries(viewPageEvidence)) {
       if (check === 'mostMascotsDuringTurn') assert.ok(value <= 1, `At most one mascot while working (saw ${value})`);
       else if (check === 'mascotsAfterTurn') assert.equal(value, 0, 'No mascot left once the turn is over');
-      else if (check === 'settledMarks') assert.ok(value >= 1, 'Finished blocks show their mark');
+      else if (check === 'finishedTurns') assert.ok(value >= 1, 'A finished turn keeps its folded timeline');
       else assert.equal(value, true, check);
     }
     await clickText('.chat-live-preview button', 'Close preview');
