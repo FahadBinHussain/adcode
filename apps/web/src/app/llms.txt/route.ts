@@ -16,6 +16,8 @@ import { PARENT, SITE, SOURCE, url } from "@/lib/site";
  * failure mode here is a machine-readable file that quietly disagrees with the site.
  */
 export const dynamic = "force-static";
+/** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
+export const revalidate = 60;
 
 export async function GET(): Promise<Response> {
   const posts = (await allPosts())

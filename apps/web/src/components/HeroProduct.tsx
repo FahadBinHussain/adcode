@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/IntentLink";
 import { useEffect, useRef, useState } from "react";
 import { DesktopMockup } from "./DesktopMockup";
 

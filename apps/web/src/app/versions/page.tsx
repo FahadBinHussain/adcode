@@ -10,6 +10,9 @@ import { breadcrumbs, changelog, faqPage, installHowTo } from "@/lib/schema";
 import { pageMetadata } from "@/lib/seo";
 import { renderMarkdown } from "@/lib/markdown";
 
+/** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
+export const revalidate = 60;
+
 const WINDOWS_COMMAND = `irm ${url("/install.ps1")} | iex`;
 const LINUX_COMMAND = `curl -fsSL ${url("/install.sh")} | sh`;
 

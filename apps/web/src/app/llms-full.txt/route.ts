@@ -21,6 +21,8 @@ import { PARENT, SITE, SOURCE, url, ECONOMICS, formatMicros } from "@/lib/site";
  * does not exist. That is the whole reason it is a route and not a checked-in file.
  */
 export const dynamic = "force-static";
+/** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
+export const revalidate = 60;
 
 const rule = "\n\n---\n\n";
 

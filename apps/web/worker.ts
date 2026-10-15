@@ -1,0 +1,20 @@
+/**
+ * The Worker's entry point: the one OpenNext generates, with the site's videos in front.
+ *
+ * `/videos/*` reaches the Worker before the asset server (`assets.run_worker_first` in
+ * wrangler.jsonc) so that a `Range` request gets `206 Partial Content`, which Safari needs
+ * to play a video at all - see `src/lib/byteRange.ts`. Everything else is OpenNext's.
+ *
+ * Left out of tsconfig.json: type-checking this file pulls in the whole generated server
+ * through the import below. The logic worth checking is in `byteRange.ts`, which is.
+ */
+// @ts-ignore - written by `opennextjs-cloudflare build`, absent on a fresh checkout.
+import openNext from "./.open-next/worker.js";
+import { serveWithRanges, type AssetFetcher } from "./src/lib/byteRange";
+
+export default {
+  async fetch(request: Request, env: { ASSETS: AssetFetcher }, ctx: unknown): Promise<Response> {
+    if (new URL(request.url).pathname.startsWith("/videos/")) return serveWithRanges(request, env.ASSETS);
+    return openNext.fetch(request, env, ctx);
+  },
+};

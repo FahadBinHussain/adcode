@@ -10,7 +10,7 @@ import { LiveRecording } from "@/components/LiveRecording";
 import { Partners } from "@/components/Partners";
 import { DocsShowcase } from "@/components/DocsShowcase";
 import { AboutUs } from "@/components/AboutUs";
-import Link from "next/link";
+import Link from "@/components/IntentLink";
 import { HomeFaq } from "@/components/HomeFaq";
 import { FreePlan } from "@/components/FreePlan";
 import { JsonLd } from "@/components/JsonLd";

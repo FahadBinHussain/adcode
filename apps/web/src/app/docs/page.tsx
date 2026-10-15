@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/components/IntentLink";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { DocsFrameTopbar } from "@/components/DocsFrameTopbar";
 import { DocsSearch } from "@/components/DocsSearch";

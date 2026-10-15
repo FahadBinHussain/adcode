@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/IntentLink";
 import { Suspense } from "react";
 import { WebsiteAnalytics } from "@/components/WebsiteAnalytics";
 import { COMPARE_PREFIX, comparisons, guides, landingPath } from "@/lib/landings";

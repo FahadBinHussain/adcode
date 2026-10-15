@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/IntentLink";
 import { TEAM } from "@/lib/site";
 import styles from "./aboutUs.module.css";
 

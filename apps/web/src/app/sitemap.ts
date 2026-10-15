@@ -6,6 +6,9 @@ import { latestRelease } from "@/lib/releases";
 import { SHARE_IMAGE } from "@/lib/seo";
 import { url } from "@/lib/site";
 
+/** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
+export const revalidate = 60;
+
 /** The newest of some ISO days, or `fallback` when there are none. */
 function newest(days: readonly (string | undefined)[], fallback: string): string {
   return days.filter((day): day is string => day !== undefined).reduce(

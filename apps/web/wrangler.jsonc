@@ -13,7 +13,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "adcode",
-  "main": ".open-next/worker.js",
+  /* OpenNext's generated `.open-next/worker.js`, with the videos' byte ranges in front. */
+  "main": "worker.ts",
   /* Billing webhooks also use the existing workers.dev address. */
   "workers_dev": true,
   "preview_urls": false,
@@ -55,11 +56,41 @@
     "cpu_ms": 30000
   },
 
-  /* The prerendered pages and static files Next produced. */
+  /*
+   * The prerendered pages and static files Next produced. The videos go through the Worker
+   * first: the asset server answers `Range` with the whole file, and Safari will not play a
+   * video served that way. `worker.ts` slices it instead.
+   */
   "assets": {
     "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "run_worker_first": ["/videos/*"]
   },
+
+  /*
+   * The page cache (`open-next.config.ts`). Pages are rendered once and kept here, rather
+   * than rendered - with a database read - on every visit. `opennextjs-cloudflare deploy`
+   * fills it with the build's pages. The bucket has to exist before the first deploy:
+   * `npx wrangler r2 bucket create adcode-web-cache`.
+   */
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "adcode-web-cache"
+    }
+  ],
+
+  /*
+   * The Worker calling itself. When a cached page is older than its `revalidate`, the
+   * visitor gets it at once and the fresh render happens in a second request made over
+   * this binding, so nobody waits for it.
+   */
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "adcode"
+    }
+  ],
 
   /*
    * Logs, so a failing request has an account of itself. On the free plan this is a

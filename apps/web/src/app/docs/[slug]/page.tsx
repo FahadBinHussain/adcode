@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/IntentLink";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
@@ -14,6 +14,9 @@ import { docDescription, docTitle, pageMetadata } from "@/lib/seo";
 interface Props {
   params: Promise<{ slug: string }>;
 }
+
+/** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
+export const revalidate = 60;
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   return (await allDocs()).map((page) => ({ slug: page.slug }));

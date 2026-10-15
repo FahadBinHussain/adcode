@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/IntentLink";
 import { useEffect, useState } from "react";
 import { detectPlatform, installCommand, installRoute, LINUX_DOWNLOADS, MICROSOFT_STORE, type Platform } from "@/lib/platform";
 import { installLinkFor, SEND_SUBJECT, SEND_TEXT, sendInstallLink } from "@/lib/sendToDesktop";

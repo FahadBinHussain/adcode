@@ -13,6 +13,8 @@ import { SITE, url } from "@/lib/site";
  * the extra correctness Atom buys does not matter for a feed with two kinds of item in it.
  */
 export const dynamic = "force-static";
+/** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
+export const revalidate = 60;
 
 /** XML has five characters that cannot appear raw, and a title will contain them. */
 const escape = (raw: string): string =>
