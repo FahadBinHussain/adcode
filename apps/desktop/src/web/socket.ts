@@ -58,7 +58,7 @@ export const AUTH_FAILED_CODE = 4401;
 
 /*
  * Close codes after which reconnecting on its own would be wrong: the sandbox went to sleep
- * (4408), today's time is spent (4429), or the month is full (4402). Reconnecting would wake
+ * (4408), this session's time is spent (4429), or the month is full (4402). Reconnecting would wake
  * it again and spend time nobody asked to spend, so the tab waits for the person to resume.
  */
 export const PAUSE_CODES: ReadonlySet<number> = new Set([4408, 4429, 4402]);

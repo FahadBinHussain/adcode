@@ -15,12 +15,12 @@ describe("custom provider setup", () => {
     expect(customProviderSecretName("custom-provider-two")).toBe("INCLUDED_AI_CUSTOM_PROVIDER_TWO_API_KEY");
   });
 
-  it("offers a separate daily allowance for the provider's models", () => {
+  it("draws the provider's models from the one credit balance, and names an old separate allowance", () => {
     const value = { id: "custom-provider-one", name: "Provider one", baseUrl: "https://api.provider-one.com/v1" } as const;
-    expect(renderToStaticMarkup(<CustomProviderEditor value={value} onChange={() => {}} onRemove={() => {}} />)).toContain("share the main daily allowance");
+    expect(renderToStaticMarkup(<CustomProviderEditor value={value} onChange={() => {}} onRemove={() => {}} />)).toContain("draw from the one credit balance");
     const own = renderToStaticMarkup(<CustomProviderEditor value={{ ...value, limits: { dailyRequests: 1_000_000, dailyTokens: 10_000_000, dailyCostMicros: 1_000_000, requestsPerMinute: 1000 } }} onChange={() => {}} onRemove={() => {}} />);
-    expect(own).toContain("Tokens per day, per person");
-    expect(own).toContain('value="10000000"');
+    expect(own).toContain("old separate allowance (10,000,000 tokens a day) is now combined into credits");
+    expect(own).toContain("Forget the old allowance");
   });
 
   it("reports the saved key's status", () => {

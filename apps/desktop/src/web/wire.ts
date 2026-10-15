@@ -21,12 +21,12 @@ export interface HostHello {
   readonly projectsHome: string;
 }
 
-/** What the cloud says about this person's sandbox: whether it runs, and how much time is left today. */
+/** What the cloud says about this person's sandbox: whether it runs, and how much time is left in this session. */
 export interface CloudStatus {
   readonly state: "waking" | "ready" | "sleeping" | "spent" | "full" | "busy" | "restarted";
   readonly allowanceMs: number;
   readonly usedMs: number;
-  /** When today's allowance starts again, epoch milliseconds. */
+  /** When the session's time refills, epoch milliseconds. */
   readonly resetsAt: number;
   readonly storageBytes?: number;
   readonly message?: string;

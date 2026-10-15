@@ -1,6 +1,6 @@
 import type { AiUsageView } from "../../shared/aiUsage.ts";
 import { formatUsageCost } from "../../shared/aiUsage.ts";
-import { allowanceForModel, type TagflowAllowanceView } from "../../shared/tagflow.ts";
+import { allowanceForModel, creditWindowSummary, type CreditsAllowance, type CreditWindowView, type TagflowAllowanceView } from "../../shared/tagflow.ts";
 import { createComposerMeter, type ComposerMeterModel } from "./composerMeter.ts";
 import { formatTokens } from "./contextMeter.ts";
 import { allowanceSummary } from "./allowanceSummary.ts";
@@ -9,6 +9,24 @@ const unknown = (detail: string, tooltip: string): ComposerMeterModel => ({ perc
 const count = (value: number): number => Number.isFinite(value) ? Math.max(0, value) : 0;
 const percent = (used: number, limit: number): number => limit <= 0 || count(used) >= limit ? 100 : Math.min(99, Math.round(count(used) / limit * 100));
 const tone = (value: number): "ok" | "warn" | "full" => value >= 100 ? "full" : value >= 80 ? "warn" : "ok";
+
+function creditMeter(label: "Session" | "Weekly", window: CreditWindowView, credits: CreditsAllowance, modelId: string | null, now: number): ComposerMeterModel {
+  const summary = creditWindowSummary(window, now);
+  const span = label === "Session" ? `this ${credits.plan.sessionHours}-hour session` : "this week";
+  const rate = modelId === null ? undefined : credits.rates[modelId];
+  const pricing = rate === undefined || rate === 1 ? "A credit is about 1,000 tokens." : rate === 0 ? "This model uses no credits." : `This model uses ${rate} credits per 1,000 tokens.`;
+  const refill = summary.refill === null
+    ? `A ${label === "Session" ? `${credits.plan.sessionHours}-hour` : "7-day"} window starts with your next request.`
+    : `Refills in ${summary.refill.in} (${summary.refill.at}).`;
+  return {
+    label,
+    percent: summary.percent,
+    value: `${summary.percent}%`,
+    detail: summary.remaining === 0 ? (summary.refill === null ? "Used up" : `Back in ${summary.refill.in}`) : `${summary.remaining.toLocaleString()} left`,
+    tone: tone(summary.percent),
+    tooltip: `Free AI credits for ${span}: ${summary.remaining.toLocaleString()} of ${window.limit.toLocaleString()} left${window.held > 0 ? `, ${Math.ceil(window.held).toLocaleString()} held by replies in progress` : ""}. ${refill} Every free model draws from this one balance, on all your devices. ${pricing} When it runs out, a running task waits and carries on by itself. Open AI usage for details.`,
+  };
+}
 
 /**
  * Included quotas are shared across devices. A partner model with its own allowance shows that
@@ -23,6 +41,10 @@ export function composerUsageModels(view: AiUsageView | null, allowance: Tagflow
     if (allowance.blocked) {
       const blocked: ComposerMeterModel = { percent: null, value: "!", detail: "Disabled", tone: "full", tooltip: "Included AI is disabled for this account. Open AI usage for details." };
       return [blocked, blocked];
+    }
+    if (allowance.credits !== undefined) {
+      const now = Date.now();
+      return [creditMeter("Session", allowance.credits.session, allowance.credits, modelId, now), creditMeter("Weekly", allowance.credits.weekly, allowance.credits, modelId, now)];
     }
     const scoped = allowanceForModel(allowance, modelId);
     const { usage, limits } = scoped;

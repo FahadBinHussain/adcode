@@ -1,13 +1,17 @@
 /**
- * The daily allowance of sandbox time, and when a sandbox should sleep.
+ * The session allowance of sandbox time, and when a sandbox should sleep.
  *
  * Pure functions over plain records, so the rules are tested without a Durable Object. Time is
- * counted while the container runs; it resets at UTC midnight.
+ * counted while the container runs, in a rolling window - five hours by default, as in a Claude
+ * Max plan and like the free AI credits - that opens when the sandbox first runs and refills
+ * when it ends. Nobody loses half an allowance by starting late in a day.
  */
 
 export interface Usage {
-  /** The UTC day this count belongs to, `yyyy-mm-dd`. */
-  readonly day: string;
+  /** When the current window opened, epoch milliseconds. */
+  readonly windowStart?: number;
+  /** Records from before windows carried the UTC day instead; they count as an ended window. */
+  readonly day?: string;
   readonly usedMs: number;
 }
 
@@ -22,24 +26,30 @@ export interface Activity {
   readonly idleSince: number | null;
 }
 
-export function dayKey(now: number): string {
-  return new Date(now).toISOString().slice(0, 10);
+export const DEFAULT_WINDOW_MS = 5 * 3_600_000;
+
+function live(usage: Usage, now: number, windowMs: number): boolean {
+  return usage.windowStart !== undefined && now < usage.windowStart + windowMs;
 }
 
-export function nextReset(now: number): number {
-  const date = new Date(now);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1);
+/** Running time just counted; the first running minute after a window ends opens a new one. */
+export function addUsage(usage: Usage, now: number, deltaMs: number, windowMs = DEFAULT_WINDOW_MS): Usage {
+  const delta = Math.max(0, deltaMs);
+  if (live(usage, now, windowMs)) return { windowStart: usage.windowStart!, usedMs: usage.usedMs + delta };
+  return { windowStart: now - delta, usedMs: delta };
 }
 
-export function addUsage(usage: Usage, now: number, deltaMs: number): Usage {
-  const today = dayKey(now);
-  const base = usage.day === today ? usage.usedMs : 0;
-  return { day: today, usedMs: base + Math.max(0, deltaMs) };
+export function usedMs(usage: Usage, now: number, windowMs = DEFAULT_WINDOW_MS): number {
+  return live(usage, now, windowMs) ? usage.usedMs : 0;
 }
 
-export function remainingMs(usage: Usage, now: number, allowanceMs: number): number {
-  const used = usage.day === dayKey(now) ? usage.usedMs : 0;
-  return Math.max(0, allowanceMs - used);
+export function remainingMs(usage: Usage, now: number, allowanceMs: number, windowMs = DEFAULT_WINDOW_MS): number {
+  return Math.max(0, allowanceMs - usedMs(usage, now, windowMs));
+}
+
+/** When the time refills: the open window's end, or a full window from now if none is open. */
+export function nextReset(usage: Usage, now: number, windowMs = DEFAULT_WINDOW_MS): number {
+  return live(usage, now, windowMs) ? usage.windowStart! + windowMs : now + windowMs;
 }
 
 /**

@@ -37,7 +37,12 @@ export interface Env {
   /** Where adcode-host sends `/v1` calls (ads, earnings, included AI). */
   readonly ADCODE_API_BASE: string;
 
-  readonly DAILY_ALLOWANCE_MIN: string;
+  /** Running minutes per session window. */
+  readonly SESSION_ALLOWANCE_MIN?: string;
+  /** Length of a session window, in hours. */
+  readonly SESSION_HOURS?: string;
+  /** The allowance's name before session windows; read only when SESSION_ALLOWANCE_MIN is unset. */
+  readonly DAILY_ALLOWANCE_MIN?: string;
   readonly IDLE_SLEEP_MIN: string;
   readonly UNTOUCHED_TAB_MIN: string;
   readonly SNAPSHOT_EVERY_MIN: string;

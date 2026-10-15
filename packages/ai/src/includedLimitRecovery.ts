@@ -1,6 +1,7 @@
 import type { Provider } from "./types.ts";
 
-type LimitError = { status?: number; code?: string; retryAfter?: string | null; retryable?: boolean; resetsAt?: number; message?: string };
+/** `limit` names the credit window that ran out; older relays send a daily allowance without it. */
+type LimitError = { status?: number; code?: string; retryAfter?: string | null; retryable?: boolean; resetsAt?: number; message?: string; limit?: "session" | "weekly" };
 
 /** Re-check wall time every minute so a sleeping computer resumes after the reset. */
 async function waitUntil(at: number, signal: AbortSignal): Promise<void> {
@@ -18,7 +19,9 @@ async function waitUntil(at: number, signal: AbortSignal): Promise<void> {
 
 function resetTime(error: LimitError, daily: boolean): number {
   const now = Date.now();
-  if (daily && Number.isSafeInteger(error.resetsAt) && error.resetsAt! > now) return Math.min(error.resetsAt!, now + 86_400_000);
+  // A weekly credit window can refill days away; anything else is within a day.
+  const longest = error.limit === "weekly" ? 8 * 86_400_000 : 86_400_000;
+  if (daily && Number.isSafeInteger(error.resetsAt) && error.resetsAt! > now) return Math.min(error.resetsAt!, now + longest);
   const raw = error.retryAfter;
   const seconds = raw == null || raw.trim() === "" ? NaN : Number(raw);
   const at = Number.isFinite(seconds) ? now + Math.max(1, seconds) * 1000 : raw ? Date.parse(raw) : NaN;
@@ -80,7 +83,11 @@ export function recoverIncludedLimits(provider: Provider): Provider {
           const daily = code === "daily-limit";
           const at = resetTime(error, daily);
           const when = new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-          yield { kind: "status", text: daily
+          yield { kind: "status", text: error.limit === "weekly"
+            ? `This week's free AI credits are used up. This task resumes by itself when they refill, after ${when}. Keep ADCode open; press Stop to cancel.`
+            : error.limit === "session"
+            ? `This session's free AI credits are used up. This task resumes by itself when they refill, after ${when}. Keep ADCode open; press Stop to cancel.`
+            : daily
             ? `Free AI allowance reached. This task will resume automatically after ${when}. Keep ADCode open; press Stop to cancel.`
             : `Free AI is temporarily limited. This task will retry automatically after ${when}. Press Stop to cancel.` };
           await waitUntil(at, signal);

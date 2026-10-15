@@ -5,6 +5,8 @@ export interface ComposerMeterModel {
   readonly detail: string;
   readonly tooltip: string;
   readonly tone: "ok" | "warn" | "full" | "unknown";
+  /** Renames the meter: the included-AI pair reads "Session" and "Weekly", others keep theirs. */
+  readonly label?: string;
 }
 
 export interface ComposerMeter {
@@ -14,7 +16,8 @@ export interface ComposerMeter {
 
 const RING = 2 * Math.PI * 15;
 
-export function createComposerMeter(name: string, onOpen: (button: HTMLButtonElement) => void): ComposerMeter {
+export function createComposerMeter(initialName: string, onOpen: (button: HTMLButtonElement) => void): ComposerMeter {
+  let name = initialName;
   const element = document.createElement("button");
   element.type = "button";
   element.className = "composer-meter";
@@ -52,6 +55,8 @@ export function createComposerMeter(name: string, onOpen: (button: HTMLButtonEle
     element,
     update(model) {
       const percent = model.percent === null || !Number.isFinite(model.percent) ? null : Math.min(100, Math.max(0, model.percent));
+      name = model.label ?? initialName;
+      label.textContent = name;
       element.dataset["tone"] = model.tone;
       element.dataset["percent"] = percent === null ? "unknown" : String(percent);
       value.textContent = model.value;

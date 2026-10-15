@@ -2,6 +2,7 @@
 import type { CustomProvider, IncludedProviderId, TagflowLimits } from "./includedProviders.ts";
 import type { ModelFeedbackRecord, ModelReportData, ModelReportRange, ModelRequestRecord } from "./tagflowReportTypes.ts";
 import type { ModelAudienceProfile } from "./modelAudience.ts";
+import type { CreditCharge, CreditPlan, CreditWindows } from "./credits.ts";
 // Defined beside the providers, which can carry their own allowance, so neither file imports the other.
 export type { TagflowLimits } from "./includedProviders.ts";
 
@@ -19,6 +20,8 @@ export interface TagflowModel {
   /** USD per million tokens, as quoted by your deployment. */
   inputPrice: number;
   outputPrice: number;
+  /** Credits per 1,000 tokens; missing derives one (see credits.ts). Zero is free of credits. */
+  creditRate?: number;
 }
 
 export interface TagflowConfig {
@@ -31,6 +34,8 @@ export interface TagflowConfig {
   maxOutputTokens: number;
   /** Administrator-registered OpenAI-compatible providers; missing means none. */
   providers?: CustomProvider[];
+  /** Credits per rolling window; missing uses DEFAULT_CREDIT_PLAN. */
+  credits?: CreditPlan;
 }
 
 export interface TagflowConfigRecord {
@@ -43,6 +48,8 @@ export interface TagflowUserPolicy {
   blocked: boolean;
   /** Null inherits the current defaults. */
   limits: TagflowLimits | null;
+  /** A personal credit plan; null or missing inherits the default. */
+  credits?: CreditPlan | null;
   updatedAt: number;
   updatedBy: string;
 }
@@ -67,6 +74,8 @@ export interface TagflowReservation {
   tokens: number;
   costMicros: number;
   limits: TagflowLimits;
+  /** The account's credit windows to check and hold; missing charges no credits. */
+  credits?: CreditCharge;
 }
 
 export interface TagflowSettlement {
@@ -76,7 +85,11 @@ export interface TagflowSettlement {
   estimated: boolean;
   /** Only a definite upstream refusal releases the request itself. */
   failed: boolean;
+  /** Credits actually used, in millicredits. */
+  millicredits?: number;
 }
+
+export type TagflowReserveResult = "ok" | "daily-limit" | "rate-limit" | "session-limit" | "weekly-limit";
 
 export interface TagflowStore {
   getModelAudienceProfile(uid: string): Promise<ModelAudienceProfile | null>;
@@ -95,7 +108,9 @@ export interface TagflowStore {
   getTagflowUsage(uid: string, day: string): Promise<TagflowUsage | null>;
   listTagflowUsage(day: string): Promise<TagflowUsage[]>;
   /** Atomic across all workers: reserves a request and its maximum token/cost budget. */
-  reserveTagflow(request: TagflowReservation): Promise<"ok" | "daily-limit" | "rate-limit">;
+  reserveTagflow(request: TagflowReservation): Promise<TagflowReserveResult>;
+  /** The account's credit windows as stored; an ended window is still returned. */
+  getCreditWindows(uid: string): Promise<CreditWindows>;
   /** Atomic and idempotent. A failed settlement leaves its reservation charged. */
   settleTagflow(id: string, usage: TagflowSettlement): Promise<void>;
 }

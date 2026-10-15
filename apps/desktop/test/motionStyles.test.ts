@@ -82,7 +82,9 @@ describe("motion.css", () => {
   });
 
   it("is lively only where Vibe asks for it", () => {
-    expect(block(css, ':root[data-motion="lively"]')).toMatch(/--motion-move:\s*320ms/);
+    expect(block(css, ':root[data-motion="lively"]')).toMatch(/--motion-move:\s*280ms/);
+    // UI motion stays under 300ms, lively or not (emilkowalski/skills, emil-design-eng).
+    for (const ms of block(css, ':root[data-motion="lively"]').matchAll(/--motion-(?:move|enter):\s*(\d+)ms/g)) expect(Number(ms[1])).toBeLessThan(300);
     expect(block(css, ":root {")).toMatch(/--motion-move:\s*180ms/);
   });
 });

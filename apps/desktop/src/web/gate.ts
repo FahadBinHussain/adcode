@@ -171,7 +171,7 @@ function signInCard(): Promise<"signed-in" | "dev"> {
 
     const fine = element("p", "web-gate-fine");
     fine.append(
-      document.createTextNode("60 minutes of cloud time a day, free. Ads keep it free, and you earn a share of them. "),
+      document.createTextNode("An hour of cloud time every 5 hours, free. Ads keep it free, and you earn a share of them. "),
       Object.assign(element("a", undefined, "Terms"), { href: `${SITE}/terms`, target: "_blank", rel: "noopener" }),
       document.createTextNode(" · "),
       Object.assign(element("a", undefined, "Privacy"), { href: `${SITE}/privacy`, target: "_blank", rel: "noopener" }),
@@ -215,7 +215,7 @@ export function showWaking(message = "Waking your workspace…", detail = "A few
   body.append(spinner, status, element("p", "web-gate-lead", detail));
 }
 
-/** A full-screen message with actions: no time left today, the web version is full, and so on. */
+/** A full-screen message with actions: no time left in this session, the web version is full, and so on. */
 export function showBlocked(title: string, detail: string, actions: readonly { label: string; primary?: boolean; run: () => void }[]): void {
   const { body } = shell();
   const heading = element("h1", "web-gate-title", title);

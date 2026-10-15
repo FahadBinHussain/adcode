@@ -18,6 +18,11 @@ export function summarizeToolInput(input: unknown): string {
   if (typeof input === "string") return input.slice(0, 96);
   if (typeof input !== "object" || input === null) return "";
   const record = input as Record<string, unknown>;
+  // delegate_task: the helpers' titles, "Map the auth flow · Write the tests".
+  if (Array.isArray(record["tasks"])) {
+    const titles = record["tasks"].map((task) => typeof task === "object" && task !== null && typeof (task as Record<string, unknown>)["title"] === "string" ? String((task as Record<string, unknown>)["title"]).trim() : "").filter((title) => title.length > 0);
+    if (titles.length > 0) return titles.join(" · ").slice(0, 96);
+  }
   if (typeof record["server"] === "string" && typeof record["tool"] === "string") return `${record["server"]} / ${record["tool"]}`.slice(0, 96);
   if (typeof record["from"] === "string" && typeof record["to"] === "string") return `${record["from"]} → ${record["to"]}`.slice(0, 96);
   for (const key of ["path", "file", "pattern", "command", "query", "url", "prompt", "id"]) {
@@ -34,6 +39,7 @@ export function summarizeToolInput(input: unknown): string {
 export function toolHeaderLabel(toolName: string): string {
   const clean = toolName.trim();
   if (clean.length === 0) return "Working";
+  if (clean === "delegate_task") return "Working with helpers";
   if (clean === "discover_capabilities") return "Finding tools and skills";
   if (clean === "load_skill") return "Reading skill instructions";
   if (clean === "load_builtin_skill") return "Reading product guidance";

@@ -1,7 +1,7 @@
 /**
  * The Cloud workspace panel: everything about this person's sandbox, in one place.
  *
- * Time left today, storage used, their projects (each downloadable), whether GitHub is
+ * Time left in this session, storage used, their projects (each downloadable), whether GitHub is
  * connected, signing out, and deleting the whole cloud workspace. It opens from the time-left
  * chip, from the Feature library and from the command palette (`cloud.workspace`), all of which
  * dispatch `OPEN_CLOUD_WORKSPACE_EVENT`; it lives here rather than in the renderer so the desktop
@@ -63,7 +63,7 @@ export function openCloudPanel(deps: CloudPanelDeps): void {
   const status = deps.status();
   const time = el("section", "web-cloud-section");
   if (status === null) {
-    time.append(el("p", "web-gate-lead", "Running locally: no daily limit applies here."));
+    time.append(el("p", "web-gate-lead", "Running locally: no time limit applies here."));
   } else {
     const left = Math.max(0, status.allowanceMs - status.usedMs);
     const meter = el("div", "web-cloud-meter");
@@ -74,7 +74,7 @@ export function openCloudPanel(deps: CloudPanelDeps): void {
     meter.setAttribute("aria-valuemin", "0");
     meter.setAttribute("aria-valuemax", String(Math.round(status.allowanceMs / 60_000)));
     meter.setAttribute("aria-valuenow", String(Math.round(left / 60_000)));
-    meter.setAttribute("aria-label", "Cloud time left today");
+    meter.setAttribute("aria-label", "Cloud time left in this session");
     time.append(
       el("h3", "web-cloud-heading", formatTimeLeft(left)),
       meter,

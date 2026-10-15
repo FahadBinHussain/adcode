@@ -36,7 +36,14 @@ describe("assistant failure explanations", () => {
     expect(main.explanation).toContain("except Heabsy models, which have their own");
     const minute = describeAiFailure("Included AI returned HTTP 429: Included AI is busy for this account. (code rate-limit)");
     expect(minute).toMatchObject({ kind: "rate-limit", title: "Too many AI requests in a minute", actions: ["retry", "usage", "models"] });
-    expect(minute.explanation).toContain("daily allowance may still have tokens left");
+    expect(minute.explanation).toContain("free AI credits may still have room");
+    const session = describeAiFailure("Included AI returned HTTP 429: You've used this 5-hour window's free AI credits (2,000). They refill in 3 hr 12 min, and this task resumes by itself then. All free models share one credit balance. (code daily-limit)");
+    expect(session).toMatchObject({ kind: "daily-limit", title: "This session's free AI credits are used up", actions: ["usage", "models"] });
+    expect(session.explanation).toContain("They refill in 3 hr 12 min.");
+    const week = describeAiFailure("Included AI returned HTTP 429: You've used this week's free AI credits (20,000). They refill in 2 days 3 hr, and this task resumes by itself then. (code daily-limit)");
+    expect(week.title).toBe("This week's free AI credits are used up");
+    expect(week.explanation).toContain("They refill in 2 days 3 hr.");
+    expect(describeAiFailure("Included AI returned HTTP 429: Free AI credits are set to zero for this account, so waiting will not help. (code daily-limit)").title).toBe("Free AI credits are off for this account");
     const upstream = describeAiFailure("Included AI returned HTTP 429: Busy (code upstream-rate-limit)");
     expect(upstream.title).toBe("This free model is temporarily busy");
     expect(upstream.explanation).toContain("model provider");

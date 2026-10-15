@@ -315,6 +315,16 @@ body[data-workspace-mode="vibe"] .vibe-history-host .chat-history-row {
 .usage-allowance-help summary { cursor: pointer; }
 .usage-allowance-help p { margin-top: var(--space-2); line-height: 1.5; }
 .usage-allowance-warning { margin: 0; color: var(--warning); font-size: var(--text-xs); line-height: 1.5; }
+/* Credit windows, one row each: what it is and when it refills, the bar, how much is left. */
+.usage-credit-rows { display: grid; gap: var(--space-3); }
+.usage-credit-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(120px, 2fr) minmax(130px, auto); align-items: center; gap: var(--space-4); font-variant-numeric: tabular-nums; }
+.usage-credit-text, .usage-credit-figures { display: grid; gap: 2px; min-width: 0; }
+.usage-credit-text .usage-stat-label { color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; }
+.usage-credit-figures { justify-items: end; text-align: end; }
+.usage-credit-figures .usage-allowance-value { font-size: var(--text-md); letter-spacing: -0.01em; }
+.usage-credit-bar { width: 100%; height: 6px; }
+.usage-credit-row[data-tone="warn"] .usage-credit-bar { accent-color: var(--warning); }
+.usage-credit-row[data-tone="full"] .usage-credit-bar { accent-color: var(--danger); }
 .usage-activity { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--border-hairline); background: var(--bg-app); }
 .usage-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 .usage-section-heading h3 { margin: 0; font-size: var(--text-md); font-weight: 600; }
@@ -410,6 +420,8 @@ button.usage-calendar-cell:focus-visible { outline: 2px solid var(--accent); out
   .usage-activity-stats .usage-stat-value { font-size: var(--text-lg); }
   .usage-activity-stats .usage-stat-label { font-size: 10px; }
   .usage-allowance-meters { gap: var(--space-2); }
+  .usage-credit-row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); }
+  .usage-credit-bar { grid-column: 1 / -1; grid-row: 2; }
   .usage-stats { grid-template-columns: minmax(0, 1fr); }
   .usage-model { grid-template-columns: minmax(0, 1fr) auto auto; }
   .usage-model-bar, .usage-model-requests { display: none; }

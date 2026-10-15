@@ -91,6 +91,7 @@ const STEP_LABELS: Readonly<Record<string, string>> = {
   audit_page: "Check page",
   open_preview: "Open preview",
   update_plan: "Update plan",
+  delegate_task: "Helpers",
   project_context: "Read project notes",
   inspect_project: "Inspect project",
   run_project_checks: "Check project",
@@ -118,7 +119,7 @@ export type ToolStepIcon = "search" | "globe" | "file" | "edit" | "terminal" | "
 /** The row's icon, by what the tool does rather than by its exact name. */
 export function toolStepIcon(name: string): ToolStepIcon {
   const clean = name.trim();
-  if (clean === "update_plan") return "checklist";
+  if (clean === "update_plan" || clean === "delegate_task") return "checklist";
   if (clean === "call_mcp" || clean === "discover_capabilities") return "plug";
   if (clean === "view_page" || clean === "audit_page" || clean === "open_preview") return "eye";
   if (/fetch|url|web/i.test(clean)) return "globe";

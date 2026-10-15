@@ -1198,16 +1198,71 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Bundled-model editors pick the default that makes their economics work, not yours. Showing what your key can actually call and letting you choose per task keeps that decision where it belongs.",
   },
 
+  "ai-credits": {
+    steps: [
+      "Sign in to ADCode with a verified email - on the desktop app or at web.bluethenics.com. Free AI is selected for you when no other model is connected.",
+      "Look beside the chat box: the Session ring is your current 5-hour window, the Weekly ring is the last 7 days. Hover a ring for the credits left and the time it refills.",
+      "Send your first message. That request opens your session window; it refills 5 hours later with a full balance, however much of it you used.",
+      "Pick any free model in Connect a model → Free · no API key. Each shows its rate: a partner model that costs less to run, such as Heabsy's, uses fewer credits for the same work.",
+      "Run AI: Show Free AI Credits (or open AI usage) for both windows as bars, with the credits left and the exact refill time.",
+      "If a window runs out mid-task, leave ADCode open: the chat or agent says when the credits refill and carries on by itself then. Press Stop to cancel instead, or switch to your own key or a local model, which never use credits.",
+    ],
+    benefits: [
+      "A full balance every 5 hours, not once a day at midnight UTC - start late in the evening and you still get a whole session.",
+      "One number for every free model. You no longer juggle a main allowance and a separate partner allowance.",
+      "Requests start whenever you have credit left and are charged what they really used, so a long reply is never refused at 98%.",
+      "Tasks that hit the limit wait and resume on their own instead of failing, so an agent left running overnight finishes.",
+      "The same balance on every device you sign in on.",
+    ],
+    betterThan:
+      "Claude Max made the 5-hour window the way people expect an AI plan to work: a fresh allowance whenever you sit down, with a weekly ceiling so it stays fair. ADCode's free AI works the same way, for free, and shows you the windows as they fill instead of after you are cut off. Tools that count tokens per day make you plan your work around midnight UTC; tools with a separate quota per model make you guess which one still has room. Here it is one balance, one refill time, and a running task that waits instead of dying.",
+  },
+
+  "ai-project-instructions": {
+    steps: [
+      "Open your project in ADCode.",
+      "Type /init in the chat and send it, or run AI: Write Project Instructions from the command palette. The AI reads the project and writes AGENTS.md at its root: the exact install, build, run and test commands, how the code is organised, and the gotchas.",
+      "Open AGENTS.md and correct anything it got wrong. It is your file: edit it like any other, and commit it so your whole team shares it.",
+      "From the next message on, every chat, helper and Team agent follows it. Already have a CLAUDE.md or GEMINI.md? ADCode reads those too - nothing to rename.",
+      "For rules you want everywhere (your language, your test style), write them in AGENTS.md inside a .adcode folder in your home folder.",
+    ],
+    benefits: [
+      "Explain your project once instead of in every conversation.",
+      "The same file Claude Code, Codex, Gemini and Copilot read, so switching tools - or using several - keeps one set of rules.",
+      "Answers get specific: the AI runs your real test command instead of guessing npm test.",
+    ],
+    betterThan:
+      "Most editors keep AI instructions in their own settings format, which nothing else reads and nobody commits. AGENTS.md is a plain file in your repository, reviewed like code and shared with every agent your team uses; ADCode reads it, and the CLAUDE.md and GEMINI.md files you may already have, without asking you to convert anything.",
+  },
+
+  "ai-subagents": {
+    steps: [
+      "Ask for something with several independent parts - \"add tests for the cart, the checkout and the account pages\", or \"find every place we call the payments API and list what each one sends\".",
+      "To ask for helpers outright, start your message with /helpers, or run AI: Split a Task Across Helpers from the command palette, then describe the job.",
+      "Watch the working line: each helper reports its progress there, like Helper 2 of 3 · Tests: running npm test. A Helpers row in the timeline lists every task.",
+      "When they finish, the assistant reads their reports, checks the work, fixes what they missed and tells you what changed. Open the Helpers row for each helper's own report.",
+      "Undo reverts the whole turn, helpers' edits included. Stop stops the assistant and every helper at once.",
+    ],
+    benefits: [
+      "Big jobs finish sooner: up to four helpers work at the same time.",
+      "Long searches happen in a helper's own context, so the main conversation keeps its focus on your request instead of filling up with file listings.",
+      "Explore helpers can only read, so research never changes your code by accident; build helpers are told to stay in their own files.",
+      "No setup: no roles to define and no plan to approve. The assistant decides when splitting the work is worth it.",
+    ],
+    betterThan:
+      "Claude Code's Task tool and Codex's sub-agents made this the way serious agents work, but they live in a terminal. ADCode brings it to the chat, with each helper's progress on screen and one Undo for everything they did. When you want named roles that talk to each other and a plan you approve first, use Team; helpers are for when you just want the job done faster.",
+  },
+
   "ai-tagflow": {
     steps: [
       "Open Account and sign in with an email verified by your provider.",
       "Included AI is selected automatically on a new installation when enabled, using the administrator's default model. Send a message without entering an API key. To switch, open Connect a model → Free · no API key and choose Use this model.",
       "Choose a model and send your first message. You do not need a provider API key.",
-      "Open AI usage to check your account's remaining requests, tokens and included budget. Chats, completions and agents share the allowance across devices.",
-      "When the allowance cannot cover a request, wait for midnight UTC or switch to your own provider or a local model. Clearing local history does not reset the allowance.",
+      "Watch the Session and Weekly rings by the chat box: free AI is measured in credits that refill every 5 hours, with a weekly ceiling. Chats, completions and agents share them across devices.",
+      "When a window runs out, a running task waits and carries on by itself when it refills - or switch to your own provider or a local model. Clearing local history does not reset your credits.",
     ],
-    benefits: ["Start without purchasing a provider key.", "See the remaining allowance and reset time inside the editor.", "Administrators can set default allowances, individual limits and access blocks."],
-    betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models, or models from any OpenAI-compatible provider they register, using server keys, set their prices and default model, hide models, adjust allowances (including a separate allowance for one partner's models), and save provider keys from the admin panel. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
+    benefits: ["Start without purchasing a provider key.", "See your credits and the refill time inside the editor.", "Administrators can set credits per window, each model's credit rate, individual credits and access blocks."],
+    betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models, or models from any OpenAI-compatible provider they register, using server keys, set their prices and default model, hide models, set credits per session and per week, give each model its own credit rate, and save provider keys from the admin panel. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
   },
   "ai-provider": {
     steps: [
@@ -1536,7 +1591,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Wait a few seconds while your private cloud workspace wakes up - the first time each day takes the longest.",
       "Describe what you want to build in the box that appears and press Build it. ADCode makes the project, writes the code, runs it and opens it in Preview.",
       "Keep asking for changes in the chat. Changes shows every file the assistant touched; Commit & Push sends it to GitHub after you connect GitHub once.",
-      "Watch the time-left chip in the corner: you have 60 minutes of cloud time a day, counted only while your workspace is running.",
+      "Watch the time-left chip in the corner: you have an hour of cloud time in every 5-hour session, counted only while your workspace is running. It refills when the session ends.",
       "To take a project elsewhere, open Cloud workspace from the chip and choose Download, or push it to GitHub and clone it in the desktop app.",
     ],
     benefits: [
@@ -1547,13 +1602,13 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Ads and earnings work the same as on the desktop, in the same balance.",
     ],
     betterThan:
-      "Browser-based AI builders usually lock your project into their hosting. ADCode on the web is a full Linux workspace with git, npm and a real browser for the agent to check its work, and everything in it can be downloaded or pushed to your own GitHub at any time. When you outgrow the daily allowance, the desktop app is free with no limit and runs your projects on your own computer.",
+      "Browser-based AI builders usually lock your project into their hosting. ADCode on the web is a full Linux workspace with git, npm and a real browser for the agent to check its work, and everything in it can be downloaded or pushed to your own GitHub at any time. When you outgrow the cloud time, the desktop app is free with no limit and runs your projects on your own computer.",
   },
 
   "workbench-cloud-workspace": {
     steps: [
       "On the web version, click the time-left chip in the bottom corner, or open the command palette and run Cloud Workspace.",
-      "Read the meter: minutes left today, and the time they come back.",
+      "Read the meter: minutes left in this session, and the time they refill.",
       "Under Projects, choose Download next to a project to save it as a .tar.gz (node_modules is left out; reinstall with npm install).",
       "Under GitHub, choose Connect GitHub and type the code it shows at github.com/login/device, so Commit & Push and private imports work.",
       "To remove everything, choose Delete my cloud workspace and confirm. Your account and earnings stay.",
@@ -1886,14 +1941,14 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Streaks follow local calendar days. Yesterday keeps a streak alive while today is still empty; the longest streak is measured within the displayed year.",
       "Look down the list of models: each shows its share of tokens, its requests from the chat and from agents, and its cost at the catalogue's price.",
       "A ≈ marks counts ADCode estimated because the provider did not report them. Clear usage removes this machine's history, activity and streaks.",
-      "For included Tagflow AI, read your account-wide allowance above the history. It includes active reservations, resets at midnight UTC, and cannot be reset by clearing local history.",
+      "For free AI, read your credits above the history: the current 5-hour session and this week, each with the credits left and its refill time, including credits held by replies in progress. Clearing local history does not reset them.",
     ],
     benefits: [
       "See where the money goes, model by model, before your provider's bill arrives.",
       "Spot the agent run or long chat that used far more than you expected.",
       "See your real pattern of AI use without collecting new activity data or sending local history to a server.",
       "Honest numbers: estimates are marked, and a model with no known price says No price instead of showing $0.",
-      "Your own provider history stays local. Included Tagflow usage counts are stored on the server to enforce the shared account allowance.",
+      "Your own provider history stays local. Free AI usage counts are stored on the server to keep your credits the same on every device.",
     ],
     betterThan:
       "Provider dashboards show one total a day late and cannot tell your chat from your agents. ADCode counts every request as it happens, split by model and by where it came from, right inside the editor.",

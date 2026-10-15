@@ -8,26 +8,38 @@ import { useAuth } from "@/components/AuthProvider";
 import type { TagflowConfig, TagflowLimits, TagflowModel, TagflowUsage, TagflowUserPolicy } from "@adcode/api/src/tagflowTypes.ts";
 import { MAX_CUSTOM_PROVIDERS, allowanceAccount, customProviderId, modelProvider, providerConnections, type CustomProvider, type IncludedProviderId } from "@adcode/api/src/includedProviders.ts";
 import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE } from "@adcode/api/src/tagflowConfig.ts";
+import { DEFAULT_CREDIT_PLAN, MAX_CREDITS, MAX_CREDIT_RATE, modelCreditRate, type CreditPlan, type CreditsView } from "@adcode/api/src/credits.ts";
 import { CustomProviderEditor } from "@/components/CustomProviderEditor";
 import "@/components/adminModels.css";
 import "@/components/adminTagflow.css";
 
 interface Saved { config: TagflowConfig; keyConfigured: boolean; updatedAt: number; updatedBy: string; connections: { id: IncludedProviderId; configured: boolean }[]; keysManageable?: boolean }
-interface UserView { policy: TagflowUserPolicy | null; limits: TagflowLimits; usage: TagflowUsage; resetsAt: number; pools?: { provider: string; name: string; limits: TagflowLimits; usage: TagflowUsage }[] }
+interface UserView { policy: TagflowUserPolicy | null; limits: TagflowLimits; usage: TagflowUsage; resetsAt: number; credits?: CreditsView }
 const money = (micros: number): string => `$${(micros / 1_000_000).toFixed(4)}`;
 
 export default function TagflowPage() {
   return <AdminShell title="Free models" subtitle="Offer models without a user API key, choose the default, and control each person's allowance."><AdminModelTabs active="free" /><TagflowEditor /></AdminShell>;
 }
 
+/** Tokens are no longer a limit - credits are - so a day keeps only its request and spending ceilings. */
 function LimitFields({ value, onChange, disabled = false }: { value: TagflowLimits; onChange: (next: TagflowLimits) => void; disabled?: boolean }) {
   return <div className="tagflow-fields">
     <RequestField label="Requests per day" value={value.dailyRequests} unlimited={UNLIMITED_DAILY_REQUESTS} fallback={50} disabled={disabled} onChange={(dailyRequests) => onChange({ ...value, dailyRequests })} />
-    <NumberField label="Tokens per day" value={value.dailyTokens} max={1_000_000_000} disabled={disabled} onChange={(dailyTokens) => onChange({ ...value, dailyTokens })} />
     <NumberField label="Spending limit per day (USD)" value={value.dailyCostMicros / 1_000_000} max={1000} step="0.000001" disabled={disabled} onChange={(amount) => onChange({ ...value, dailyCostMicros: Math.round(amount * 1_000_000) })} />
     <RequestField label="Requests per minute" value={value.requestsPerMinute} unlimited={UNLIMITED_REQUESTS_PER_MINUTE} fallback={10} disabled={disabled} onChange={(requestsPerMinute) => onChange({ ...value, requestsPerMinute })} />
   </div>;
 }
+
+function CreditFields({ value, onChange, disabled = false }: { value: CreditPlan; onChange: (next: CreditPlan) => void; disabled?: boolean }) {
+  return <div className="tagflow-fields">
+    <NumberField label="Credits per session window" value={value.sessionCredits} max={MAX_CREDITS} disabled={disabled} onChange={(sessionCredits) => onChange({ ...value, sessionCredits })} />
+    <NumberField label="Session window (hours)" min={1} value={value.sessionHours} max={168} disabled={disabled} onChange={(sessionHours) => onChange({ ...value, sessionHours })} />
+    <NumberField label="Credits per week" value={value.weeklyCredits} max={MAX_CREDITS} disabled={disabled} onChange={(weeklyCredits) => onChange({ ...value, weeklyCredits })} />
+  </div>;
+}
+
+const windowLine = (label: string, view: CreditsView["session"]): string =>
+  `${label}: ${view.used.toLocaleString()} of ${view.limit.toLocaleString()} credits used${view.held > 0 ? `, ${view.held.toLocaleString()} held` : ""}${view.resetsAt === null ? " (no window open)" : `, refills ${new Date(view.resetsAt).toLocaleString()}`}.`;
 
 function RequestField({ label, value, unlimited, fallback, disabled, onChange }: { label: string; value: number; unlimited: number; fallback: number; disabled: boolean; onChange: (value: number) => void }) {
   const unbounded = value === unlimited;
@@ -57,6 +69,8 @@ function TagflowEditor() {
   const [blocked, setBlocked] = useState(false);
   const [inherit, setInherit] = useState(true);
   const [userLimits, setUserLimits] = useState<TagflowLimits | null>(null);
+  const [inheritCredits, setInheritCredits] = useState(true);
+  const [userCredits, setUserCredits] = useState<CreditPlan>(DEFAULT_CREDIT_PLAN);
   const [keyProvider, setKeyProvider] = useState("");
   const [keyValue, setKeyValue] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
@@ -127,6 +141,7 @@ function TagflowEditor() {
     try {
       const result = await call<UserView>(`/admin/tagflow/users/${encodeURIComponent(selected)}`);
       setUid(selected); setLoadedUid(selected); setUser(result); setBlocked(result.policy?.blocked === true); setInherit(result.policy?.limits == null); setUserLimits(result.limits);
+      setInheritCredits(result.policy?.credits == null); setUserCredits(result.policy?.credits ?? result.credits?.plan ?? DEFAULT_CREDIT_PLAN);
     } catch (error) { setUserNotice(error instanceof Error ? error.message : "Could not load this user."); }
     finally { setUserBusy(false); }
   }
@@ -134,7 +149,7 @@ function TagflowEditor() {
     if (!loadedUid) return;
     setUserBusy(true); setUserNotice("");
     try {
-      const result = await call<UserView>(`/admin/tagflow/users/${encodeURIComponent(loadedUid)}`, { blocked, limits: inherit ? null : userLimits });
+      const result = await call<UserView>(`/admin/tagflow/users/${encodeURIComponent(loadedUid)}`, { blocked, limits: inherit ? null : userLimits, credits: inheritCredits ? null : userCredits });
       setUser(result); setUserLimits(result.limits); setUserNotice("Saved for this account. Usage already spent remains counted.");
     } catch (error) { setUserNotice(error instanceof Error ? error.message : "Nothing was saved."); }
     finally { setUserBusy(false); }
@@ -185,7 +200,8 @@ function TagflowEditor() {
         <label className="tagflow-field"><span>API base URL supplied by Tagflow (including /v1 when required)</span><input className="input" type="url" maxLength={500} value={draft.baseUrl} placeholder="https://your-deployment.tagflow-ai.com/v1" onChange={(event) => change({ baseUrl: event.target.value })} /></label>
         <p className="row-sub">Only HTTPS addresses on tagflow-ai.com or its subdomains are accepted. Get your exact deployment URL and model IDs from Tagflow.</p>
       </section>
-      <section className="admin-models-provider"><h3>Default allowance per person</h3><p className="row-sub">Requests are unlimited when the controls below are checked. Token and spending limits still apply. Zero blocks that type of usage. Each day resets at midnight UTC. Chats, completions and agents share one allowance per verified account.</p><LimitFields value={draft.limits} onChange={(limits) => change({ limits })} /><div className="tagflow-fields"><NumberField label="Maximum input tokens per request" min={1} max={1_000_000} value={draft.maxInputTokens} onChange={(maxInputTokens) => change({ maxInputTokens })} /><NumberField label="Maximum output tokens per request" min={1} max={65_536} value={draft.maxOutputTokens} onChange={(maxOutputTokens) => change({ maxOutputTokens })} /></div><p className="row-sub">A request reserves its maximum response before it starts. Without provider token counts, usage is estimated conservatively. Spending uses the prices you enter below.</p></section>
+      <section className="admin-models-provider"><h3>Free AI credits per person</h3><p className="row-sub">One balance for every free model, as in a Claude Max plan. A session window opens with a person's first request and refills when it ends; the weekly window works the same over seven days. A request starts while any credit is left and is charged what it really used. A credit is about 1,000 tokens on a model with rate 1; set each model's rate below. Zero credits blocks free AI.</p><CreditFields value={draft.credits ?? DEFAULT_CREDIT_PLAN} onChange={(credits) => change({ credits })} /></section>
+      <section className="admin-models-provider"><h3>Daily safety ceilings per person</h3><p className="row-sub">Behind the credits: what ADCode will spend on one account in a UTC day, and how many requests it may send. Requests are unlimited when the controls below are checked. Zero blocks that type of usage.</p><LimitFields value={draft.limits} onChange={(limits) => change({ limits })} /><div className="tagflow-fields"><NumberField label="Maximum input tokens per request" min={1} max={1_000_000} value={draft.maxInputTokens} onChange={(maxInputTokens) => change({ maxInputTokens })} /><NumberField label="Maximum output tokens per request" min={1} max={65_536} value={draft.maxOutputTokens} onChange={(maxOutputTokens) => change({ maxOutputTokens })} /></div><p className="row-sub">A request reserves its maximum response before it starts. Without provider token counts, usage is estimated conservatively. Spending uses the prices you enter below.</p></section>
       <section className="admin-models-provider"><header className="admin-card-head"><h3>Models offered to users</h3><button type="button" className="btn" disabled={draft.models.length >= 50} onClick={() => change({ models: [...draft.models, { id: "", name: "", contextWindow: 32_768, maxOutput: 4096, inputPrice: 0, outputPrice: 0 }] })}>Add model</button></header>
         <label className="tagflow-field"><span>Default model</span><select className="select" value={draft.defaultModel} onChange={(event) => change({ defaultModel: event.target.value })}><option value="">Choose a model</option>{draft.models.filter((model) => model.id && model.enabled !== false).map((model, index) => <option key={index} value={model.id}>{model.name || model.id}</option>)}</select></label>
         {draft.models.map((model, index) => <fieldset className="tagflow-model" key={index}>
@@ -201,16 +217,17 @@ function TagflowEditor() {
             <NumberField label="Maximum output tokens" min={1} max={65_536} value={model.maxOutput} onChange={(maxOutput) => editModel(index, { maxOutput })} />
             <NumberField label="Input price (USD per 1M tokens)" max={10_000} step="0.000001" value={model.inputPrice} onChange={(inputPrice) => editModel(index, { inputPrice })} />
             <NumberField label="Output price (USD per 1M tokens)" max={10_000} step="0.000001" value={model.outputPrice} onChange={(outputPrice) => editModel(index, { outputPrice })} />
+            <label className="tagflow-field"><span>Credits per 1,000 tokens</span><input className="input" type="number" min={0} max={MAX_CREDIT_RATE} step="0.001" value={model.creditRate ?? ""} placeholder={`${modelCreditRate(model.provider === undefined ? {} : { provider: model.provider }, draft)} (default)`} onChange={(event) => { const next = { ...model }; if (event.target.value === "") delete next.creditRate; else next.creditRate = event.currentTarget.valueAsNumber; change({ models: draft.models.map((one, at) => at === index ? next : one) }); }} /><small>Lower for models that cost less to serve. Zero never uses credits.</small></label>
           </div>
           <div className="admin-models-actions"><button type="button" className="btn" disabled={dirty || busy || testingModel !== null || !draft.enabled || model.enabled === false} onClick={() => void testModel(model)}>{testingModel === model.id ? "Testing…" : "Test model"}</button><button type="button" className="btn" onClick={() => change({ models: draft.models.filter((_, at) => at !== index), defaultModel: draft.defaultModel === model.id ? "" : draft.defaultModel })}>Remove model</button></div>
         </fieldset>)}
-        <p className="row-sub">Use unique ADCode IDs; set an optional provider ID when you need an alias. Enter your actual upstream prices for spending limits. Zero means no upstream charge. Offer models that support text chat and tool calls. These models share the account allowance above.</p>
-        <p className="row-sub">Save changes before using Test model. Each test asks for a short “ok” reply and counts as one request from your account's included allowance.</p>
+        <p className="row-sub">Use unique ADCode IDs; set an optional provider ID when you need an alias. Enter your actual upstream prices for spending limits. Zero means no upstream charge. Offer models that support text chat and tool calls. Every model draws from the one credit balance above, at its own rate.</p>
+        <p className="row-sub">Save changes before using Test model. Each test asks for a short “ok” reply and uses a few of your account's credits.</p>
       </section>
     </form>
     <section className="admin-models-provider"><h3>Individual allowance</h3><form className="admin-toolbar" onSubmit={(event) => { event.preventDefault(); void loadUser(); }}><label className="tagflow-field"><span>User ID from People</span><input className="input" required maxLength={128} value={uid} onChange={(event) => setUid(event.target.value)} /></label><button className="btn" disabled={userBusy}>Load user</button></form>
       {userNotice && <p role="status" className="notice">{userNotice}</p>}
-      {user !== null && userLimits !== null && <form onSubmit={(event) => { event.preventDefault(); void saveUser(); }}><p className="row-sub">Account: {loadedUid}. Today: {user.usage.requests} requests, {(user.usage.inputTokens + user.usage.outputTokens).toLocaleString()} tokens, {money(user.usage.costMicros)} estimated spend.</p>{user.pools?.map((pool) => <p className="row-sub" key={pool.provider}>{pool.name} allowance today: {(pool.usage.inputTokens + pool.usage.outputTokens).toLocaleString()} of {pool.limits.dailyTokens.toLocaleString()} tokens, {pool.usage.requests} requests. Set in Custom providers.</p>)}<div className="tagflow-checks"><label><input type="checkbox" checked={blocked} onChange={(event) => setBlocked(event.target.checked)} /> Block included AI for this person</label><label><input type="checkbox" checked={inherit} onChange={(event) => setInherit(event.target.checked)} /> Use current defaults</label></div><LimitFields value={inherit ? saved.config.limits : userLimits} disabled={inherit} onChange={setUserLimits} /><button className="btn btn-primary" disabled={userBusy}>{userBusy ? "Saving…" : "Save user allowance"}</button></form>}
+      {user !== null && userLimits !== null && <form onSubmit={(event) => { event.preventDefault(); void saveUser(); }}><p className="row-sub">Account: {loadedUid}. Today: {user.usage.requests} requests, {(user.usage.inputTokens + user.usage.outputTokens).toLocaleString()} tokens, {money(user.usage.costMicros)} estimated spend.</p>{user.credits && <><p className="row-sub">{windowLine("Session", user.credits.session)}</p><p className="row-sub">{windowLine("Week", user.credits.weekly)}</p></>}<div className="tagflow-checks"><label><input type="checkbox" checked={blocked} onChange={(event) => setBlocked(event.target.checked)} /> Block included AI for this person</label><label><input type="checkbox" checked={inheritCredits} onChange={(event) => setInheritCredits(event.target.checked)} /> Default credits</label><label><input type="checkbox" checked={inherit} onChange={(event) => setInherit(event.target.checked)} /> Default daily ceilings</label></div><CreditFields value={inheritCredits ? saved.config.credits ?? DEFAULT_CREDIT_PLAN : userCredits} disabled={inheritCredits} onChange={setUserCredits} /><LimitFields value={inherit ? saved.config.limits : userLimits} disabled={inherit} onChange={setUserLimits} /><button className="btn btn-primary" disabled={userBusy}>{userBusy ? "Saving…" : "Save user allowance"}</button></form>}
     </section>
     <section className="admin-models-provider"><header className="admin-card-head"><div><h3>Usage by account</h3><p className="row-sub">Up to 200 accounts with the highest spend on this UTC date. Only counts are stored; prompts and responses are never stored in these tables.</p></div><div className="admin-models-actions"><input className="input" type="date" value={day} aria-label="Usage date (UTC)" onChange={(event) => { if (event.target.value) setDay(event.target.value); }} /><button className="btn" type="button" onClick={() => void refreshUsage()}>Refresh</button></div></header>
       {usageError && <p className="notice" role="alert">{usageError}</p>}<div className="admin-models-scroll"><table className="admin-models-table"><thead><tr><th scope="col">Account</th><th scope="col">Requests</th><th scope="col">Tokens in / out</th><th scope="col">Estimated spend</th><th scope="col">Reserved tokens / spend</th><th scope="col">Estimated requests</th></tr></thead><tbody>{rows.map((row) => { const { uid: account, pool } = allowanceAccount(row.uid); return <tr key={row.uid}><td><button className="btn" onClick={() => void loadUser(account)}>{account}</button>{pool !== null && <small> · {providerConnections(customProviders).find((provider) => provider.id === pool)?.name ?? pool} allowance</small>}</td><td>{row.requests}</td><td>{row.inputTokens.toLocaleString()} / {row.outputTokens.toLocaleString()}</td><td>{money(row.costMicros)}</td><td>{row.reservedTokens.toLocaleString()} / {money(row.reservedCostMicros)}</td><td>{row.estimatedRequests}</td></tr>; })}</tbody></table></div>{rows.length === 0 && !usageError && <p className="row-sub">No included AI usage on this date.</p>}

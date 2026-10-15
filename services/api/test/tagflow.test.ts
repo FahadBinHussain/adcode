@@ -7,6 +7,7 @@ import type { TokenVerifier } from "../src/auth.ts";
 import { createApiServer } from "../src/server.ts";
 import { INCLUDED_PROVIDERS } from "../src/includedProviders.ts";
 import { createTagflowMemoryStore } from "../src/tagflowMemoryStore.ts";
+import { DEFAULT_CREDIT_PLAN } from "../src/credits.ts";
 
 const config: TagflowConfig = { ...DEFAULT_TAGFLOW_CONFIG, enabled: true, baseUrl: "https://api.tagflow-ai.com/v1", defaultModel: "coder", models: [{ id: "coder", name: "Coder", contextWindow: 65_536, maxOutput: 4096, inputPrice: 0.1, outputPrice: 0.2 }] };
 const body = { model: "coder", messages: [{ role: "user", content: "Hello" }], max_tokens: 100, stream: true };
@@ -65,26 +66,42 @@ describe("included Tagflow AI", () => {
     expect(upstream).toHaveBeenCalledTimes(1);
   });
 
-  it("gives each account 1M daily tokens, enforces the cap and restores it next day", async () => {
-    expect(DEFAULT_TAGFLOW_CONFIG.limits.dailyTokens).toBe(1_000_000);
-    const day = new Date(now).toISOString().slice(0, 10);
-    const charge = async (id: string, tokens: number) => {
-      expect(await store.reserveTagflow({ id, uid: "user", day, minute: Math.floor(now / 60_000), tokens, costMicros: 0, limits: config.limits })).toBe("ok");
-      await store.settleTagflow(id, { inputTokens: tokens, outputTokens: 0, costMicros: 0, estimated: false, failed: false });
-    };
-    await charge("past-old-cap", 950_000);
+  it("gives each account credits per 5-hour window, refuses once they are spent and refills when the window ends", async () => {
+    expect(DEFAULT_CREDIT_PLAN).toEqual({ sessionCredits: 2000, weeklyCredits: 20000, sessionHours: 5 });
+    await save({ ...config, credits: { sessionCredits: 1, weeklyCredits: 100, sessionHours: 5 } });
+    const started = now;
+    const first = await chat(); expect(first.status).toBe(200); await first.text();
+    // 12 + 3 tokens at the standard rate: 15 millicredits, well past a day's token count.
     const view = await (await call("/ai/tagflow/usage", "user")).json();
-    expect(view).toMatchObject({ limits: { dailyTokens: 1_000_000 }, usage: { inputTokens: 950_000 } });
-    await (await chat()).text();
-    await charge("fill-new-cap", 1_000_000 - (await usage())!.inputTokens - (await usage())!.outputTokens);
+    expect(view).toMatchObject({ credits: { plan: { sessionCredits: 1 }, session: { limit: 1, used: 0.015, held: 0, startedAt: started, resetsAt: started + 5 * 3_600_000 }, weekly: { used: 0.015 } } });
+    // Released desktops read the token fields: they now describe the session window.
+    expect(view).toMatchObject({ limits: { dailyTokens: 1000 }, usage: { inputTokens: 15, outputTokens: 0 }, resetsAt: started + 5 * 3_600_000, today: { inputTokens: 12, outputTokens: 3 } });
+    const id = "fill-window";
+    expect(await store.reserveTagflow({ id, uid: "user", day: new Date(now).toISOString().slice(0, 10), minute: 0, tokens: 1, costMicros: 0, limits: config.limits, credits: { millicredits: 1000, sessionLimit: 1000, weeklyLimit: 100_000, sessionMs: 5 * 3_600_000, now } })).toBe("ok");
+    await store.settleTagflow(id, { inputTokens: 1, outputTokens: 0, costMicros: 0, estimated: false, failed: false, millicredits: 1000 });
+    now += 60 * 60_000;
     const limited = await chat();
     expect(limited.status).toBe(429);
-    expect(await limited.json()).toMatchObject({ error: { code: "daily-limit", retryable:true,resetsAt:Date.parse(`${day}T00:00:00Z`)+86_400_000 } });
+    expect(limited.headers.get("retry-after")).toBe(String(4 * 3600));
+    const refused = await limited.json() as { error: { message: string } };
+    expect(refused).toMatchObject({ error: { code: "daily-limit", limit: "session", retryable: true, resetsAt: started + 5 * 3_600_000 } });
+    expect(refused.error.message).toContain("refill in 4 hr");
     expect(upstream).toHaveBeenCalledTimes(1);
     await (await chat("other")).text();
-    now = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
+    now = started + 5 * 3_600_000;
     await (await chat()).text();
     expect(upstream).toHaveBeenCalledTimes(3);
+    expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ credits: { session: { startedAt: now, used: 0.015 }, weekly: { startedAt: started } } });
+  });
+  it("stops at the weekly credits even with a fresh session window", async () => {
+    await save({ ...config, credits: { sessionCredits: 100, weeklyCredits: 1, sessionHours: 5 } });
+    expect(await store.reserveTagflow({ id: "week", uid: "user", day: "2026-10-10", minute: 0, tokens: 1, costMicros: 0, limits: config.limits, credits: { millicredits: 1000, sessionLimit: 100_000, weeklyLimit: 1000, sessionMs: 5 * 3_600_000, now } })).toBe("ok");
+    await store.settleTagflow("week", { inputTokens: 1, outputTokens: 0, costMicros: 0, estimated: false, failed: false, millicredits: 1000 });
+    now += 6 * 3_600_000;
+    const limited = await chat(); expect(limited.status).toBe(429);
+    expect(await limited.json()).toMatchObject({ error: { code: "daily-limit", limit: "weekly", resetsAt: Date.parse("2026-10-17T12:00:00Z") } });
+    now = Date.parse("2026-10-17T12:00:00Z");
+    expect((await chat()).status).toBe(200);
   });
 
   it("identifies an upstream rate limit without charging daily usage or exposing its response", async () => {
@@ -188,27 +205,27 @@ describe("included Tagflow AI", () => {
     const response = await call("/admin/tagflow/keys", "admin", { provider: "tagflow", key: "sk-test-value" });
     expect(response.status).toBe(409); expect(await response.text()).toContain("not set up");
   });
-  it("charges a provider with its own allowance to a separate per-account pool", async () => {
+  it("combines a partner's old separate pool into the one credit balance, at a rate that keeps its value", async () => {
     vi.stubEnv("INCLUDED_AI_CUSTOM_TOGETHER_AI_API_KEY", "together-private-key");
-    const today = new Date(now).toISOString().slice(0, 10);
-    const pooled = { ...custom, limits: { ...config.limits, dailyTokens: 10_000_000 } };
-    await save({ ...config, models: [...config.models, customModel], providers: [pooled] });
+    const pooled = { ...custom, limits: { ...config.limits, dailyTokens: 5_000_000 } };
+    await save({ ...config, models: [...config.models, customModel, { ...customModel, id: "priced", creditRate: 3 }], providers: [pooled] });
     expect((await call("/admin/tagflow", "admin", (await store.getTagflowConfig())!.config)).status).toBe(200);
+    const published = await (await call("/ai/tagflow/config")).json() as { models: { id: string; creditRate: number }[]; credits: unknown };
+    // 1M main tokens a day against a 5M partner pool: the partner costs 0.2 credits per 1,000 tokens.
+    expect(published.models.map((model) => [model.id, model.creditRate])).toEqual([["coder", 1], ["free-llama", 0.2], ["priced", 3]]);
+    expect(published.credits).toEqual(DEFAULT_CREDIT_PLAN);
     const response = await chat("user", { ...body, model: customModel.id }); expect(response.status).toBe(200); await response.text();
-    expect(await usage()).toBeNull();
-    expect(await store.getTagflowUsage("user#custom-together-ai", today)).toMatchObject({ requests: 1, inputTokens: 12, outputTokens: 3 });
-    const view = await (await call("/ai/tagflow/usage", "user")).json() as { limits: { dailyTokens: number }; pools: unknown[] };
-    expect(view.limits.dailyTokens).toBe(config.limits.dailyTokens);
-    expect(view.pools).toEqual([expect.objectContaining({ provider: custom.id, name: "Together AI", limits: expect.objectContaining({ dailyTokens: 10_000_000 }), usage: expect.objectContaining({ requests: 1, inputTokens: 12 }) })]);
-    // Filling the pool refuses only its own models, and says so.
-    await store.reserveTagflow({ id: "fill-pool", uid: "user#custom-together-ai", day: today, minute: 0, tokens: 9_999_900, costMicros: 0, limits: pooled.limits });
-    const refused = await chat("user", { ...body, model: customModel.id });
-    expect(refused.status).toBe(429); expect(await refused.text()).toContain("Together AI models have their own daily allowance");
+    // Charged to the account itself, never to a separate pool any more.
+    expect(await usage()).toMatchObject({ requests: 1, inputTokens: 12, outputTokens: 3 });
+    expect(await store.getTagflowUsage("user#custom-together-ai", new Date(now).toISOString().slice(0, 10))).toBeNull();
     const main = await chat(); expect(main.status).toBe(200); await main.text();
-    // Filling the main allowance names the pool that still has room.
-    await store.reserveTagflow({ id: "fill-main", uid: "user", day: today, minute: 0, tokens: config.limits.dailyTokens - 100, costMicros: 0, limits: config.limits });
-    const mainRefused = await chat(); expect(mainRefused.status).toBe(429); expect(await mainRefused.text()).toContain("except Together AI models");
+    const view = await (await call("/ai/tagflow/usage", "user")).json() as { credits: { session: { used: number }; rates: Record<string, number> }; pools?: unknown };
+    expect(view.credits.session.used).toBe(0.018);
+    expect(view.credits.rates).toEqual({ coder: 1, "free-llama": 0.2, priced: 3 });
+    expect(view.pools).toBeUndefined();
     expect(parseTagflowConfig({ ...config, models: [...config.models, customModel], providers: [{ ...custom, limits: { dailyTokens: -1 } }] })).toBeNull();
+    expect(parseTagflowConfig({ ...config, models: [{ ...config.models[0]!, creditRate: -1 }] })).toBeNull();
+    expect(parseTagflowConfig({ ...config, credits: { sessionCredits: 1, weeklyCredits: 1, sessionHours: 0 } })).toBeNull();
   });
   it("hides a custom provider's models until its own secret exists, and never reads another secret", async () => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "database-secret");
@@ -343,9 +360,10 @@ describe("included Tagflow AI", () => {
     await responses.find((response) => response.ok)!.text();
     expect((await chat("other")).status).toBe(200);
   });
-  it("enforces token, cost and minute caps before any upstream request", async () => {
-    await save({ ...config, limits: { ...config.limits, dailyTokens: 1 } }); const impossible=await chat();expect(impossible.status).toBe(429);
-    expect(await impossible.json()).toMatchObject({error:{code:"daily-limit",retryable:false}});
+  it("enforces credit, cost and minute caps before any upstream request, and tokens are no longer a cap", async () => {
+    await save({ ...config, limits: { ...config.limits, dailyTokens: 1 } }); await (await chat()).text(); expect(upstream).toHaveBeenCalledTimes(1); upstream.mockClear();
+    await save({ ...config, credits: { sessionCredits: 0, weeklyCredits: 10, sessionHours: 5 } }); const impossible=await chat();expect(impossible.status).toBe(429);
+    expect(await impossible.json()).toMatchObject({error:{code:"daily-limit",limit:"session",retryable:false}});
     await save({ ...config, limits: { ...config.limits, dailyCostMicros: 0 } }); expect((await chat()).status).toBe(429);
     expect(upstream).not.toHaveBeenCalled();
     await save({ ...config, limits: { ...config.limits, requestsPerMinute: 1 } }); await (await chat()).text();
@@ -361,8 +379,9 @@ describe("included Tagflow AI", () => {
     await call(path, "admin", { blocked: false, limits: null }); expect((await chat()).status).toBe(200);
     expect((await call("/admin/tagflow/users/unknown", "admin", { blocked: false, limits: null })).status).toBe(404);
   });
-  it("holds estimated input and reply tokens atomically across concurrent unlimited requests",async()=>{
-    await save({ ...config,limits:{ ...config.limits,dailyTokens:500 } });
+  it("holds estimated credits atomically across concurrent unlimited requests",async()=>{
+    // Each request holds more than the whole window, so only the first one can start.
+    await save({ ...config,credits:{ sessionCredits:1,weeklyCredits:100,sessionHours:5 },models:[{ ...config.models[0]!,creditRate:10 }] });
     const responses=await Promise.all(Array.from({length:10},()=>chat()));
     expect(responses.filter(response=>response.ok)).toHaveLength(1);
     expect(responses.filter(response=>response.status===429)).toHaveLength(9);
@@ -376,7 +395,8 @@ describe("included Tagflow AI", () => {
     now = Date.parse("2026-10-11T00:00:00Z"); expect((await chat()).status).toBe(200);
     expect((await chat("user", { ...body, uid: "other" })).status).toBe(400);
     const view = await (await call("/ai/tagflow/usage?uid=other", "user")).json() as { usage: { uid: string }; resetsAt: number };
-    expect(view.usage.uid).toBe("user"); expect(view.resetsAt).toBe(Date.parse("2026-10-12T00:00:00Z"));
+    // The session window that opened with the first request after midnight.
+    expect(view.usage.uid).toBe("user"); expect(view.resetsAt).toBe(Date.parse("2026-10-11T05:00:00Z"));
   });
   it("charges the reserved maximum on cancellation so repeat cancellations cannot bypass limits", async () => {
     upstream.mockImplementation(async()=>new Response(new ReadableStream({ start(controller){ controller.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:"partial"}}]}))); } }),{headers:{"content-type":"text/event-stream"}}));
@@ -408,11 +428,14 @@ describe("included Tagflow AI", () => {
     await response.text();
     expect(await usage()).toMatchObject({inputTokens:919315,outputTokens:7527,reservedTokens:0,estimatedRequests:0});
   });
-  it("still reserves room for replies and refuses requests that really cannot fit", async () => {
-    await save({ ...config, limits:{ ...config.limits,dailyTokens:30000 } });
+  it("starts a large request while any credit is left and charges what it really used", async () => {
+    await save({ ...config, credits:{ sessionCredits:2,weeklyCredits:100,sessionHours:5 } });
     const response=await chat("user",{ ...body,max_tokens:4096,messages:[{ role:"user",content:"a".repeat(78000) }] });
-    expect(response.status).toBe(429); expect(upstream).not.toHaveBeenCalled();
-    expect(await usage()).toBeNull();
+    expect(response.status).toBe(200);
+    const held = (await (await call("/ai/tagflow/usage","user")).json() as { credits:{ session:{ held:number } } }).credits.session.held;
+    expect(held).toBeGreaterThan(26); expect(held).toBeLessThan(31);
+    await response.text();
+    expect(await (await call("/ai/tagflow/usage","user")).json()).toMatchObject({ credits:{ session:{ used:0.015,held:0 } } });
   });
   it("keeps missing-usage estimates independent of how many streaming chunks carry the text", async () => {
     const output="abc".repeat(30);

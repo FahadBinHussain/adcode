@@ -13,11 +13,14 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import { homedir } from "node:os";
 import { app, BrowserWindow } from "electron";
 import {
   parseConnections,
   RequestScheduler,
   BUILT_IN_TOOLS,
+  DELEGATE_TASK,
+  withSubagents,
   BUNDLED_CATALOGUE,
   DEFAULT_ANTHROPIC_MODEL,
   SNAPSHOT_TAKEN_ON,
@@ -55,6 +58,7 @@ import {
   transportFor,
   usableCatalogue,
   type Agent,
+  type ToolDefinition,
   type AiFileChange,
   type AiWorkspaceTask,
   titleFor,
@@ -115,6 +119,7 @@ import { memoryForWorkspace } from "./memory.ts";
 import { currentSettings, writeSetting } from "./settings.ts";
 import { describeDebugContext, recordDebug } from "./debugLog.ts";
 import { currentWorkspace } from "./workspace.ts";
+import { projectInstructions } from "./projectInstructions.ts";
 import { aiWorkspaceContext } from "./aiWorkspaceContext.ts";
 import { aiPreviewUrl, describePreviewForAi, openAiPreview } from "./aiPreview.ts";
 import { createCommandRunner } from "./aiCommands.ts";
@@ -694,6 +699,8 @@ interface ChatThread {
   /** Set by Stop: a turn that would keep going by itself does not. */
   stopRequested: boolean;
   lastUsed: number;
+  /** The running turn's live status line, so a sub-agent's progress shows in its chat. */
+  status: ((text: string) => void) | null;
 }
 
 const threads = new Map<string, ChatThread>();
@@ -724,6 +731,7 @@ function threadFor(chat: ChatSession): ChatThread {
     checkpoint: null,
     stopRequested: false,
     lastUsed: Date.now(),
+    status: null,
   };
   threads.set(chat.id, created);
   const idle = [...threads.values()].filter((thread) => !runs.isRunning(thread.session.id) && thread.session.id !== session?.id);
@@ -1451,16 +1459,11 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
    * file; with the core tools it reads, edits and runs the tests.
    */
   const lean = providerId === "ollama";
-  const built = createAgent({
-    provider,
-    model,
-    tools: chatTools(),
-    lean: () => lean,
-    effort: configuredEffort(),
-    ...outputBudget(providerId, model),
-    compaction: compactionFor(providerId, model),
-    initialMessages: carried ?? restoreHistory(thread.session),
-    context: async () => {
+  // Sub-agents share this runner, so their edits land in the same undoable turn. A lean
+  // (local) model is not offered them: it should not be juggling helpers.
+  const runner = withBuiltinSkills(withAssistantExtensions(toolRunner(() => thread.checkpoint)), designTasteOn);
+  const tools = lean ? chatTools() : [...chatTools(), DELEGATE_TASK];
+  const context = async (): Promise<string> => {
       const root = thread.root;
       let blocker: string | null = null;
       if (currentSettings()["adcode.ai.isolatedWorkspaces"] === false) {
@@ -1474,13 +1477,33 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
       return [
         aiWorkspaceContext(root, blocker, thread.editorContext, configuredEditPolicy() === "review" ? "review" : "direct"),
         lean && root !== null ? await projectFilesHint(root) : null,
+        root === null ? null : await projectInstructions(root, homedir(), lean),
         ...(root === null ? [] : [describePreviewForAi()]),
         describeBackgroundCommands(),
         // A lean request does not offer the guide's tool, so it is not told about the guide.
         lean ? null : builtinSkillGuidance(designTasteOn()),
       ].filter((line): line is string => line !== null).join("\n");
-    },
-    runner: withBuiltinSkills(withAssistantExtensions(toolRunner(() => thread.checkpoint)), designTasteOn),
+  };
+  const helper = (helperTools: readonly ToolDefinition[]): Agent => createAgent({
+    provider, model, tools: helperTools, runner, context,
+    effort: configuredEffort(), ...outputBudget(providerId, model), compaction: compactionFor(providerId, model),
+  });
+  const built = createAgent({
+    provider,
+    model,
+    tools,
+    lean: () => lean,
+    effort: configuredEffort(),
+    ...outputBudget(providerId, model),
+    compaction: compactionFor(providerId, model),
+    initialMessages: carried ?? restoreHistory(thread.session),
+    context,
+    runner: withSubagents(runner, {
+      start: (_task, helperTools) => helper(helperTools),
+      tools: () => tools,
+      status: (text) => thread.status?.(text),
+      onEvent: (_task, event) => { if (event.kind === "usage") noteUsage("agents", providerId, model, event); },
+    }),
     beforeRequest: async () => {
       // Direct edits apply immediately, so there is no task to create and
       // no budget to reserve. The turn step limit remains the backstop
@@ -1641,6 +1664,7 @@ async function runTurn(
   };
   thread.editorContext = editor;
   thread.includedRequestId = undefined;
+  thread.status = (status) => send({ kind: "status", text: status });
   currentTaskPrompt = text.slice(0, 200);
   try {
     const providerId = activeProvider();
@@ -1854,6 +1878,7 @@ async function runTurn(
     return { kind: "done", ok: false, ended: "failed" };
   } finally {
     currentTaskPrompt = null;
+    thread.status = null;
   }
 }
 
@@ -2071,7 +2096,8 @@ export function createBuiltInAiTeamNodeRunner(): AiTeamNodeRunner {
     const teammates = roles.filter((role) => role.id !== input.context.role.id);
     // Read once per run: an agent's tools are fixed when it starts.
     const tasteOn = designTasteOn();
-    const designGuidance = [builtinSkillGuidance(tasteOn)].filter((line): line is string => line !== null);
+    // The project's own AGENTS.md binds Team and solo agents as much as the chat.
+    const designGuidance = [builtinSkillGuidance(tasteOn), await projectInstructions(task.workspaceRoot, homedir())].filter((line): line is string => line !== null);
     const system = input.kind === "solo"
       ? [
         "You are an ADCode agent working on one task in an isolated copy of the project.",

@@ -1,34 +1,41 @@
 /*
- * The daily allowance and when a sandbox sleeps.
+ * The session allowance and when a sandbox sleeps.
  *
- * Each person gets a fixed amount of running sandbox time per UTC day. A sandbox sleeps when
- * nobody is using it - no tab, or a tab nobody has touched - unless an agent is still working,
- * because stopping an agent mid-task to save a minute would waste the minutes already spent.
+ * Each person gets a fixed amount of running sandbox time per rolling window (five hours by
+ * default), opened by the first running minute. A sandbox sleeps when nobody is using it - no
+ * tab, or a tab nobody has touched - unless an agent is still working, because stopping an
+ * agent mid-task to save a minute would waste the minutes already spent.
  */
 import { describe, expect, it } from "vitest";
-import { addUsage, dayKey, nextReset, remainingMs, shouldSleep } from "../src/allowance.ts";
+import { addUsage, nextReset, remainingMs, shouldSleep, usedMs } from "../src/allowance.ts";
 
 const NOON = Date.UTC(2026, 9, 14, 12, 0, 0);
 const MINUTE = 60_000;
+const WINDOW = 5 * 60 * MINUTE;
 
 describe("usage", () => {
-  it("adds running time within a day", () => {
-    const usage = addUsage({ day: dayKey(NOON), usedMs: 10 * MINUTE }, NOON, 5 * MINUTE);
-    expect(usage).toEqual({ day: "2026-10-14", usedMs: 15 * MINUTE });
+  it("opens a window with the first running minute and adds time inside it", () => {
+    const opened = addUsage({ usedMs: 0 }, NOON, MINUTE);
+    expect(opened).toEqual({ windowStart: NOON - MINUTE, usedMs: MINUTE });
+    expect(addUsage(opened, NOON + 4 * 60 * MINUTE, 5 * MINUTE)).toEqual({ windowStart: NOON - MINUTE, usedMs: 6 * MINUTE });
   });
 
-  it("starts the count again on a new UTC day", () => {
-    const tomorrow = NOON + 24 * 60 * MINUTE;
-    expect(addUsage({ day: "2026-10-14", usedMs: 59 * MINUTE }, tomorrow, 2 * MINUTE)).toEqual({ day: "2026-10-15", usedMs: 2 * MINUTE });
+  it("starts again in a new window once five hours have passed, whatever the clock day", () => {
+    const later = NOON + WINDOW;
+    expect(addUsage({ windowStart: NOON, usedMs: 59 * MINUTE }, later, 2 * MINUTE)).toEqual({ windowStart: later - 2 * MINUTE, usedMs: 2 * MINUTE });
   });
 
-  it("never goes below nothing left, and yesterday's use does not count today", () => {
-    expect(remainingMs({ day: "2026-10-14", usedMs: 70 * MINUTE }, NOON, 60 * MINUTE)).toBe(0);
-    expect(remainingMs({ day: "2026-10-13", usedMs: 60 * MINUTE }, NOON, 60 * MINUTE)).toBe(60 * MINUTE);
+  it("never goes below nothing left, and an ended window does not count", () => {
+    expect(remainingMs({ windowStart: NOON, usedMs: 70 * MINUTE }, NOON + MINUTE, 60 * MINUTE)).toBe(0);
+    expect(remainingMs({ windowStart: NOON - WINDOW, usedMs: 60 * MINUTE }, NOON, 60 * MINUTE)).toBe(60 * MINUTE);
+    // Records from before windows carried a day and count as ended.
+    expect(usedMs({ day: "2026-10-14", usedMs: 60 * MINUTE }, NOON)).toBe(0);
   });
 
-  it("resets at the next UTC midnight", () => {
-    expect(nextReset(NOON)).toBe(Date.UTC(2026, 9, 15, 0, 0, 0));
+  it("refills when the open window ends, or a full window from now when none is open", () => {
+    expect(nextReset({ windowStart: NOON, usedMs: MINUTE }, NOON + MINUTE)).toBe(NOON + WINDOW);
+    expect(nextReset({ usedMs: 0 }, NOON)).toBe(NOON + WINDOW);
+    expect(nextReset({ windowStart: NOON, usedMs: MINUTE }, NOON + 2 * WINDOW, 3 * 60 * MINUTE)).toBe(NOON + 2 * WINDOW + 3 * 60 * MINUTE);
   });
 });
 

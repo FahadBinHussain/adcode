@@ -603,9 +603,9 @@ Access: `All Features → AI Team`; `Set up Team`; `Settings`.
 
 Shows your AI activity, daily streaks, tokens and estimated cost, model by model.
 
-Why use it: See where your own provider spending goes and how much of your included Tagflow allowance remains.
+Why use it: See where your own provider spending goes and how many free AI credits you have left.
 
-How to use it: Select Usage in the chat's header (or ••• when docked), choose Usage by model in the context meter's menu, or run AI: Show Usage. Pick Today, 7 days, 30 days or All time for this machine's history. Activity always shows the past year: current streak, longest streak and days with AI requests on this computer. Hover or select a square for its date, requests and tokens; arrow keys move between days, Home and End jump to the oldest and newest day. Streaks use local calendar days and include yesterday while today is still empty. Counts not reported by a provider are estimated and marked ≈; a model with no catalogue price says No price. Included AI has no charge to you; a partner model with its own allowance appears as its own row, and the composer meter shows whichever allowance the selected model uses. Its separate account-wide allowance shows requests, tokens and budget remaining, including room reserved for active replies. It resets at midnight UTC. Clear usage removes this computer's history, activity and streaks, not the server-enforced allowance. Your own provider's billing page has the exact bill.
+How to use it: Select Usage in the chat's header (or ••• when docked), choose Usage by model in the context meter's menu, or run AI: Show Usage. Pick Today, 7 days, 30 days or All time for this machine's history. Activity always shows the past year: current streak, longest streak and days with AI requests on this computer. Hover or select a square for its date, requests and tokens; arrow keys move between days, Home and End jump to the oldest and newest day. Streaks use local calendar days and include yesterday while today is still empty. Counts not reported by a provider are estimated and marked ≈; a model with no catalogue price says No price. Included AI has no charge to you. Your free AI credits sit at the top: the current 5-hour session and this week, each with a bar, the credits left, and when it refills, including credits held by replies in progress. Clear usage removes this computer's history, activity and streaks, not your credits. Your own provider's billing page has the exact bill.
 
 Access: `All Features → AI usage`; `Show usage`.
 
@@ -686,6 +686,17 @@ How to use it: In Code mode, select the lines to change - or put the cursor wher
 
 Access: `All Features → Edit with AI`; `Edit with AI`; `Keyboard → Ctrl+E`.
 
+<!-- feature:ai.credits -->
+### Free AI credits
+
+Free AI is measured in credits: one balance for every free model, which refills every 5 hours, with a weekly ceiling.
+
+Why use it: You get a full allowance whenever you sit down to work, not once a day at midnight UTC, and one number tells you what is left whichever free model you pick.
+
+How to use it: Look at the two rings beside the chat box: Session is this 5-hour window, Weekly is the 7-day one. Hover either for the credits left and when they refill, or run AI: Show Free AI Credits for both bars. A window opens with your first request and refills when it ends. A credit is about 1,000 tokens on a standard model; partner models that cost less to run, such as Heabsy's, use fewer credits for the same work, and Connect a model shows each model's rate. A request starts whenever you have credit left and is charged what it really used. When a window runs out, a running chat or agent waits and carries on by itself when it refills, as long as ADCode stays open; your own connected models and local models never use credits. Credits are the same on every device you sign in on, desktop or web.
+
+Access: `All Features → Free AI credits`; `Show credits`.
+
 <!-- feature:ai.freeKey -->
 ### Free AI in a minute
 
@@ -697,6 +708,17 @@ How to use it: Choose Connect your AI - free in the Vibe checklist, run Get a Fr
 
 Access: `All Features → Free AI in a minute`; `Get a free key`.
 
+<!-- feature:ai.subagents -->
+### Helpers: agents that start agents
+
+The AI can split a big task into parts and hand them to helper agents that work at the same time, each with a fresh memory.
+
+Why use it: A large job finishes sooner when its independent parts run side by side, and long searches stay out of the main conversation, so it keeps its focus on your request.
+
+How to use it: Ask for something large, or start your message with /helpers (or run AI: Split a Task Across Helpers) to ask for it outright. The AI calls its Helpers step with up to four tasks; each helper gets its own instructions and the same model. Explore helpers only read and search; build helpers can change files and run commands, and are told to stay in their own files. You see each one's progress on the working line - Helper 2 of 3 · Tests: running npm test - and a Helpers row in the timeline with every report. Their edits belong to the same turn, so Undo reverts them together, and Stop stops every helper. Helpers cannot start helpers of their own. Each helper's requests count toward your free AI credits like any other. Local models are not offered helpers.
+
+Access: `All Features → Helpers: agents that start agents`; `Split a task across helpers`.
+
 <!-- feature:ai.tagflow -->
 ### Included AI without a key
 
@@ -704,7 +726,7 @@ Use the AI included with your verified ADCode account without buying or pasting 
 
 Why use it: Start with an allowance paid for by ADCode. You can still switch to your own provider or a local model when you need more capacity.
 
-How to use it: Open Account, sign in and verify your email, then send a message. If you send one before signing in, the chat offers Sign in and sends it again by itself once you are. If the connection drops mid-task, the task retries by itself for about two minutes and carries on where it was. Included AI is selected automatically for new installations when enabled, using the administrator's default model. Older installations with an unconnected default provider also switch automatically. In Connect a model, the Free · no API key tab lists included and ready local models; choose Use this model to switch. Bring your own key keeps your personal provider connections separate. Administrators manage Free models and BYOK models from separate linked catalogs: add new models, set defaults, and hide models. Free models can use Tagflow, OpenAI, Gemini, Groq, OpenRouter or any OpenAI-compatible provider an administrator registers, through configured server keys. Chat, completions and agents share your daily account allowance; some partner models, such as Heabsy, have their own separate daily allowance, shown in AI usage. Open AI usage to see requests, tokens and budget remaining and the reset time. Limits reset at midnight UTC. Clearing local history does not reset the allowance. Prompts, project context and tool results pass through ADCode's server to the selected provider; the server stores usage counts, not prompts or replies. Included AI currently accepts text and tool calls, not image attachments.
+How to use it: Open Account, sign in and verify your email, then send a message. If you send one before signing in, the chat offers Sign in and sends it again by itself once you are. If the connection drops mid-task, the task retries by itself for about two minutes and carries on where it was. Included AI is selected automatically for new installations when enabled, using the administrator's default model. Older installations with an unconnected default provider also switch automatically. In Connect a model, the Free · no API key tab lists included and ready local models; choose Use this model to switch. Bring your own key keeps your personal provider connections separate. Administrators manage Free models and BYOK models from separate linked catalogs: add new models, set defaults, and hide models. Free models can use Tagflow, OpenAI, Gemini, Groq, OpenRouter or any OpenAI-compatible provider an administrator registers, through configured server keys. Chat, completions and agents share one balance of free AI credits that refills every 5 hours, with a weekly ceiling; every free model draws from it at its own rate. Open AI usage, or hover the Session and Weekly rings by the chat box, to see what is left and when it refills. Clearing local history does not reset your credits. Prompts, project context and tool results pass through ADCode's server to the selected provider; the server stores usage counts, not prompts or replies. Included AI currently accepts text and tool calls, not image attachments.
 
 Access: `All Features → Included AI without a key`; `Choose included AI`.
 
@@ -795,6 +817,17 @@ Why use it: A polished product needs a coherent visual system and complete behav
 How to use it: On by default. Interface work loads ADCode's compact production-quality guide; motion and release references load when needed. The existing taste-skill and redesign guides (Leonxlnx, MIT licence) remain available for deeper visual direction. You will see Reading product guidance in the steps. The guide preserves your project's stack and design system. In Tools, Quality lists Inspect project checks, Run project checks and Audit a page. The audit checks phone, tablet and desktop layouts, automated accessibility findings and reduced motion; manual keyboard and visual review still matter. Missing or unrun checks are reported as unverified. Turn guidance off in Settings > AI > Product design guidance.
 
 Access: `All Features → Product design guidance`; `Turn on or off`; `Settings`.
+
+<!-- feature:ai.projectInstructions -->
+### Project instructions (AGENTS.md)
+
+The AI follows your project's AGENTS.md - the file teams write to tell any coding agent how their project works - and CLAUDE.md or GEMINI.md if that is what you have.
+
+Why use it: Write down once how to build, test and lay out your project, and every chat, helper and Team agent in ADCode works the way your project expects - the same file Claude Code, Codex and Gemini read.
+
+How to use it: Put an AGENTS.md at the root of your project, or let the AI write one: type /init in the chat, or run AI: Write Project Instructions. ADCode also reads CLAUDE.md, GEMINI.md and .github/copilot-instructions.md, shows a file that only repeats another once, and follows a line that is just @other.md to that file. For rules you want in every project, put them in AGENTS.md inside a .adcode folder in your home folder. A folder can have its own AGENTS.md; the AI reads it before changing files there. The instructions describe your project; they cannot give the AI permissions, and what you say in the chat wins. Long files are cut at about 12,000 characters and the AI reads the rest when it needs it. ADCode's own project memory is separate and lives in .adcode/memory.
+
+Access: `All Features → Project instructions (AGENTS.md)`; `Write AGENTS.md`.
 
 <!-- feature:ai.memoryEditor -->
 ### Project memory
@@ -1300,11 +1333,11 @@ Access: `All Features → Welcome: what do you want to build?`; `Show welcome`.
 <!-- feature:workbench.cloudWorkspace -->
 ### Your cloud workspace
 
-On the web version your projects and conversations live in a private cloud workspace. This panel shows the cloud time left today and lets you download projects, connect GitHub, or delete it all.
+On the web version your projects and conversations live in a private cloud workspace. This panel shows the cloud time left in this session and lets you download projects, connect GitHub, or delete it all.
 
-Why use it: A computer in the cloud costs money while it runs, so each person gets a daily allowance - and you should always be able to see it, take your work with you, and remove it.
+Why use it: A computer in the cloud costs money while it runs, so each person gets an hour of it in every 5-hour session - and you should always be able to see it, take your work with you, and remove it.
 
-How to use it: Click the time-left chip in the corner, or run Cloud Workspace from the command palette. The meter shows the minutes left today and when they reset; time only counts while your workspace is running, and it sleeps a few minutes after you stop using it, or 15 minutes after you last touched an open tab, unless an agent is still working. Your workspace is saved when it sleeps and comes back exactly as you left it. Download gives a project as a .tar.gz without node_modules. Connect GitHub lets Commit & Push and private imports work. Delete my cloud workspace removes every project and conversation in the cloud for good; your account and earnings stay. Workspaces nobody opens for 90 days are deleted.
+How to use it: Click the time-left chip in the corner, or run Cloud Workspace from the command palette. The meter shows the minutes left in this session and when they refill: a session opens when your workspace starts and refills 5 hours later, like your free AI credits. Time only counts while your workspace is running, and it sleeps a few minutes after you stop using it, or 15 minutes after you last touched an open tab, unless an agent is still working. Your workspace is saved when it sleeps and comes back exactly as you left it. Download gives a project as a .tar.gz without node_modules. Connect GitHub lets Commit & Push and private imports work. Delete my cloud workspace removes every project and conversation in the cloud for good; your account and earnings stay. Workspaces nobody opens for 90 days are deleted.
 
 Access: `All Features → Your cloud workspace`; `Open Cloud workspace`.
 

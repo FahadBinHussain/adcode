@@ -9,18 +9,23 @@
  * window, the smoke harness - leaves things exactly where they belong.
  */
 
+/*
+ * Curves and timings follow Emil Kowalski's rules (emilkowalski/skills, emil-design-eng):
+ * a strong ease-out for anything entering or answering a press, UI motion under 300ms, a
+ * bounce kept subtle, and hover movement only where a real pointer hovers.
+ */
 :root {
   --motion-move: 180ms;
   --motion-enter: 160ms;
-  --motion-curve: cubic-bezier(.2, .8, .2, 1);
+  --motion-curve: cubic-bezier(0.23, 1, 0.32, 1);
   --motion-press: .98;
   --motion-stagger: 0ms;
 }
 
 :root[data-motion="lively"] {
-  --motion-move: 320ms;
-  --motion-enter: 260ms;
-  --motion-curve: cubic-bezier(.34, 1.4, .64, 1);
+  --motion-move: 280ms;
+  --motion-enter: 240ms;
+  --motion-curve: cubic-bezier(.34, 1.18, .64, 1);
   --motion-press: .96;
   --motion-stagger: 18ms;
 }
@@ -95,8 +100,10 @@
     animation: motion-rise var(--motion-enter) var(--motion-curve) backwards;
     animation-delay: calc(var(--i, 0) * var(--motion-stagger) * 2);
   }
-  :root:not([data-reduced-motion="true"]) .chat-quick-action:hover:not(:disabled) {
-    translate: 0 -1px;
+  @media (hover: hover) and (pointer: fine) {
+    :root:not([data-reduced-motion="true"]) .chat-quick-action:hover:not(:disabled) {
+      translate: 0 -1px;
+    }
   }
 
   /* Menus - the model switch, Auto, right-click - open out of the control that asked. */
@@ -105,8 +112,15 @@
   }
 
   /* Connect: the provider list and the model rows answer the pointer. */
-  :root:not([data-reduced-motion="true"]) :is(.connect-row, .connect-model):hover:not(:disabled) {
-    translate: 2px 0;
+  @media (hover: hover) and (pointer: fine) {
+    :root:not([data-reduced-motion="true"]) :is(.connect-row, .connect-model):hover:not(:disabled) {
+      translate: 2px 0;
+    }
+  }
+
+  /* A meter that moves shows the change; one that jumps reads as a glitch. */
+  :root:not([data-reduced-motion="true"]) .composer-meter-fill {
+    transition: stroke-dashoffset 300ms cubic-bezier(0.23, 1, 0.32, 1), stroke 200ms ease;
   }
 }
 

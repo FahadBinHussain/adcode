@@ -1,11 +1,11 @@
 /**
- * What the web version says about its own connection and today's cloud time.
+ * What the web version says about its own connection and this session's cloud time.
  *
  * Everything else on screen is the desktop renderer's. This adds only what a browser tab needs
  * and the desktop never does:
  *
  * - a quiet "Reconnecting…" bar while the network is away (the sandbox keeps working),
- * - full-screen pauses when the cloud has put the sandbox to sleep, today's time is spent, or
+ * - full-screen pauses when the cloud has put the sandbox to sleep, the session's time is spent, or
  *   the month is full - each with the one or two things a person can do next,
  * - a time-left chip, amber at ten minutes and red at two, with a toast at each.
  */
@@ -53,7 +53,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
   chip.type = "button";
   chip.className = "web-time";
   chip.hidden = true;
-  chip.title = "Cloud time left today. The desktop app has no daily limit.";
+  chip.title = "Cloud time left in this 5-hour session. It refills when the session ends. The desktop app has no time limit.";
   // The Cloud workspace panel listens for this; it lives in the renderer, which owns its panels.
   chip.addEventListener("click", () => document.dispatchEvent(new CustomEvent(OPEN_CLOUD_WORKSPACE_EVENT)));
   document.body.append(chip);
@@ -80,11 +80,11 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
     chip.dataset["tone"] = timeTone(left);
     if (left <= 10 * 60_000 && left > 2 * 60_000 && !warnedLow) {
       warnedLow = true;
-      toast("10 minutes of cloud time left today. Your work is saved as you go.", "warn");
+      toast("10 minutes of cloud time left in this session. Your work is saved as you go.", "warn");
     }
     if (left <= 2 * 60_000 && left > 0 && !warnedLast) {
       warnedLast = true;
-      toast("2 minutes left today. Download your project or push it to GitHub to keep going elsewhere.", "warn");
+      toast("2 minutes of cloud time left. It refills when this session ends; download your project or push it to GitHub to keep going elsewhere.", "warn");
     }
   };
 
@@ -92,8 +92,8 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
     const status = last;
     if (status?.state === "spent") {
       showBlocked(
-        "That's today's cloud time",
-        `${formatReset(status.resetsAt)}. Your projects are saved where you left them. The desktop app runs on your own computer, with no daily limit.`,
+        "That's this session's cloud time",
+        `${formatReset(status.resetsAt)}. Your projects are saved where you left them. The desktop app runs on your own computer, with no time limit.`,
         [
           { label: "Get the desktop app", primary: true, run: openDesktop },
           { label: "Try again", run: () => { showWaking(); socket.resume(); } },
@@ -114,7 +114,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
     }
     showBlocked(
       "Paused to save your time",
-      "Your workspace sleeps when nothing is happening, so your daily cloud time isn't spent on an empty room. Everything is saved.",
+      "Your workspace sleeps when nothing is happening, so your cloud time isn't spent on an empty room. Everything is saved.",
       [{ label: "Resume", primary: true, run: () => { showWaking(); socket.resume(); } }],
     );
   };

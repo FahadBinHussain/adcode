@@ -45,7 +45,8 @@ curl localhost:7397/__adcode/health
 
 | Var | Default | Meaning |
 |---|---|---|
-| `DAILY_ALLOWANCE_MIN` | 60 | Running minutes per person per UTC day |
+| `SESSION_ALLOWANCE_MIN` | 60 | Running minutes per person per session window (`DAILY_ALLOWANCE_MIN` is read if this is unset) |
+| `SESSION_HOURS` | 5 | A window opens with the first running minute and refills this many hours later, like the free AI credits |
 | `IDLE_SLEEP_MIN` | 5 | Sleep this long after the last tab closes, if nothing is working |
 | `UNTOUCHED_TAB_MIN` | 15 | Sleep an open tab nobody has touched, if nothing is working |
 | `SNAPSHOT_EVERY_MIN` | 10 | Archive `/home/adcode` to R2 this often while running |
@@ -58,8 +59,9 @@ curl localhost:7397/__adcode/health
 Secret: `npx wrangler secret put PREVIEW_COOKIE_KEY` (any long random string; signs preview cookies).
 
 Cost: worst case $0.0012336 per running minute on standard-1 (memory 4 GiB + disk 8 GB + the full
-½ vCPU), about $0.074 an hour. A person using the whole 60-minute allowance every day costs at most
-about $2.22 a month.
+½ vCPU), about $0.074 an hour. A person using the whole 60-minute allowance in every 5-hour window costs at most about $0.36 a
+day ($10.66 a month), so `MONTHLY_CAP_USD` is what really bounds the bill: at $20 it covers about
+270 sandbox-hours a month across everyone.
 
 ## One-time setup (Cloudflare and Firebase)
 

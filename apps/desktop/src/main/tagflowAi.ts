@@ -35,7 +35,10 @@ export function refreshTagflowModels(force = false): Promise<void> {
         if (typeof model["id"] !== "string" || typeof model["name"] !== "string" || typeof model["contextWindow"] !== "number" || typeof model["maxOutput"] !== "number" ||
           !Number.isSafeInteger(model["contextWindow"]) || model["contextWindow"] < 1 || !Number.isSafeInteger(model["maxOutput"]) || model["maxOutput"] < 1) continue;
         const source = typeof model["providerName"] === "string" ? ` from ${model["providerName"]}` : "";
-        models.push({ id: model["id"], name: model["name"], toolCall: true, reasoning: false, contextWindow: model["contextWindow"], maxOutput: model["maxOutput"], inputs: ["text"], outputs: ["text"], inputCostMicrosPerMillion: 0, outputCostMicrosPerMillion: 0, note: `Included${source} with your account's daily allowance` });
+        // Older relays send no rate: every model then costs the standard credit.
+        const rate = typeof model["creditRate"] === "number" && Number.isFinite(model["creditRate"]) && model["creditRate"] >= 0 ? model["creditRate"] : 1;
+        const cost = rate === 0 ? "free, no credits used" : rate === 1 ? "uses your free AI credits" : `uses ${rate < 1 ? "fewer" : "more"} credits (${rate}× the standard rate)`;
+        models.push({ id: model["id"], name: model["name"], toolCall: true, reasoning: false, contextWindow: model["contextWindow"], maxOutput: model["maxOutput"], inputs: ["text"], outputs: ["text"], inputCostMicrosPerMillion: 0, outputCostMicrosPerMillion: 0, note: `Included${source} · ${cost}` });
       }
       if (!models.some((model) => model.id === config.defaultModel)) return;
       offered = { id: "tagflow", name: "Included AI", env: [], doc: "https://adcode.bluethenics.com/docs/ai-tagflow", models };

@@ -7,7 +7,8 @@ import { DEFAULT_TAGFLOW_CONFIG, isTagflowUrl, parseTagflowConfig, parseTagflowL
 import type { Clock, Store } from "./store.ts";
 import type { TagflowConfig, TagflowModel, TagflowSettlement } from "./tagflowTypes.ts";
 import { createWorkerSecrets, type WorkerSecrets } from "./workerSecrets.ts";
-import { allowanceKey, includedProvider, isCustomProviderUrl, modelProvider, providerConnections, type IncludedProviderId } from "./includedProviders.ts";
+import { includedProvider, isCustomProviderUrl, modelProvider, providerConnections, type IncludedProviderId } from "./includedProviders.ts";
+import { DEFAULT_CREDIT_PLAN, creditCharge, creditsView, millicreditsFor, modelCreditRate, parseCreditPlan, untilText, type CreditPlan } from "./credits.ts";
 import { MODEL_FEEDBACK_CATEGORIES, type ModelRequestOutcome, type ModelRequestRecord, type ModelRequestSource } from "./tagflowReportTypes.ts";
 import { completeModelReport, parseReportRange } from "./tagflowReports.ts";
 import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, AI_PERSONAS, audienceChoice, audienceCountry, observedUse, type ModelAudienceProfile } from "./modelAudience.ts";
@@ -29,6 +30,8 @@ export function isTagflowPath(path: string): boolean {
     path === "/v1/admin/tagflow" || path === "/v1/admin/tagflow/usage" || path === "/v1/admin/tagflow/keys" || /^\/v1\/admin\/tagflow\/users\/[^/]+$/.test(path);
 }
 
+/** Tokens are no longer a limit; credits are. Passed where the stores still compare a day's tokens. */
+const NO_TOKEN_LIMIT = 9_000_000_000_000_000;
 const isRecord = (raw: unknown): raw is Record<string, unknown> => typeof raw === "object" && raw !== null && !Array.isArray(raw);
 const count = (raw: unknown): raw is number => typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0 && raw <= 100_000_000;
 const bytes = (text: string): number => Buffer.byteLength(text, "utf8");
@@ -203,7 +206,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       const resetsAt = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
       const remainingDay = { "retry-after": String(Math.max(1, Math.ceil((resetsAt - deps.clock.now()) / 1000))) };
       if (url.pathname === "/v1/ai/tagflow/config" && request.method === "GET") {
-        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI", contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens) })) : [], requiresVerifiedAccount: true });
+        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI", contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens), creditRate: modelCreditRate(model, config) })) : [], requiresVerifiedAccount: true, credits: config.credits ?? DEFAULT_CREDIT_PLAN });
       }
       const auth = await authenticate(deps, request.headers.get("authorization") ?? undefined);
       if (!auth.ok) return fail(auth.failure === "banned" ? 403 : 401, auth.failure, "Sign in to use included AI. Banned accounts cannot use it.");
@@ -282,24 +285,29 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         if (await deps.store.getUser(subject) === null) return fail(404, "not-found", "That account was not found.");
         if (request.method === "POST") {
           const raw = await readJson(request);
-          if (!isRecord(raw) || Object.keys(raw).some((key) => !["blocked", "limits"].includes(key)) || typeof raw["blocked"] !== "boolean") return fail(400, "bad-policy", "Check the user allowance.");
+          if (!isRecord(raw) || Object.keys(raw).some((key) => !["blocked", "limits", "credits"].includes(key)) || typeof raw["blocked"] !== "boolean") return fail(400, "bad-policy", "Check the user allowance.");
           const limits = raw["limits"] === null ? null : parseTagflowLimits(raw["limits"]);
           if (raw["limits"] !== null && limits === null) return fail(400, "bad-policy", "Check the user allowance.");
+          const personal = raw["credits"] === undefined || raw["credits"] === null ? null : parseCreditPlan(raw["credits"]);
+          if (raw["credits"] !== undefined && raw["credits"] !== null && personal === null) return fail(400, "bad-policy", "Check the user's credits.");
           await audit("save-tagflow-policy", subject);
-          await deps.store.putTagflowPolicy(subject, { blocked: raw["blocked"], limits, updatedAt: deps.clock.now(), updatedBy: auth.uid });
+          await deps.store.putTagflowPolicy(subject, { blocked: raw["blocked"], limits, credits: personal, updatedAt: deps.clock.now(), updatedBy: auth.uid });
         } else if (request.method !== "GET") return fail(405, "method", "Use GET or POST.");
         await audit("read-tagflow-user", subject);
       }
       const policy = await deps.store.getTagflowPolicy(subject);
       const limits = policy?.limits ?? config.limits;
       const usage = await deps.store.getTagflowUsage(subject, day) ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
+      const plan: CreditPlan = policy?.credits ?? config.credits ?? DEFAULT_CREDIT_PLAN;
       if (userMatch !== null || url.pathname === "/v1/ai/tagflow/usage" && request.method === "GET") {
-        // Providers with their own allowance report it beside the main one; older desktops ignore `pools`.
-        const pools = await Promise.all(providerConnections(config.providers).filter((provider) => provider.limits !== undefined).map(async (provider) => {
-          const key = allowanceKey(subject, provider);
-          return { provider: provider.id, name: provider.name, models: config.models.filter((model) => modelProvider(model) === provider.id).map((model) => model.id), limits: provider.limits!, usage: await deps.store.getTagflowUsage(key, day) ?? { ...usage, uid: key, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 } };
-        }));
-        return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true, pools });
+        const credits = creditsView(plan, await deps.store.getCreditWindows(subject), Object.fromEntries(offeredModels.map((model) => [model.id, modelCreditRate(model, config)])), deps.clock.now());
+        if (userMatch !== null) return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true, credits });
+        // Desktops from before credits read only the token fields. They get the session window in
+        // tokens (a credit is 1,000 tokens at the standard rate), so their meter, its reset time
+        // and their automatic resume all follow the window that is really enforced.
+        const sessionReset = credits.session.resetsAt ?? deps.clock.now() + plan.sessionHours * 3_600_000;
+        const legacy = { ...usage, inputTokens: Math.round(credits.session.used * 1000), outputTokens: 0, reservedTokens: Math.round(credits.session.held * 1000) };
+        return json(200, { available, policy, limits: { ...limits, dailyTokens: plan.sessionCredits * 1000 }, usage: legacy, today: usage, resetsAt: sessionReset, blocked: policy?.blocked === true, credits });
       }
       if (url.pathname !== "/v1/ai/tagflow/chat/completions" || request.method !== "POST") return fail(405, "method", "Unsupported method.");
       const user = await deps.store.getUser(auth.uid);
@@ -334,24 +342,36 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         parsed.body["max_completion_tokens"] = parsed.output;
         delete parsed.body["max_tokens"];
       }
-      // A provider with its own allowance charges a separate per-account pool at its own limits;
-      // a personal override applies to the main allowance, and Block applies to both.
-      const poolLimits = connection.limits ?? limits;
-      const reservation = { id: randomUUID(), uid: allowanceKey(auth.uid, connection), day, minute: Math.floor(deps.clock.now() / 60_000), tokens: parsed.input + parsed.output, costMicros: tagflowCost(parsed.model, parsed.input, parsed.output), limits: poolLimits };
+      // Every included model draws from the account's one credit balance, at its own rate.
+      // Tokens are no longer a limit; the day keeps its spending and request ceilings.
+      const rate = modelCreditRate(parsed.model, config);
+      const tokens = parsed.input + parsed.output;
+      const reservation = { id: randomUUID(), uid: auth.uid, day, minute: Math.floor(deps.clock.now() / 60_000), tokens, costMicros: tagflowCost(parsed.model, parsed.input, parsed.output),
+        limits: { ...limits, dailyTokens: NO_TOKEN_LIMIT }, credits: creditCharge(plan, millicreditsFor(tokens, rate), deps.clock.now()) };
       const reserved = await deps.store.reserveTagflow(reservation);
       if (reserved !== "ok") {
         await finishMetric("rejected",reserved);
+        if (reserved === "session-limit" || reserved === "weekly-limit") {
+          const view = creditsView(plan, await deps.store.getCreditWindows(auth.uid), {}, deps.clock.now());
+          const weekly = reserved === "weekly-limit";
+          const refill = (weekly ? view.weekly : view.session).resetsAt ?? deps.clock.now() + (weekly ? 7 * 86_400_000 : plan.sessionHours * 3_600_000);
+          const retryable = (weekly ? plan.weeklyCredits : plan.sessionCredits) > 0;
+          const until = untilText(refill, deps.clock.now());
+          const message = !retryable
+            ? "Free AI credits are set to zero for this account, so waiting will not help. Ask an administrator to change your credits, or use your own connected model."
+            : weekly
+              ? `You've used this week's free AI credits (${plan.weeklyCredits.toLocaleString("en-US")}). They refill in ${until}, and this task resumes by itself then. All free models share one credit balance.`
+              : `You've used this ${plan.sessionHours}-hour window's free AI credits (${plan.sessionCredits.toLocaleString("en-US")}). They refill in ${until}, and this task resumes by itself then. All free models share one credit balance.`;
+          // "daily-limit" is the code every released desktop already waits on; `limit` says which window.
+          return json(429, { error: { code: "daily-limit", limit: weekly ? "weekly" : "session", message, retryable, resetsAt: refill } }, { "retry-after": String(Math.max(1, Math.ceil((refill - deps.clock.now()) / 1000))) });
+        }
         const daily = reserved === "daily-limit";
-        const retryable = daily ? poolLimits.dailyRequests > 0 && reservation.tokens <= poolLimits.dailyTokens && reservation.costMicros <= poolLimits.dailyCostMicros : poolLimits.requestsPerMinute > 0;
-        const separate = providerConnections(config.providers).filter((provider) => provider.limits !== undefined && provider.id !== connection.id).map((provider) => provider.name);
-        const shared = connection.limits !== undefined
-          ? `${connection.name} models have their own daily allowance, so other free models may still have room.`
-          : separate.length > 0 ? `Free models share this allowance, except ${separate.join(" and ")} models, which have their own.` : "All free models share the same allowance.";
+        const retryable = daily ? limits.dailyRequests > 0 && reservation.costMicros <= limits.dailyCostMicros : limits.requestsPerMinute > 0;
         const message = !retryable ? daily
-          ? "This request cannot fit within your account's daily allowance, even after a reset. Start a smaller conversation, choose another model, or ask an administrator to increase your allowance."
+          ? "This request cannot fit within your account's daily spending or request ceiling, even after a reset. Start a smaller conversation, choose another model, or ask an administrator to change the ceiling."
           : "This account's per-minute AI request allowance is zero. Waiting will not enable requests. Ask an administrator to change the allowance."
-          : daily ? `Your remaining daily included AI allowance cannot cover this request and its reply. This task can resume after the daily reset. ${shared}`
-          : "Your account reached its per-minute AI request limit. This task can resume in about a minute. Your daily token allowance may still have room.";
+          : daily ? "Your account reached today's free AI spending or request ceiling. This task can resume after the daily reset. Your credits are unaffected."
+          : "Your account reached its per-minute AI request limit. This task can resume in about a minute. Your credits may still have room.";
         return fail(429,reserved,message,daily ? remainingDay : { "retry-after":"60" },{ retryable,...(daily ? { resetsAt } : {}) });
       }
       const observer = new UsageObserver(() => { if (metric !== null && metric.streamed && metric.firstTokenMs === null && metric.providerStartedAt !== null) metric.firstTokenMs = Math.max(0,deps.clock.now()-metric.providerStartedAt); });
@@ -363,7 +383,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         // An incomplete stream may have consumed its full allocation upstream.
         const inputTokens = failed ? 0 : reported?.input ?? parsed.input;
         const outputTokens = failed ? 0 : reported?.output ?? (complete && observer.completed ? Math.min(parsed.output, Math.ceil(observer.outputBytes / 3) + (observer.toolCalls.size > 0 ? 16 * observer.toolCalls.size : 0)) : parsed.output);
-        const result: TagflowSettlement = { inputTokens, outputTokens, costMicros: failed ? 0 : tagflowCost(parsed.model, inputTokens, outputTokens), estimated: reported === null, failed };
+        const result: TagflowSettlement = { inputTokens, outputTokens, costMicros: failed ? 0 : tagflowCost(parsed.model, inputTokens, outputTokens), estimated: reported === null, failed, millicredits: failed ? 0 : millicreditsFor(inputTokens + outputTokens, rate) };
         if (metric !== null) {
           metric.finishedAt ??= deps.clock.now();
           metric.inputTokens = inputTokens; metric.outputTokens = outputTokens; metric.costMicros = result.costMicros; metric.estimated = !failed && result.estimated;
@@ -412,7 +432,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       if (metric !== null) metric.upstreamStatus = upstream.status;
       if (!upstream.ok || upstream.body === null) {
         await upstream.body?.cancel(); cleanup(); await settle(!upstream.ok); await finishMetric("provider_error",upstream.status === 429 ? "upstream-rate-limit" : !upstream.ok ? "upstream-http" : "empty-response");
-        if (upstream.status === 429) return fail(429, "upstream-rate-limit", "This free model's provider reached a temporary rate limit. Your daily allowance may still have tokens left. Try again shortly, or choose a different model.", { "retry-after": "60" }, { retryable:true });
+        if (upstream.status === 429) return fail(429, "upstream-rate-limit", "This free model's provider reached a temporary rate limit. Your credits may still have room. Try again shortly, or choose a different model.", { "retry-after": "60" }, { retryable:true });
         return fail(502, "upstream", "The included AI provider refused the request. Try another model or try later.");
       }
       if (parsed.body["stream"] === false) {

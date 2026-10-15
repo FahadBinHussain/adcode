@@ -1,5 +1,5 @@
 /**
- * The words the web version's own screens use: sign-in errors and time left today.
+ * The words the web version's own screens use: sign-in errors and time left in this session.
  *
  * Pure, so they are tested without a browser. Firebase error codes become sentences a person
  * can act on; anything not listed falls back to a plain "try again" rather than a code.
@@ -28,15 +28,15 @@ export function firebaseErrorText(code: string | null | undefined): string | nul
   return "Sign-in didn't work. Try again.";
 }
 
-/** "47 min left today", "1 h 15 min left today", or "Less than a minute left". */
+/** "47 min left", "1 h 15 min left", or "Less than a minute left". */
 export function formatTimeLeft(ms: number): string {
-  if (ms <= 0) return "No time left today";
+  if (ms <= 0) return "No time left";
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 1) return "Less than a minute left";
-  if (minutes < 60) return `${minutes} min left today`;
+  if (minutes < 60) return `${minutes} min left`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest === 0 ? `${hours} h left today` : `${hours} h ${rest} min left today`;
+  return rest === 0 ? `${hours} h left` : `${hours} h ${rest} min left`;
 }
 
 /** How urgent the time left looks: plenty, getting low (10 minutes or less), or the last two. */
@@ -46,9 +46,9 @@ export function timeTone(ms: number): "ok" | "low" | "last" {
   return "ok";
 }
 
-/** "Resets at 02:00", in the person's own clock. */
+/** "Refills at 02:00", in the person's own clock. */
 export function formatReset(resetsAt: number, locale?: string): string {
-  return `Resets at ${new Date(resetsAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`;
+  return `Refills at ${new Date(resetsAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 /** "5 min ago", "yesterday", "12 Oct" - never a time in the future. */

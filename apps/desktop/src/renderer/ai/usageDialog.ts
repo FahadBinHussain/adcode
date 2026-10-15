@@ -21,7 +21,7 @@ import { askThemed } from "../dialogs/confirmDialog.ts";
 import { button, el, openFormModal } from "../dialogs/formDialog.ts";
 import { createUsageActivity } from "./usageActivityView.ts";
 import { allowanceSummary } from "./allowanceSummary.ts";
-import { UNLIMITED_REQUESTS_PER_MINUTE } from "../../shared/tagflow.ts";
+import { UNLIMITED_REQUESTS_PER_MINUTE, creditWindowSummary, untilText, type CreditsAllowance } from "../../shared/tagflow.ts";
 import { openAudienceProfile } from "./audienceProfile.ts";
 
 const RANGE_KEY = "adcode.usage.range";
@@ -90,7 +90,7 @@ export function openUsageDialog(): Promise<void> {
       resolve();
     });
 
-    const historyNote = el("p", "usage-lead", "History below covers the selected period and all models on this computer. The free allowance above covers today across your devices. Included AI is free; costs for your own models are estimates.");
+    const historyNote = el("p", "usage-lead", "History below covers the selected period and all models on this computer. Your free AI balance above covers all your devices. Included AI is free; costs for your own models are estimates.");
     const allowance = el("div", "usage-allowance", "Checking included AI allowance…");
     const allowanceHelp = el("details", "usage-allowance-help");
     const budgetNote = el("p", "usage-note");
@@ -104,6 +104,46 @@ export function openUsageDialog(): Promise<void> {
     );
     allowanceHelp.hidden = true;
     allowance.setAttribute("role", "status");
+    /** Credits replace the token explanation; the summary line stays. */
+    function creditHelp(credits: CreditsAllowance): void {
+      const lines = [
+        `Free AI is metered in credits: one balance for every free model, shared by your chats and agents on all your devices. A credit is about 1,000 tokens on a standard model; partner models that cost less to run use fewer credits, and the model picker says so.`,
+        `Your session window opens with your first request and refills ${credits.plan.sessionHours} hours later, with ${credits.plan.sessionCredits.toLocaleString()} credits. The weekly window works the same way over seven days, with ${credits.plan.weeklyCredits.toLocaleString()} credits, so a long run of sessions has a ceiling too.`,
+        "A request starts whenever you have credit left, and is charged what it really used when it finishes. Replies in progress hold an estimate until then.",
+        "When a window runs out, a running chat or agent waits and carries on by itself when it refills. Keep ADCode open, or press Stop to cancel. Your own connected models never use credits.",
+      ];
+      allowanceHelp.replaceChildren(el("summary", "", "How credits work"), ...lines.map((line) => el("p", "usage-note", line)));
+    }
+    function creditRows(credits: CreditsAllowance): HTMLElement[] {
+      const now = Date.now();
+      const heading = el("div", "usage-allowance-heading");
+      heading.append(el("strong", "", "Your free AI credits"), el("span", "usage-allowance-reset", "One balance for every free model"));
+      const rows = el("div", "usage-credit-rows");
+      for (const [label, window, empty] of [
+        ["Current session", credits.session, `Starts with your next request · ${credits.plan.sessionHours}-hour window`],
+        ["This week", credits.weekly, "Starts with your next request · 7-day window"],
+      ] as const) {
+        const summary = creditWindowSummary(window, now);
+        const row = el("div", "usage-credit-row");
+        row.dataset["tone"] = summary.percent >= 100 ? "full" : summary.percent >= 80 ? "warn" : "ok";
+        const text = el("div", "usage-credit-text");
+        text.append(el("span", "usage-stat-label", label), el("span", "usage-stat-detail", summary.refill === null ? empty : `Refills in ${summary.refill.in} · ${summary.refill.at}`));
+        const progress = el("progress", "ad-progress usage-credit-bar");
+        progress.max = 100;
+        progress.value = summary.percent;
+        progress.setAttribute("aria-label", `${label}: ${summary.percent}% of free AI credits used`);
+        const figures = el("div", "usage-credit-figures");
+        figures.append(el("strong", "usage-allowance-value", `${summary.percent}% used`), el("span", "usage-stat-detail", `${summary.remaining.toLocaleString()} of ${window.limit.toLocaleString()} credits left`));
+        row.append(text, progress, figures);
+        rows.append(row);
+      }
+      const parts: HTMLElement[] = [heading, rows];
+      const out = creditWindowSummary(credits.weekly, now).remaining === 0 ? credits.weekly : creditWindowSummary(credits.session, now).remaining === 0 ? credits.session : null;
+      if (out !== null && out.resetsAt !== null) {
+        parts.push(el("p", "usage-allowance-warning", `${out === credits.weekly ? "This week's" : "This session's"} credits are used up. They refill in ${untilText(out.resetsAt, now)}; a running task carries on by itself then. Your own connected models still work.`));
+      }
+      return parts;
+    }
     card.append(allowance);
     async function refreshAllowance(): Promise<void> {
       const mine = ++allowanceRequest;
@@ -114,6 +154,11 @@ export function openUsageDialog(): Promise<void> {
         allowanceHelp.hidden = allowance.hidden;
         if (view === null || !view.available) return;
         if (view.blocked) { allowance.textContent = "Included AI is disabled for this account."; allowanceHelp.hidden = true; return; }
+        if (view.credits !== undefined) {
+          allowance.replaceChildren(...creditRows(view.credits));
+          creditHelp(view.credits);
+          return;
+        }
         const summary = allowanceSummary(view);
         const heading = el("div", "usage-allowance-heading");
         heading.append(el("strong", "", "Your free AI today"), el("span", "usage-allowance-reset", `Resets ${summary.reset}`));

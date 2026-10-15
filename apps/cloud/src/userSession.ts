@@ -12,10 +12,10 @@
  * into whatever image is current. See `docs/WEB-VERSION.md`.
  *
  * Close codes the tab understands (`apps/desktop/src/web/socket.ts`): 4401 signed out, 4408
- * asleep, 4429 no time left today, 4402 the month is full, 4503 every sandbox is busy.
+ * asleep, 4429 no time left in this session window, 4402 the month is full, 4503 every sandbox is busy.
  */
 import { DurableObject } from "cloudflare:workers";
-import { addUsage, dayKey, nextReset, remainingMs, shouldSleep, type Usage } from "./allowance.ts";
+import { addUsage, nextReset, remainingMs, shouldSleep, usedMs, type Usage } from "./allowance.ts";
 import { verifyIdToken } from "./auth.ts";
 import { numberVar, type Env } from "./env.ts";
 import { HOST_PORT as PREVIEW_RESERVED_PORT, newPreviewId, rewriteLoopbackUrl } from "./previewAuth.ts";
@@ -78,8 +78,13 @@ export class UserSession extends DurableObject<Env> {
 
   /* ── Settings ─────────────────────────────────────────────────────────── */
 
+  /** Running minutes per session window; DAILY_ALLOWANCE_MIN is the name before windows. */
   private allowanceMs(): number {
-    return numberVar(this.env.DAILY_ALLOWANCE_MIN, 60) * MINUTE;
+    return numberVar(this.env.SESSION_ALLOWANCE_MIN ?? this.env.DAILY_ALLOWANCE_MIN, 60) * MINUTE;
+  }
+
+  private windowMs(): number {
+    return numberVar(this.env.SESSION_HOURS, 5) * 60 * MINUTE;
   }
 
   private idleMs(): number {
@@ -101,7 +106,7 @@ export class UserSession extends DurableObject<Env> {
   }
 
   private async usage(): Promise<Usage> {
-    return (await this.ctx.storage.get<Usage>("usage")) ?? { day: dayKey(Date.now()), usedMs: 0 };
+    return (await this.ctx.storage.get<Usage>("usage")) ?? { usedMs: 0 };
   }
 
   private async archives(): Promise<ArchiveRecord[]> {
@@ -138,8 +143,8 @@ export class UserSession extends DurableObject<Env> {
       status: {
         state,
         allowanceMs: this.allowanceMs(),
-        usedMs: (usage.day === dayKey(now) ? usage.usedMs : 0) + unaccounted,
-        resetsAt: nextReset(now),
+        usedMs: usedMs(usage, now, this.windowMs()) + unaccounted,
+        resetsAt: nextReset(usage, now, this.windowMs()),
         storageBytes: archives.at(-1)?.bytes ?? 0,
         ...(message === undefined ? {} : { message }),
       },
@@ -189,7 +194,7 @@ export class UserSession extends DurableObject<Env> {
   private async openTab(): Promise<Response> {
     const uid = await this.uid();
     const now = Date.now();
-    if (remainingMs(await this.usage(), now, this.allowanceMs()) <= 0) return this.refuse(4429, await this.status("spent"));
+    if (remainingMs(await this.usage(), now, this.allowanceMs(), this.windowMs()) <= 0) return this.refuse(4429, await this.status("spent"));
 
     const running = this.ctx.container?.running === true;
     if (!running) {
@@ -438,7 +443,7 @@ export class UserSession extends DurableObject<Env> {
     const lastTick = await this.ctx.storage.get<number>("lastTickAt");
     if (lastTick === undefined) return;
     const delta = Math.max(0, now - lastTick);
-    await this.ctx.storage.put({ usage: addUsage(await this.usage(), now, delta), lastTickAt: now });
+    await this.ctx.storage.put({ usage: addUsage(await this.usage(), now, delta, this.windowMs()), lastTickAt: now });
     await this.env.BUDGET.getByName("global").charge(await this.uid(), delta / MINUTE);
   }
 
@@ -473,7 +478,7 @@ export class UserSession extends DurableObject<Env> {
     }
     const lastInputAt = Math.max(hostState.lastInputAt, (await this.ctx.storage.get<number>("lastInputAt")) ?? 0);
     const idleSince = this.tabs.size === 0 ? ((await this.ctx.storage.get<number>("idleSince")) ?? now) : null;
-    const remaining = remainingMs(await this.usage(), now, this.allowanceMs());
+    const remaining = remainingMs(await this.usage(), now, this.allowanceMs(), this.windowMs());
 
     if (remaining <= 0) {
       const spentAt = (await this.ctx.storage.get<number>("spentAt")) ?? now;
@@ -511,8 +516,8 @@ export class UserSession extends DurableObject<Env> {
       }
     }
     this.tabs.clear();
-    // Time already used today is spent whatever happens to the files: deleting the workspace
-    // must not hand back a fresh daily allowance.
+    // Time already used in this window is spent whatever happens to the files: deleting the
+    // workspace must not hand back a fresh allowance.
     await this.accountTime(Date.now());
     const usage = await this.usage();
     await this.ctx.container?.destroy().catch(() => undefined);

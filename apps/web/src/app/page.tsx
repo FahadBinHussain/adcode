@@ -12,6 +12,7 @@ import { DocsShowcase } from "@/components/DocsShowcase";
 import { AboutUs } from "@/components/AboutUs";
 import Link from "next/link";
 import { HomeFaq } from "@/components/HomeFaq";
+import { FreePlan } from "@/components/FreePlan";
 import { JsonLd } from "@/components/JsonLd";
 import { FAQ, faqPage } from "@/lib/schema";
 import { comparisons, landingPath } from "@/lib/landings";
@@ -89,7 +90,7 @@ export default function Home() {
           </li>
           <li>
             <h3>Sign in - the AI is ready</h3>
-            <p><strong>Free models from our partners are built in</strong>, with a daily allowance and no key to find. Prefer your own? Run a model on your computer with Ollama, or paste any key you already have.</p>
+            <p><strong>Free models from our partners are built in</strong>: a full balance of AI credits every 5 hours, and no key to find. Prefer your own? Run a model on your computer with Ollama, or paste any key you already have.</p>
           </li>
           <li>
             <h3>Describe it</h3>
@@ -97,6 +98,8 @@ export default function Home() {
           </li>
         </ol>
       </section>
+
+      <FreePlan />
 
       <LiveAgentsShowcase />
       <LiveRecording />

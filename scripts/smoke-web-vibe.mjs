@@ -404,7 +404,7 @@ if (checks.threw === undefined) {
     await second.goto(`http://localhost:${refusedPort}/`);
     await second.waitFor("document.querySelector('.web-gate-card')", { timeoutMs: 60_000 });
     await second.evaluate(`(() => { [...document.querySelectorAll('button')].find((b) => b.textContent.includes('dev mode'))?.click(); return true; })()`);
-    checks.refusalExplained = await second.waitFor("document.querySelector('#web-gate')?.textContent.includes(\"That's today's cloud time\")", { timeoutMs: 30_000 });
+    checks.refusalExplained = await second.waitFor("document.querySelector('#web-gate')?.textContent.includes(\"That's this session's cloud time\")", { timeoutMs: 30_000 });
     if (SHOTS !== null) await second.screenshot(join(SHOTS, "web-refused.png"));
   } catch (error) {
     checks.refusalExplained = `THREW: ${error}`;

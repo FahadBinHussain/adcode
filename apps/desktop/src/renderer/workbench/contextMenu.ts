@@ -162,6 +162,8 @@ export function createContextMenu(host: HTMLElement): ContextMenu {
 
       built.style.left = `${left}px`;
       built.style.top = `${top}px`;
+      // It grows out of the corner nearest the pointer, not out of its own middle.
+      built.style.transformOrigin = `${flipX ? "right" : "left"} ${flipY ? "bottom" : "top"}`;
       built.style.visibility = "visible";
 
       items()[0]?.focus();

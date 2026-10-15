@@ -61,7 +61,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "workbench.cloudWorkspace": {
     actions: [command("cloud.workspace", "Open Cloud workspace")],
-    keywords: ["time left", "daily limit", "allowance", "minutes left", "download project", "delete my data", "connect github", "sign out", "cloud storage", "sleep"],
+    keywords: ["time left", "cloud time", "session time", "minutes left", "download project", "delete my data", "connect github", "sign out", "cloud storage", "sleep"],
   },
   "workbench.changes": {
     actions: [command("workspace.changes", "Open Changes")],
@@ -118,9 +118,21 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
     actions: [command("ai.showUsage", "Show usage")],
     keywords: ["usage", "tokens", "token count", "cost", "spend", "spending", "billing", "how much", "price", "per model", "budget", "activity", "streak", "heatmap", "calendar", "active days"],
   },
+  "ai.credits": {
+    actions: [command("ai.showCredits", "Show credits")],
+    keywords: ["credits", "free credits", "ai credits", "5 hour", "five hour", "session limit", "weekly limit", "usage limit", "refill", "reset", "claude max", "allowance", "daily allowance", "quota", "out of credits", "heabsy", "rate"],
+  },
+  "ai.projectInstructions": {
+    actions: [command("ai.initInstructions", "Write AGENTS.md")],
+    keywords: ["agents.md", "claude.md", "gemini.md", "copilot instructions", "project rules", "instructions file", "init", "/init", "custom instructions", "coding standards", "conventions"],
+  },
+  "ai.subagents": {
+    actions: [command("ai.delegate", "Split a task across helpers")],
+    keywords: ["sub-agent", "subagent", "sub agents", "helpers", "agents start agents", "spawn agent", "delegate", "split task", "divide task", "parallel", "fan out", "task tool", "explore agent"],
+  },
   "ai.tagflow": {
     actions: [command("ai.tagflow", "Choose included AI")],
-    keywords: ["tagflow", "included ai", "no api key", "free models", "free allowance", "daily ai limit", "ai quota", "server providers", "admin models", "custom free providers"],
+    keywords: ["tagflow", "included ai", "no api key", "free models", "free ai", "server providers", "admin models", "custom free providers"],
   },
   "adcode.ai.designTaste": {
     keywords: ["taste skill", "design skill", "anti slop", "generic ai design", "better ui", "landing page", "frontend", "built-in skills", "leonxlnx"],
@@ -283,7 +295,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "ai.team": {
     actions: [command("ai.team", "Set up Team")],
-    keywords: ["multiple ai", "parallel agents", "divide task", "roles", "named agents", "agent profiles", "team activity", "agent instructions"],
+    keywords: ["multiple ai", "parallel agents", "roles", "named agents", "agent profiles", "team activity", "agent instructions"],
   },
   "ai.terminalTeam": {
     actions: [command("ai.terminalTeam", "Start a Team in the terminal")],

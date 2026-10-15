@@ -28,15 +28,15 @@ describe("sign-in errors", () => {
 
 describe("time left", () => {
   it("counts minutes, then hours", () => {
-    expect(formatTimeLeft(47 * 60_000 + 30_000)).toBe("47 min left today");
-    expect(formatTimeLeft(60 * 60_000)).toBe("1 h left today");
-    expect(formatTimeLeft(75 * 60_000)).toBe("1 h 15 min left today");
+    expect(formatTimeLeft(47 * 60_000 + 30_000)).toBe("47 min left");
+    expect(formatTimeLeft(60 * 60_000)).toBe("1 h left");
+    expect(formatTimeLeft(75 * 60_000)).toBe("1 h 15 min left");
   });
 
   it("says when less than a minute or nothing is left", () => {
     expect(formatTimeLeft(20_000)).toBe("Less than a minute left");
-    expect(formatTimeLeft(0)).toBe("No time left today");
-    expect(formatTimeLeft(-5)).toBe("No time left today");
+    expect(formatTimeLeft(0)).toBe("No time left");
+    expect(formatTimeLeft(-5)).toBe("No time left");
   });
 
   it("turns amber at ten minutes and red at two", () => {
@@ -64,6 +64,6 @@ describe("relative time", () => {
 
 describe("reset time", () => {
   it("says when the allowance comes back, as a clock time", () => {
-    expect(formatReset(Date.UTC(2026, 9, 15, 0, 0, 0), "en-GB")).toMatch(/^Resets at \d{2}:\d{2}$/);
+    expect(formatReset(Date.UTC(2026, 9, 15, 0, 0, 0), "en-GB")).toMatch(/^Refills at \d{2}:\d{2}$/);
   });
 });

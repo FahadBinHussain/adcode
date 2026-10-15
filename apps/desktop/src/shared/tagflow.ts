@@ -24,6 +24,18 @@ export interface TagflowFeedbackInput {
 }
 export type TagflowFeedbackResult = { ok: true } | { ok: false; message: string };
 
+/** One credit window as the relay reports it, in credits. Null times: no window open yet. */
+export interface CreditWindowView { limit: number; used: number; held: number; remaining: number; startedAt: number | null; resetsAt: number | null }
+
+/** Free AI credits: one balance for every included model, a session window and a weekly one. */
+export interface CreditsAllowance {
+  plan: { sessionCredits: number; weeklyCredits: number; sessionHours: number };
+  session: CreditWindowView;
+  weekly: CreditWindowView;
+  /** Credits per 1,000 tokens, by model ID. */
+  rates: Record<string, number>;
+}
+
 /** Included AI's account-wide allowance, separate from this machine's usage history. */
 export interface TagflowAllowanceView {
   available: boolean;
@@ -33,6 +45,28 @@ export interface TagflowAllowanceView {
   resetsAt: number;
   /** Partner models with their own daily allowance, counted apart from the main one. Older servers omit it. */
   pools?: { provider: string; name: string; models: string[]; limits: TagflowAllowanceView["limits"]; usage: TagflowAllowanceView["usage"] }[];
+  /** Relays from 2026-10-15 meter free AI in credits; older ones omit it and count tokens per day. */
+  credits?: CreditsAllowance;
+}
+
+/** "3 hr 12 min", "45 min", "under a minute": how long until a credit window refills. */
+export function untilText(at: number, now: number): string {
+  const minutes = Math.ceil((at - now) / 60_000);
+  if (minutes <= 1) return "under a minute";
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const rest = minutes % 60;
+  if (days > 0) return `${days} day${days === 1 ? "" : "s"}${hours > 0 ? ` ${hours} hr` : ""}`;
+  return hours > 0 ? `${hours} hr${rest > 0 ? ` ${rest} min` : ""}` : `${rest} min`;
+}
+
+/** A credit window as a meter reads it: whole credits, a percent used, and when it refills. */
+export function creditWindowSummary(window: CreditWindowView, now: number) {
+  const spent = Math.max(0, window.used) + Math.max(0, window.held);
+  const percent = window.limit <= 0 || spent >= window.limit ? 100 : Math.min(99, Math.round(spent / window.limit * 100));
+  const remaining = Math.max(0, Math.floor(window.remaining));
+  const refill = window.resetsAt === null ? null : { in: untilText(window.resetsAt, now), at: new Date(window.resetsAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) };
+  return { percent, remaining, refill, open: window.resetsAt !== null };
 }
 
 /**

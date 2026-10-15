@@ -8,10 +8,10 @@ import { createMemoryStore } from "../../../services/api/src/memoryStore.ts";
 import { DEFAULT_TAGFLOW_CONFIG } from "../../../services/api/src/tagflowConfig.ts";
 import { recoverIncludedLimits } from "../../../packages/ai/src/includedLimitRecovery.ts";
 
-it("resumes the pending tool step after the real relay's daily reset without repeating the completed tool",async()=>{
-  vi.useFakeTimers();vi.setSystemTime(Date.parse("2026-10-11T23:59:59Z"));
+it("resumes the pending tool step when the real relay's credit window refills, without repeating the completed tool",async()=>{
+  vi.useFakeTimers();vi.setSystemTime(Date.parse("2026-10-11T12:00:00Z"));const started=Date.now();const window=5*3_600_000;
   const store=createMemoryStore();let toolRuns=0;const statuses:number[]=[];
-  const config={...DEFAULT_TAGFLOW_CONFIG,enabled:true,baseUrl:"https://api.tagflow-ai.com/v1",defaultModel:"coder",models:[{id:"coder",name:"Coder",contextWindow:32768,maxOutput:4096,inputPrice:0,outputPrice:0}]};
+  const config={...DEFAULT_TAGFLOW_CONFIG,enabled:true,baseUrl:"https://api.tagflow-ai.com/v1",defaultModel:"coder",credits:{sessionCredits:1,weeklyCredits:100,sessionHours:5},models:[{id:"coder",name:"Coder",contextWindow:32768,maxOutput:4096,inputPrice:0,outputPrice:0}]};
   await store.putTagflowConfig({config,updatedAt:Date.now(),updatedBy:"admin"});
   const upstream=vi.fn<typeof fetch>()
     .mockResolvedValueOnce(new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"edit-1","function":{"name":"edit_file","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3}}\n\ndata: [DONE]\n\n',{headers:{"content-type":"text/event-stream"}}))
@@ -19,19 +19,21 @@ it("resumes the pending tool step after the real relay's daily reset without rep
   const handle=createFetchHandler({store,verifier:{verify:async()=>({uid:"user",claims:{email:"test@adcode.test",email_verified:true}})},clock:{now:()=>Date.now()},tagflow:{apiKey:"fixture-only",fetchImpl:upstream}});
   const provider=recoverIncludedLimits(createOpenAiCompatibleProvider({id:"tagflow",displayName:"Included AI",baseUrl:"https://adcode.test/v1/ai/tagflow",apiKey:"user",models:["coder"],fetchImpl:async(url,init)=>{const response=await handle(new Request(url,init));statuses.push(response.status);return response;}}));
   const agent=createAgent({provider,model:"coder",maxTokens:100,tools:[{name:"edit_file",description:"Edit file",inputSchema:{type:"object"},mutating:true}],runner:{run:async()=>{
-    toolRuns++;const day="2026-10-11";const usage=await store.getTagflowUsage("user",day);
-    const remaining=1_000_000-usage!.inputTokens-usage!.outputTokens;
-    await store.reserveTagflow({id:"earlier",uid:"user",day,minute:1,tokens:remaining,costMicros:0,limits:config.limits});
-    await store.settleTagflow("earlier",{inputTokens:remaining,outputTokens:0,costMicros:0,estimated:false,failed:false});
+    // Another device spends the rest of this session's credits while the edit runs.
+    toolRuns++;
+    await store.reserveTagflow({id:"earlier",uid:"user",day:"2026-10-11",minute:1,tokens:1,costMicros:0,limits:config.limits,credits:{millicredits:1000,sessionLimit:1000,weeklyLimit:100_000,sessionMs:window,now:Date.now()}});
+    await store.settleTagflow("earlier",{inputTokens:1,outputTokens:0,costMicros:0,estimated:false,failed:false,millicredits:1000});
     return{content:"Edited app.ts successfully.",isError:false};
   }}});
   try{
     const events:unknown[]=[];const run=(async()=>{for await(const event of agent.send("Fix the button"))events.push(event);})();
-    await vi.advanceTimersByTimeAsync(999);expect(statuses).toEqual([200,429]);expect(toolRuns).toBe(1);
+    await vi.advanceTimersByTimeAsync(window-1);expect(statuses).toEqual([200,429]);expect(toolRuns).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({kind:"status",text:expect.stringContaining("This session's free AI credits are used up")}));
     await vi.advanceTimersByTimeAsync(1);await run;expect(statuses).toEqual([200,429,200]);expect(toolRuns).toBe(1);
     expect(events).toContainEqual({kind:"text",text:"Finished the task."});expect(events.some(event=>(event as {kind:string}).kind==="error")).toBe(false);
     expect(JSON.stringify(upstream.mock.calls[1]?.[1]?.body)).toContain("Edited app.ts successfully");
-    expect(await store.getTagflowUsage("user","2026-10-12")).toMatchObject({requests:1,inputTokens:14,outputTokens:2,reservedTokens:0});
+    // The new window opened with the resumed request and holds only what it used.
+    expect((await store.getCreditWindows("user")).session).toEqual({startedAt:started+window,endsAt:started+2*window,usedMillicredits:16,reservedMillicredits:0});
   }finally{agent.cancel();vi.useRealTimers();}
 });
 

@@ -141,9 +141,9 @@ describe("provider report and feedback endpoints",() => {
     const row = await store.getModelRequest(response.headers.get("x-adcode-request-id")!);
     expect(row).toMatchObject({ outcome:"provider_error",errorCode:"upstream-rate-limit",upstreamStatus:429,inputTokens:0,estimated:false });
     expect(JSON.stringify(row)).not.toContain("test-key");
-    await store.putTagflowPolicy("user",{ blocked:false,limits:{ ...config.limits,dailyTokens:0 },updatedAt:from,updatedBy:"admin" });
+    await store.putTagflowPolicy("user",{ blocked:false,limits:null,credits:{ sessionCredits:0,weeklyCredits:100,sessionHours:5 },updatedAt:from,updatedBy:"admin" });
     const denied = await chat(); expect(denied.status).toBe(429);
-    expect(await store.getModelRequest(denied.headers.get("x-adcode-request-id")!)).toMatchObject({ outcome:"rejected",errorCode:"daily-limit",providerStartedAt:null });
+    expect(await store.getModelRequest(denied.headers.get("x-adcode-request-id")!)).toMatchObject({ outcome:"rejected",errorCode:"session-limit",providerStartedAt:null });
     const report = await (await call("/admin/tagflow/reports?from=2026-10-11&to=2026-10-11","admin")).json() as ModelReportResponse;
     expect(report.models[0]!.current).toMatchObject({ attempts:2,providerCalls:1,providerErrors:1,rejected:1 });
   });

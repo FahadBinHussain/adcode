@@ -4377,7 +4377,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         // Host progress, not model reasoning: "Waiting 21s for Groq's rate limit" is
         // shown live, so a wait never reads as a hang.
         const text = String(event["text"] ?? "");
-        if (/^Free AI (?:allowance reached|is temporarily limited)\./.test(text)) waitingForIncludedLimit = true;
+        if (/^(?:Free AI (?:allowance reached|is temporarily limited)|This (?:session|week)'s free AI credits are used up)\./.test(text)) waitingForIncludedLimit = true;
         else if (text === "Checking the limit and resuming this task automatically…") waitingForIncludedLimit = false;
         workingText.textContent = text;
         ensureTimeline().setStatus(text);

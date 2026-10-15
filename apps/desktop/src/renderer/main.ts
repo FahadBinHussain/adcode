@@ -5829,6 +5829,9 @@ function registerCommands(): void {
   add("ai.schedule", "Schedule an AI Message", () => chat.openScheduleComposer());
   add("ai.compactConversation", "AI: Compact Conversation", () => chat.compactConversation());
   add("ai.showUsage", "AI: Show Usage", () => void openUsageDialog());
+  add("ai.showCredits", "AI: Show Free AI Credits", () => void openUsageDialog());
+  add("ai.delegate", "AI: Split a Task Across Helpers", () => { showChatSurface(); chat.draft("/helpers "); });
+  add("ai.initInstructions", "AI: Write Project Instructions (AGENTS.md)", () => { showChatSurface(); chat.ask("/init"); });
   add("ai.customizeChat", "AI: Customise Chat", () => void openChatAppearanceDialog({ openAgents: () => openAgents() }));
   add("ai.viewConversationSummary", "AI: View Conversation Summary", () => chat.viewConversationSummary());
   add("ai.askSelection", "Ask AI about Selection or File", () => editorHost.runAction("adcode.askSelection"));

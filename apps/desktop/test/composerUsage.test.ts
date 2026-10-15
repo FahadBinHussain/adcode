@@ -12,6 +12,24 @@ const allowance = (extra: Partial<TagflowAllowanceView> = {}): TagflowAllowanceV
 });
 
 describe("composer usage meters", () => {
+  it("shows the session and weekly credit windows when the relay meters credits", () => {
+    const now = Date.now();
+    const view = allowance({ credits: {
+      plan: { sessionCredits: 2000, weeklyCredits: 20000, sessionHours: 5 },
+      session: { limit: 2000, used: 1500.4, held: 120, remaining: 379.6, startedAt: now - 3_600_000, resetsAt: now + 4 * 3_600_000 },
+      weekly: { limit: 20000, used: 0, held: 0, remaining: 20000, startedAt: null, resetsAt: null },
+      rates: { "tagflow-code-27b": 1, "heabsy-qwen38": 0.2 },
+    } });
+    const [session, weekly] = composerUsageModels(null, view, true, "heabsy-qwen38");
+    expect(session).toMatchObject({ label: "Session", percent: 81, value: "81%", detail: "379 left", tone: "warn" });
+    expect(session.tooltip).toContain("379 of 2,000 left, 120 held by replies in progress");
+    expect(session.tooltip).toContain("Refills in 4 hr");
+    expect(session.tooltip).toContain("This model uses 0.2 credits per 1,000 tokens.");
+    expect(weekly).toMatchObject({ label: "Weekly", percent: 0, detail: "20,000 left", tone: "ok" });
+    expect(weekly.tooltip).toContain("A 7-day window starts with your next request.");
+    const spent = composerUsageModels(null, allowance({ credits: { ...view.credits!, session: { ...view.credits!.session, used: 2000, held: 0, remaining: 0 } } }), true)[0];
+    expect(spent).toMatchObject({ percent: 100, tone: "full", detail: "Back in 4 hr" });
+  });
   it("shows a partner model's own allowance instead of the main one", () => {
     const base = allowance();
     const view = allowance({ pools: [{ provider: "custom-heabsy", name: "Heabsy", models: ["heabsy-qwen38"], limits: { ...base.limits, dailyTokens: 10_000_000 }, usage: { ...base.usage, inputTokens: 1_000_000, outputTokens: 0, reservedTokens: 0 } }] });
