@@ -10,6 +10,7 @@
  *
  * Pure: no DOM, so every rule is tested against real provider wording.
  */
+import { CONTINUE_PROMPT } from "../../shared/continuePrompt.ts";
 
 export type AiFailureAction = "retry" | "models" | "usage" | "new-conversation" | "report" | "sign-in";
 
@@ -51,8 +52,8 @@ export interface AiFailure {
 export const OUTPUT_LIMIT_AGAIN =
   "The reply reached the model's output limit again, even after continuing.";
 
-/** What picks a stopped turn back up: the conversation already holds the request and the work so far. */
-export const CONTINUE_PROMPT = "Continue from where you stopped and finish the remaining steps.";
+/** The main process sends the same words when it keeps a turn going by itself. */
+export { CONTINUE_PROMPT };
 export const RECOVER_EDIT_PROMPT = "Continue the original request. The previous edit could not match the file. First re-read the affected file using read_file with line_numbers: false and the recovery offset from the tool error. Use the current exact file text to correct old_string, then make the smallest necessary edit and verify it. Do not repeat the failed replacement or rewrite the entire file to bypass the mismatch.";
 
 export function retryAfterFailure(failure: AiFailure, request: string): string {

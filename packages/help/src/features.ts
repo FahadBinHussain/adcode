@@ -341,6 +341,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   "adcode.ai.keepGoing": {
     keywords: ["dont stop", "step limit", "finish the job", "work until done", "carry on by itself"],
   },
+  "ai.backgroundChats": {
+    actions: [command("ai.showConversations", "Show working chats")],
+    keywords: ["background", "parallel chats", "several chats", "multiple chats at once", "run in background", "keeps working", "minimised", "minimized", "switch chat while working", "long task", "continuous", "keep running"],
+  },
   "adcode.ai.terminalAgentDetection": {
     keywords: ["recognise agent", "detect cli", "grok", "kimi", "codex", "share memory with agent"],
   },

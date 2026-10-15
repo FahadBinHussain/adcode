@@ -88,6 +88,24 @@ describe("tool rows", () => {
   });
 });
 
+describe("chats that keep working", () => {
+  it("follows each chat's own events, and replays a working chat when it is opened", () => {
+    expect(widgetSource).toContain("if (!eventIsShown(eventSession)) return;");
+    expect(widgetSource).toContain("window.adcode.ai.liveTurn(id)");
+    expect(widgetSource).toContain("handleAgentEvent(event, true)");
+    // Opening another chat leaves the working one working: no cancel on the way out.
+    const leave = widgetSource.slice(widgetSource.indexOf("function leaveShownChat(): void {"), widgetSource.indexOf("function sendParkedFollowUp("));
+    expect(leave).not.toContain("ai.cancel");
+    expect(leave).toContain("parkedFollowUps.set(");
+  });
+
+  it("leaves keeping going to the main process, and shows its Continue as a note when reopened", () => {
+    expect(widgetSource).not.toContain("KEEP_GOING_LIMIT");
+    expect(widgetSource).toContain('case "continuing":');
+    expect(widgetSource).toContain('message.text.trim() === CONTINUE_PROMPT');
+  });
+});
+
 describe("the timeline in the chat", () => {
   it("is one timeline per turn, with text inside it and the answer left outside when it ends", () => {
     expect(widgetSource).toContain("createTurnTimeline(");

@@ -76,6 +76,7 @@ import {
   type AiAttachmentView,
   type AiCompactResultView,
   type AiCheckpointView,
+  type AiRunView,
   type AiContextUsageView,
   type AiKeyCheck,
   type AiQuickConnectResult,
@@ -104,7 +105,10 @@ import { recordMilestone } from "./milestones.ts";
 import { createKeychainStore } from "./keychain.ts";
 import { createAiToolRunner } from "./aiTools.ts";
 import { resolveSandboxPath } from "./aiSandbox.ts";
-import { createCheckpointStore, type UndoResult } from "./aiCheckpoints.ts";
+import { createCheckpointStore, type CheckpointTurn, type UndoResult } from "./aiCheckpoints.ts";
+import { announceFinishedUnseen, keepAwakeWhileWorking } from "./backgroundWork.ts";
+import { createChatRuns, KEEP_GOING_LIMIT, MAX_PARALLEL_CHATS, shouldKeepGoing } from "./chatRuns.ts";
+import { CONTINUE_PROMPT } from "../shared/continuePrompt.ts";
 import { checkpointView, checkpointsForSession } from "./aiCheckpointView.ts";
 import { ASSISTANT_EXTENSION_TOOLS, withAssistantExtensions } from "./assistantControls.ts";
 import { memoryForWorkspace } from "./memory.ts";
@@ -239,7 +243,7 @@ function refreshIncludedAi(force = false): Promise<void> {
       if (activeProvider() === "anthropic" && currentSettings()["adcode.ai.model"] === model) {
         await writeSetting("adcode.ai.provider", "tagflow");
         await writeSetting("adcode.ai.model", "");
-        invalidateChatAgent();
+        invalidateChatAgents();
         selectedIncluded = true;
       }
     }
@@ -308,7 +312,6 @@ let teamCoordinator: AiTeamCoordinator | null = null;
 let teamRecovery: Promise<void> | null = null;
 let automationService: AiAutomationService | null = null;
 let automationRecovery: Promise<void> | null = null;
-let sendInFlight = false;
 let completionInFlight: { readonly id: number; readonly controller: AbortController } | null = null;
 /**
  * One-shot escape hatch from the chat's "Answer anyway": the user accepted a
@@ -649,11 +652,15 @@ function configuredStoragePolicy() {
 }
 
 /**
- * The conversation being written to.
+ * The conversation on screen.
  *
  * Held here rather than in the renderer because it is the main process that knows when a
  * turn has finished - and a turn is the unit worth saving. Saving per streamed token would
  * be thousands of writes for one answer.
+ *
+ * It is only the one being looked at. Each conversation that has talked to a model has its
+ * own thread below, with its own agent, and a turn runs in its thread: opening another chat
+ * moves this pointer and nothing else, so the turn carries on (see `chatRuns.ts`).
  */
 let session: ChatSession | null = null;
 
@@ -668,18 +675,110 @@ function startSession(): ChatSession {
   };
 }
 
+/** One conversation's working state: its agent and the turn it may be running. */
+interface ChatThread {
+  session: ChatSession;
+  /** The project it belongs to, fixed when it starts: its saves never land in another one. */
+  readonly root: string | null;
+  agent: Agent | null;
+  agentProvider: string | null;
+  agentModel: string | null;
+  agentEndpoint: string | null;
+  rebuild: boolean;
+  /** What the person was looking at when they last sent here; folded into every round-trip. */
+  editorContext: AiEditorContextView | null;
+  /** The included-AI request behind the reply being written, for its feedback buttons. */
+  includedRequestId: string | undefined;
+  /** This turn's undo recording, when it writes files directly. */
+  checkpoint: CheckpointTurn | null;
+  /** Set by Stop: a turn that would keep going by itself does not. */
+  stopRequested: boolean;
+  lastUsed: number;
+}
+
+const threads = new Map<string, ChatThread>();
+/** Idle threads kept with their agents, so going back to a recent chat does not rebuild one. */
+const IDLE_THREADS_KEPT = 8;
+
+const runs = createChatRuns({
+  // Review mode stages a turn's edits in one task for Apply: one chat at a time there.
+  maxParallel: () => (configuredEditPolicy() === "review" ? 1 : MAX_PARALLEL_CHATS),
+});
+
+function threadFor(chat: ChatSession): ChatThread {
+  const existing = threads.get(chat.id);
+  if (existing !== undefined) {
+    existing.lastUsed = Date.now();
+    return existing;
+  }
+  const created: ChatThread = {
+    session: chat,
+    root: currentWorkspace()?.root ?? null,
+    agent: null,
+    agentProvider: null,
+    agentModel: null,
+    agentEndpoint: null,
+    rebuild: false,
+    editorContext: null,
+    includedRequestId: undefined,
+    checkpoint: null,
+    stopRequested: false,
+    lastUsed: Date.now(),
+  };
+  threads.set(chat.id, created);
+  const idle = [...threads.values()].filter((thread) => !runs.isRunning(thread.session.id) && thread.session.id !== session?.id);
+  if (idle.length > IDLE_THREADS_KEPT) {
+    idle.sort((a, b) => a.lastUsed - b.lastUsed);
+    for (const thread of idle.slice(0, idle.length - IDLE_THREADS_KEPT)) threads.delete(thread.session.id);
+  }
+  return created;
+}
+
+/** A thread's conversation moved on; the screen follows if it is the one shown. */
+function adoptSession(thread: ChatThread, next: ChatSession): void {
+  thread.session = next;
+  if (session?.id === next.id) session = next;
+}
+
+/** The thread of the conversation on screen, if it has one. */
+function shownThread(): ChatThread | null {
+  return session === null ? null : threads.get(session.id) ?? null;
+}
+
+function dropThread(id: string): void {
+  const thread = threads.get(id);
+  if (thread === undefined) return;
+  thread.stopRequested = true;
+  thread.agent?.cancel();
+  threads.delete(id);
+}
+
+/** The chats working, each marked if it is the one on screen. */
+function runViews(): AiRunView[] {
+  return runs.list().map((run) => ({ ...run, shown: run.sessionId === session?.id }));
+}
+
+/** Tell every window which chats are working, and keep the app awake while any is. */
+function announceRuns(): void {
+  const list = runViews();
+  keepAwakeWhileWorking(list.length > 0);
+  broadcast(CHANNELS.aiRunsChanged, list);
+}
+
 /** The conversations for the open project, newest first. */
 export function aiSessions(): Promise<ChatSession[]> {
   return readSessions(currentWorkspace()?.root ?? null);
 }
 
 export async function aiDeleteSession(id: string): Promise<ChatSession[]> {
+  dropThread(id);
   await deleteSession(currentWorkspace()?.root ?? null, id);
   if (session?.id === id) session = null;
   return aiSessions();
 }
 
 export async function aiClearSessions(): Promise<ChatSession[]> {
+  for (const id of [...threads.keys()]) dropThread(id);
   await clearSessions(currentWorkspace()?.root ?? null);
   session = null;
   return aiSessions();
@@ -690,27 +789,33 @@ export async function aiRenameSession(id: string, title: string): Promise<ChatSe
   if (trimmed.length === 0) return aiSessions();
 
   const all = await aiSessions();
-  const found = all.find((one) => one.id === id);
+  const found = threads.get(id)?.session ?? all.find((one) => one.id === id);
   if (found === undefined) return all;
 
   // `renamed` is what stops auto-titling from overwriting the user's own words later.
   const renamed: ChatSession = { ...found, title: trimmed, renamed: true };
   await writeSession(currentWorkspace()?.root ?? null, renamed);
-  if (session?.id === id) session = renamed;
+  const thread = threads.get(id);
+  if (thread !== undefined) adoptSession(thread, renamed);
+  else if (session?.id === id) session = renamed;
 
   return aiSessions();
 }
 
-/** Reopen a past conversation. Returns it so the renderer can draw the transcript. */
+/**
+ * Open a conversation. Returns it so the renderer can draw the transcript.
+ *
+ * Whatever was working keeps working: this only changes which conversation is on screen. A
+ * conversation that is itself mid-turn comes back as its thread holds it - with the message
+ * that started the turn - and the renderer replays the turn so far from `aiLiveTurn`.
+ */
 export async function aiResumeSession(id: string): Promise<ChatSession | null> {
-  const found = (await aiSessions()).find((one) => one.id === id) ?? null;
+  const thread = threads.get(id);
+  const found = thread?.session ?? (await aiSessions()).find((one) => one.id === id) ?? null;
   if (found === null) return null;
 
   session = found;
-  // The agent's own history belongs to the previous conversation.
-  agent?.cancel();
-  agent = null;
-  rebuildChatAgent = false;
+  if (thread !== undefined) thread.lastUsed = Date.now();
   activeTaskId = null;
   return found;
 }
@@ -720,21 +825,49 @@ export function aiCurrentSession(): ChatSession | null {
   return session;
 }
 
-let agent: Agent | null = null;
-let agentProvider: string | null = null;
-let agentModel: string | null = null;
-let agentEndpoint: string | null = null;
-let rebuildChatAgent = false;
-
-/** Retain the live history until the next model has taken it, including completed tools. */
-function invalidateChatAgent(): void {
-  agent?.cancel();
-  rebuildChatAgent = true;
+/** The conversations working right now. */
+export function aiRuns(): AiRunView[] {
+  return runViews();
 }
 
-/** Stop a previous model's pending request or limit wait when the user switches routes. */
+/**
+ * A working conversation's turn so far, for a chat opened partway through it. Anything still
+ * held for batching goes out first, so the window never gets a piece both live and in this.
+ */
+export function aiLiveTurn(sessionId: string): readonly unknown[] {
+  chatEvents.flush();
+  return runs.replay(sessionId);
+}
+
+/** Retain the live history until the next model has taken it, including completed tools. */
+function invalidateChatAgent(thread: ChatThread): void {
+  thread.agent?.cancel();
+  thread.rebuild = true;
+}
+
+/**
+ * A route the chats use changed (a key, the provider). The chat on screen drops its pending
+ * request; every chat - on screen or working in the background - rebuilds on its next turn.
+ * `provider` limits it to the chats talking to that provider.
+ */
+function invalidateChatAgents(provider?: string): void {
+  const shown = shownThread();
+  for (const thread of threads.values()) {
+    if (provider !== undefined && thread.agentProvider !== provider) continue;
+    if (thread === shown) invalidateChatAgent(thread);
+    else thread.rebuild = true;
+  }
+}
+
+/**
+ * Stop a previous model's pending request or limit wait when the user switches routes.
+ *
+ * Only in the chat on screen, where the switch was made. A chat working in the background
+ * finishes its turn on the model it started with and takes the new one on its next turn.
+ */
 export function aiModelSettingsChanged(): void {
-  if (agent !== null && (agentProvider !== activeProvider() || agentModel !== activeModel(activeProvider()) || agentEndpoint !== baseUrlOf(activeProvider()))) invalidateChatAgent();
+  const thread = shownThread();
+  if (thread !== null && thread.agent !== null && (thread.agentProvider !== activeProvider() || thread.agentModel !== activeModel(activeProvider()) || thread.agentEndpoint !== baseUrlOf(activeProvider()))) invalidateChatAgent(thread);
 }
 
 function broadcast(channel: string, ...args: unknown[]): void {
@@ -819,11 +952,15 @@ function outputBudget(providerId: string, model: string): { maxTokens: number; m
  * That is what makes hundreds of providers reachable without hundreds of adapters, and it
  * is the same mechanism the custom endpoint uses.
  */
-export async function buildProvider(id: string, offeredKey?: string, source = "unknown", roleId?: string): Promise<Provider | null> {
-  if (id === "tagflow") return buildTagflowProvider(source,source === "chat" ? requestId => {
-    includedChatRequestId = requestId;
-    broadcast(CHANNELS.aiEvent,{ kind: "included-request", requestId });
-  } : undefined,roleId);
+export async function buildProvider(
+  id: string,
+  offeredKey?: string,
+  source = "unknown",
+  roleId?: string,
+  /** The chat whose replies this provider writes: an included request is noted on that chat. */
+  onIncludedRequest?: (requestId: string) => void,
+): Promise<Provider | null> {
+  if (id === "tagflow") return buildTagflowProvider(source, source === "chat" ? onIncludedRequest : undefined, roleId);
   const key = offeredKey ?? (KEYLESS.has(id) ? "" : ((await keys.get(id)) ?? ""));
   const paced = (provider: Provider) => requestScheduler.wrap(provider, id, () => connections().find(item => item.id === id)?.rpm ?? 6000);
   if (!KEYLESS.has(id) && key.length === 0 && id !== "custom") return null;
@@ -854,8 +991,9 @@ const chatCommands = createCommandRunner();
 
 /** Stop what the assistant left running: the folder changed, or the app is quitting. */
 export function aiStopToolProcesses(): void {
-  // A task waiting for tomorrow's allowance still belongs to this folder.
-  agent?.cancel();
+  // Every chat's work belongs to the folder being left - including a task waiting for
+  // tomorrow's allowance - so all of it stops, and the threads go with the folder.
+  for (const id of [...threads.keys()]) dropThread(id);
   chatCommands.stopAll();
   closeAgentBrowser();
 }
@@ -867,12 +1005,13 @@ function describeBackgroundCommands(): string | null {
   return `Background commands still running: ${running.map((item) => `${item.id} (${item.command}${item.url === null ? "" : ` at ${item.url}`})`).join(", ")}. command_output reads them; stop_command ends one.`;
 }
 
-function toolRunner() {
+/** The chat's tools. `undo` is the turn recording the writes, read when each write lands. */
+function toolRunner(undo: () => CheckpointTurn | null = () => null) {
   return createAiToolRunner({
     openPreview: (path) => openAiPreview(broadcast, path),
     viewPage: (request, signal) => viewPage(request, { previewUrl: () => aiPreviewUrl(broadcast) }, signal),
     backgroundCommands: chatCommands,
-    recordUndo: (path, before, after, encoding) => checkpoints.record(path, before, after, encoding),
+    recordUndo: (path, before, after, encoding) => undo()?.record(path, before, after, encoding),
     onFilesChanged: (paths) => announceProjectFiles(paths),
     workspace: resolveToolWorkspace,
     writeWorkspace: ensureToolWorkspace,
@@ -908,7 +1047,7 @@ function toolRunner() {
         await rm(temporary, { force: true }).catch(() => undefined);
         throw error;
       }
-      checkpoints.record(path, original, contents);
+      undo()?.record(path, original, contents);
       return createFileChange(path, original, contents);
     },
     onProposedEdit: (edit) => {
@@ -1029,7 +1168,7 @@ export async function aiStatus(): Promise<AiStatus> {
 export async function setProviderKey(provider: string, key: string): Promise<AiStatus> {
   if (provider !== "tagflow" && provider.length > 0 && key.trim().length > 0) {
     await keys.set(provider, key.trim());
-    if (provider === agentProvider) invalidateChatAgent();
+    invalidateChatAgents(provider);
   }
   return aiStatus();
 }
@@ -1037,7 +1176,7 @@ export async function setProviderKey(provider: string, key: string): Promise<AiS
 export async function clearProviderKey(provider: string): Promise<AiStatus> {
   if (provider.length > 0) {
     await keys.clear(provider);
-    if (provider === agentProvider) invalidateChatAgent();
+    invalidateChatAgents(provider);
   }
   return aiStatus();
 }
@@ -1081,7 +1220,7 @@ export async function checkProviderKey(providerId: string, key: string): Promise
       message: error instanceof Error ? error.message : "that key was not accepted",
     };
   } finally {
-    rebuildChatAgent = true;
+    markAgentsForRebuild();
   }
 }
 
@@ -1121,13 +1260,13 @@ export async function aiQuickConnect(providerId: string, key: string, model: str
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "that key was not accepted" };
   } finally {
-    rebuildChatAgent = true;
+    markAgentsForRebuild();
   }
 
   if (!KEYLESS.has(providerId)) await keys.set(providerId, trimmed);
   await writeSetting("adcode.ai.provider", providerId);
   await writeSetting("adcode.ai.model", chosen);
-  invalidateChatAgent();
+  invalidateChatAgents();
   return { ok: true, provider: providerId, model: chosen, status: await aiStatus() };
 }
 
@@ -1287,11 +1426,14 @@ async function projectFilesHint(root: string): Promise<string | null> {
  * starts from the saved summary and messages.
  * Returns what to tell the user when no agent can be built.
  */
-async function ensureChatAgent(providerId: string, model: string): Promise<Agent | string> {
-  if (!rebuildChatAgent && agent !== null && agentProvider === providerId && agentModel === model && agentEndpoint === baseUrlOf(providerId)) {
-    return agent;
+async function ensureChatAgent(thread: ChatThread, providerId: string, model: string): Promise<Agent | string> {
+  if (!thread.rebuild && thread.agent !== null && thread.agentProvider === providerId && thread.agentModel === model && thread.agentEndpoint === baseUrlOf(providerId)) {
+    return thread.agent;
   }
-  const provider = await buildProvider(providerId,undefined,"chat");
+  const provider = await buildProvider(providerId, undefined, "chat", undefined, (requestId) => {
+    thread.includedRequestId = requestId;
+    broadcast(CHANNELS.aiEvent, { kind: "included-request", requestId, sessionId: thread.session.id });
+  });
 
   if (provider === null) {
     const name = providerIn(catalogue, providerId)?.name ?? providerId;
@@ -1301,7 +1443,7 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
       : `No API key for ${name}. Add one in Connect a model.`;
   }
 
-  const carried = agent === null ? null : historyForModelSwitch(agent.history());
+  const carried = thread.agent === null ? null : historyForModelSwitch(thread.agent.history());
   /*
    * A model running on this computer gets the lean request from the first turn: the core
    * read, edit and run tools and a short prompt. Offered all of the tools, a 7B local model
@@ -1317,9 +1459,9 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
     effort: configuredEffort(),
     ...outputBudget(providerId, model),
     compaction: compactionFor(providerId, model),
-    initialMessages: carried ?? (session === null ? [] : restoreHistory(session)),
+    initialMessages: carried ?? restoreHistory(thread.session),
     context: async () => {
-      const root = currentWorkspace()?.root ?? null;
+      const root = thread.root;
       let blocker: string | null = null;
       if (currentSettings()["adcode.ai.isolatedWorkspaces"] === false) {
         blocker = "Turn on AI file tools in Settings to use file tools.";
@@ -1330,7 +1472,7 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
         }
       }
       return [
-        aiWorkspaceContext(root, blocker, editorContext, configuredEditPolicy() === "review" ? "review" : "direct"),
+        aiWorkspaceContext(root, blocker, thread.editorContext, configuredEditPolicy() === "review" ? "review" : "direct"),
         lean && root !== null ? await projectFilesHint(root) : null,
         ...(root === null ? [] : [describePreviewForAi()]),
         describeBackgroundCommands(),
@@ -1338,7 +1480,7 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
         lean ? null : builtinSkillGuidance(designTasteOn()),
       ].filter((line): line is string => line !== null).join("\n");
     },
-    runner: withBuiltinSkills(withAssistantExtensions(toolRunner()), designTasteOn),
+    runner: withBuiltinSkills(withAssistantExtensions(toolRunner(() => thread.checkpoint)), designTasteOn),
     beforeRequest: async () => {
       // Direct edits apply immediately, so there is no task to create and
       // no budget to reserve. The turn step limit remains the backstop
@@ -1346,11 +1488,11 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
       return null;
     },
   });
-  agent = built;
-  rebuildChatAgent = false;
-  agentProvider = providerId;
-  agentModel = model;
-  agentEndpoint = baseUrlOf(providerId);
+  thread.agent = built;
+  thread.rebuild = false;
+  thread.agentProvider = providerId;
+  thread.agentModel = model;
+  thread.agentEndpoint = baseUrlOf(providerId);
   return built;
 }
 
@@ -1360,46 +1502,50 @@ async function ensureChatAgent(providerId: string, model: string): Promise<Agent
  * The summary covers the transcript up to the oldest user turn the model kept - never the
  * newest one, so the request in flight always stays in the transcript itself.
  */
-async function recordCompaction(from: Agent, event: { readonly summary: string; readonly keptMessages: number }): Promise<void> {
-  if (session === null) return;
+async function recordCompaction(thread: ChatThread, from: Agent, event: { readonly summary: string; readonly keptMessages: number }): Promise<void> {
   const turns = Math.max(1, keptUserTurns(from.history(), event.keptMessages));
-  session = withSummary(session, { text: event.summary, coversUntil: summaryCoverage(session.messages, turns), at: Date.now() });
-  await writeSession(currentWorkspace()?.root ?? null, session);
-  broadcast(CHANNELS.aiSessionChanged, session);
+  const compacted = withSummary(thread.session, { text: event.summary, coversUntil: summaryCoverage(thread.session.messages, turns), at: Date.now() });
+  adoptSession(thread, compacted);
+  await writeSession(thread.root, compacted);
+  if (session?.id === compacted.id) broadcast(CHANNELS.aiSessionChanged, compacted);
 }
 
 /** Summarise the older part of the conversation now: `/compact`, or Compact now on the meter. */
 export async function aiCompact(rawFocus: unknown): Promise<AiCompactResultView> {
   const focus = parseCompactFocus(rawFocus);
   if (focus === null) return { ok: false, message: "Keep the focus under 500 characters." };
-  if (sendInFlight) return { ok: false, message: "Wait for the current answer to finish, then compact." };
   if (session === null || session.messages.length === 0) return { ok: false, message: "There is nothing to compact yet." };
+  const chat = session;
+  const thread = threadFor(chat);
+  // Compacting is a turn of its own: it waits for this chat's answer, not for anyone else's.
+  const begun = runs.begin(chat.id, chat.title, Date.now());
+  if (!begun.ok) return { ok: false, message: runs.isRunning(chat.id) ? "Wait for the current answer to finish, then compact." : begun.reason };
 
-  const providerId = activeProvider();
-  const ready = await ensureChatAgent(providerId, activeModel(providerId));
-  if (typeof ready === "string") return { ok: false, message: ready };
-
-  sendInFlight = true;
   try {
+    const providerId = activeProvider();
+    const ready = await ensureChatAgent(thread, providerId, activeModel(providerId));
+    if (typeof ready === "string") return { ok: false, message: ready };
     const outcome = await ready.compact(focus);
     if (!outcome.ok) return { ok: false, message: outcome.reason };
-    await recordCompaction(ready, outcome);
-    broadcast(CHANNELS.aiEvent, { kind: "compacted", summary: outcome.summary, before: outcome.before, after: outcome.after, keptMessages: outcome.keptMessages });
+    await recordCompaction(thread, ready, outcome);
+    broadcast(CHANNELS.aiEvent, { kind: "compacted", summary: outcome.summary, before: outcome.before, after: outcome.after, keptMessages: outcome.keptMessages, sessionId: chat.id });
     const usage = ready.contextUsage();
-    if (usage !== null) broadcast(CHANNELS.aiEvent, { kind: "context", ...usage });
+    if (usage !== null) broadcast(CHANNELS.aiEvent, { kind: "context", ...usage, sessionId: chat.id });
     recordDebug("info", "ai", `Compacted the conversation: about ${String(outcome.before)} to ${String(outcome.after)} tokens`);
     return { ok: true, message: "Earlier conversation compacted.", summary: outcome.summary };
   } finally {
-    sendInFlight = false;
+    runs.end(chat.id);
   }
 }
 
-/** How full the chat's context is, for the composer's meter. */
+/** How full the chat on screen's context is, for the composer's meter. */
 export function aiContextUsage(): AiContextUsageView {
   const providerId = activeProvider();
   const model = activeModel(providerId);
   const settings = currentSettings();
-  const live = agent !== null && agentProvider === providerId && agentModel === model ? agent.contextUsage() : null;
+  const thread = shownThread();
+  const agent = thread?.agent ?? null;
+  const live = agent !== null && thread?.agentProvider === providerId && thread.agentModel === model ? agent.contextUsage() : null;
   return {
     tokens: live?.tokens ?? estimateTokens("", agent === null ? session === null ? [] : restoreHistory(session) : historyForModelSwitch(agent.history()), chatTools()),
     contextWindow: contextWindowFor(catalogue, providerId, model),
@@ -1408,30 +1554,104 @@ export function aiContextUsage(): AiContextUsageView {
   };
 }
 
-/** What the user was looking at when they last sent; folded into every round-trip of that turn. */
-let editorContext: AiEditorContextView | null = null;
-let includedChatRequestId: string | undefined;
 
+/** How one turn ended: done, or stopped by its step limit and to be picked up again by itself. */
+type TurnOutcome =
+  | { readonly kind: "done"; readonly ok: boolean; readonly ended: "finished" | "stopped" | "failed" }
+  | { readonly kind: "continue" };
+
+/**
+ * Send a message, and keep working on it until it is done.
+ *
+ * The turn runs in its conversation's own thread, so it goes on whatever the windows do: the
+ * person opening another chat, starting a turn there too, minimising the app or closing the
+ * tab. A turn that reaches its step limit is picked up again here, by itself, while Keep going
+ * until done is on - not by the chat window, whose timers a browser slows when it is hidden.
+ *
+ * `sessionId` names a conversation that is not on screen (a follow-up queued in a chat that is
+ * working in the background); without it the message goes to the one on screen.
+ */
 export async function aiSend(
   text: string,
   attachments: readonly AiAttachmentView[] = [],
   editor: AiEditorContextView | null = null,
+  sessionId?: string,
 ): Promise<boolean> {
-  if (sendInFlight) throw new Error("The built-in assistant is already handling a message");
-  sendInFlight = true;
-  editorContext = editor;
-  includedChatRequestId = undefined;
+  let chat: ChatSession;
+  if (sessionId !== undefined) {
+    const named = threads.get(sessionId)?.session ?? (await aiSessions()).find((one) => one.id === sessionId) ?? null;
+    if (named === null) throw new Error("That conversation is no longer here.");
+    chat = named;
+  } else {
+    session ??= startSession();
+    chat = session;
+  }
+  const thread = threadFor(chat);
+  const begun = runs.begin(chat.id, chat.title, Date.now());
+  if (!begun.ok) {
+    // This conversation mid-turn: the composer queues the message and retries on these words.
+    if (runs.isRunning(chat.id)) throw new Error("The built-in assistant is already handling a message in this conversation");
+    broadcast(CHANNELS.aiEvent, { kind: "error", detail: begun.reason, sessionId: chat.id });
+    return false;
+  }
+  thread.stopRequested = false;
+  announceRuns();
+  let prompt = text;
+  let files = attachments;
+  let outcome: TurnOutcome = { kind: "done", ok: false, ended: "failed" };
+  try {
+    for (;;) {
+      outcome = await runTurn(thread, prompt, files, editor);
+      if (outcome.kind !== "continue") break;
+      if (thread.stopRequested) {
+        // Stopped between two turns: the step-limit stop was never shown, so the stop is.
+        chatEvents.push({ kind: "cancelled", sessionId: chat.id } as unknown as AgentEvent);
+        outcome = { kind: "done", ok: false, ended: "stopped" };
+        break;
+      }
+      prompt = CONTINUE_PROMPT;
+      files = [];
+    }
+    return outcome.kind === "done" && outcome.ok;
+  } finally {
+    const ended = outcome.kind === "done" ? outcome.ended : "stopped";
+    // How it ended goes out before the run list drops it, so a chat that failed in the
+    // background is marked as needing the person, not as done.
+    chatEvents.push({ kind: "run-ended", ended, sessionId: chat.id } as unknown as AgentEvent);
+    chatEvents.flush();
+    runs.end(chat.id);
+    announceRuns();
+    announceFinishedUnseen(thread.session.title, ended);
+  }
+}
+
+/** One turn of a conversation: the message, the model's work on it, and saving the result. */
+async function runTurn(
+  thread: ChatThread,
+  text: string,
+  attachments: readonly AiAttachmentView[],
+  editor: AiEditorContextView | null,
+): Promise<TurnOutcome> {
+  const sessionId = thread.session.id;
+  /** Every event names its conversation, and a running one keeps it for a chat opened later. */
+  const send = (event: AgentEvent | { readonly kind: string; readonly [key: string]: unknown }): void => {
+    const tagged = { ...event, sessionId };
+    chatEvents.push(tagged as unknown as AgentEvent);
+    runs.record(sessionId, tagged);
+  };
+  thread.editorContext = editor;
+  thread.includedRequestId = undefined;
   currentTaskPrompt = text.slice(0, 200);
   try {
     const providerId = activeProvider();
     const model = activeModel(providerId);
 
-    const ready = await ensureChatAgent(providerId, model);
+    const ready = await ensureChatAgent(thread, providerId, model);
     if (typeof ready === "string") {
-      broadcast(CHANNELS.aiEvent, { kind: "error", detail: ready });
+      send({ kind: "error", detail: ready });
       recordDebug("error", "ai", ready);
       recordMilestone("turn_failed");
-      return false;
+      return { kind: "done", ok: false, ended: "failed" };
     }
     recordMilestone("prompt_sent");
 
@@ -1445,9 +1665,12 @@ export async function aiSend(
     const recordedText =
       names.length === 0 ? text : `${text}\n[Attached: ${names.join(", ")}]`;
 
-    session ??= startSession();
-    session = withMessage(session, { role: "user", text: recordedText, at: Date.now() });
-    let turnSession = session;
+    adoptSession(thread, withMessage(thread.session, { role: "user", text: recordedText, at: Date.now() }));
+    let turnSession = thread.session;
+    // Saved as the turn starts, not only when it ends: a new chat working in the background has
+    // to be in the conversation list, or there is no way back to it until it finishes.
+    await writeSession(thread.root, turnSession);
+    announceRuns();
 
     let answer = "";
     let paragraphBreak = false;
@@ -1458,9 +1681,10 @@ export async function aiSend(
     let modelTraceRecorded = false;
     const turnStarted = Date.now();
     let toolCalls = 0;
+    let keepGoing = false;
     // Automatic mode writes as it goes; this turn's writes become one undoable checkpoint.
-    const turnRoot = currentWorkspace()?.root ?? null;
-    if (turnRoot !== null && configuredEditPolicy() === "trusted") checkpoints.begin(turnRoot, turnSession.id);
+    const turnRoot = thread.root;
+    thread.checkpoint = turnRoot !== null && configuredEditPolicy() === "trusted" ? checkpoints.open(turnRoot, turnSession.id) : null;
     recordDebug("info", "ai", `Turn started: ${providerId} / ${model}`);
 
     for await (const event of ready.send(turnText, { images })) {
@@ -1468,11 +1692,24 @@ export async function aiSend(
         noteUsage("chat", providerId, model, event);
         continue;
       }
-      chatEvents.push(event);
+      // Out of steps with Keep going until done on: not an ending, the next turn picks it up.
+      if (event.kind === "error" && !thread.stopRequested && shouldKeepGoing({
+        detail: event.detail,
+        keepGoing: currentSettings()["adcode.ai.keepGoing"] !== false,
+        continued: runs.list().find((run) => run.sessionId === sessionId)?.continued ?? 0,
+      })) {
+        keepGoing = true;
+        turnSucceeded = false;
+        lastError = event.detail;
+        send({ kind: "continuing", count: runs.noteContinued(sessionId), limit: KEEP_GOING_LIMIT });
+        recordDebug("info", "ai", "Reached the step limit - keeping going");
+        continue;
+      }
+      send(event);
       if (event.kind === "tool-draft") continue;
-      if (event.kind === "compacted" && session?.id === turnSession.id) {
-        await recordCompaction(ready, event);
-        if (session?.id === turnSession.id) turnSession = session;
+      if (event.kind === "compacted") {
+        await recordCompaction(thread, ready, event);
+        turnSession = thread.session;
       }
       // What the debug log keeps of a turn: which tools failed and why, and how it ended.
       // Never the prompt, the answer, or a file's contents.
@@ -1541,7 +1778,7 @@ export async function aiSend(
           });
           agentEditRecorded = true;
         } else if (result.conflicts.length > 0) {
-          broadcast(CHANNELS.aiEvent, {
+          send({
             kind: "error",
             detail: "Trusted apply stopped because your files changed during the task. Nothing was applied.",
           });
@@ -1557,17 +1794,18 @@ export async function aiSend(
      * nothing to say rather than as something having gone wrong.
      */
     if (answer.length > 0) {
-      turnSession = withMessage(session?.id === turnSession.id ? session : turnSession, { role: "assistant", text: answer, at: Date.now(),...(includedChatRequestId === undefined ? {} : { includedRequestId: includedChatRequestId }) });
+      turnSession = withMessage(thread.session, { role: "assistant", text: answer, at: Date.now(),...(thread.includedRequestId === undefined ? {} : { includedRequestId: thread.includedRequestId }) });
+    } else {
+      turnSession = thread.session;
     }
 
     await writeSession(turnRoot, turnSession);
-    if (session?.id === turnSession.id) {
-      session = turnSession;
-      broadcast(CHANNELS.aiSessionChanged, session);
-    }
-    const checkpoint = await checkpoints.finish().catch(() => null);
+    adoptSession(thread, turnSession);
+    if (session?.id === turnSession.id) broadcast(CHANNELS.aiSessionChanged, session);
+    const checkpoint = await (thread.checkpoint?.finish() ?? Promise.resolve(null)).catch(() => null);
+    thread.checkpoint = null;
     if (checkpoint !== null) {
-      broadcast(CHANNELS.aiCheckpoint, checkpointView(checkpoint));
+      broadcast(CHANNELS.aiCheckpoint, { ...checkpointView(checkpoint), sessionId });
       recordDebug("info", "ai", `Turn changed ${checkpoint.files.length} file${checkpoint.files.length === 1 ? "" : "s"} (undo available)`);
       /*
        * Automatic mode - the default - writes through checkpoints, not through a review task,
@@ -1591,7 +1829,8 @@ export async function aiSend(
     }
     recordMilestone(turnSucceeded ? "turn_ok" : cancelled ? "prompt_sent" : "turn_failed");
     recordDebug("info", "ai", `Turn ${turnSucceeded ? "finished" : "ended early"} after ${((Date.now() - turnStarted) / 1000).toFixed(1)}s with ${toolCalls} tool call${toolCalls === 1 ? "" : "s"}`);
-    return turnSucceeded;
+    if (keepGoing) return { kind: "continue" };
+    return { kind: "done", ok: turnSucceeded, ended: turnSucceeded ? "finished" : cancelled ? "stopped" : "failed" };
   } catch (error) {
     // §9: a failure here costs an answer, never the editor.
     if (activeTaskId !== null) {
@@ -1605,16 +1844,16 @@ export async function aiSend(
     const detail = error instanceof Error ? error.message : "the assistant failed";
     recordDebug("error", "ai", `Turn failed: ${detail}`);
     // Whatever the turn wrote before failing is still undoable.
-    const checkpoint = await checkpoints.finish().catch(() => null);
+    const checkpoint = await (thread.checkpoint?.finish() ?? Promise.resolve(null)).catch(() => null);
+    thread.checkpoint = null;
     if (checkpoint !== null) {
-      broadcast(CHANNELS.aiCheckpoint, checkpointView(checkpoint));
+      broadcast(CHANNELS.aiCheckpoint, { ...checkpointView(checkpoint), sessionId });
     }
-    broadcast(CHANNELS.aiEvent, { kind: "error", detail });
+    send({ kind: "error", detail });
     recordMilestone("turn_failed");
-    return false;
+    return { kind: "done", ok: false, ended: "failed" };
   } finally {
     currentTaskPrompt = null;
-    sendInFlight = false;
   }
 }
 
@@ -1642,7 +1881,8 @@ export async function aiUndoCheckpoint(id: string, force: boolean): Promise<Undo
 /** A small, tool-free, cancellable request used only for Monaco ghost text. */
 export async function aiCompletion(input: AiCompletionInputView): Promise<string | null> {
   if (currentSettings()["adcode.ai.inlineCompletion"] !== true) return null;
-  if (sendInFlight || input.prefix.trim().length === 0) return null;
+  // Ghost text waits while chats work, so it does not compete with them for the rate limit.
+  if (runs.list().length > 0 || input.prefix.trim().length === 0) return null;
 
   completionInFlight?.controller.abort();
   const controller = new AbortController();
@@ -2147,9 +2387,20 @@ export function aiAnswerAnyway(): void {
   bypassWorkspaceBlockOnce = true;
 }
 
-export function aiCancel(): void {  completionInFlight?.controller.abort();
+/** A key or model changed under every chat: each takes the new one on its next turn. */
+function markAgentsForRebuild(): void {
+  for (const thread of threads.values()) thread.rebuild = true;
+}
+
+/** Stop the chat on screen, or the one named. Every other chat keeps working. */
+export function aiCancel(sessionId?: string): void {
+  completionInFlight?.controller.abort();
   completionInFlight = null;
-  agent?.cancel();
+  const thread = sessionId === undefined ? shownThread() : threads.get(sessionId) ?? null;
+  if (thread !== null) {
+    thread.stopRequested = true;
+    thread.agent?.cancel();
+  }
   if (activeTaskId !== null) {
     const taskId = activeTaskId;
     void readyAiWorkspaceService()
@@ -2169,9 +2420,8 @@ export function aiCancel(): void {  completionInFlight?.controller.abort();
 export function aiReset(): void {
   completionInFlight?.controller.abort();
   completionInFlight = null;
-  agent?.reset();
-  agent = null;
-  rebuildChatAgent = false;
+  // The conversation being put away keeps its thread: it may be working, and if it is not,
+  // its agent still holds its history for when it is opened again.
   if (activeTaskId !== null) {
     const taskId = activeTaskId;
     void readyAiWorkspaceService()

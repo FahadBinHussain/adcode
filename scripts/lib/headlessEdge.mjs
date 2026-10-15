@@ -113,6 +113,10 @@ export async function launchBrowser({ port = 9473, width = 1280, height = 820, a
       await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
       if (mobile) await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
     },
+    /** Any DevTools protocol call, for what the helpers above do not cover. */
+    async cdp(method, params = {}) {
+      return send(method, params);
+    },
     async screenshot(path) {
       const { data } = await send("Page.captureScreenshot", { format: "png" });
       const { writeFileSync } = await import("node:fs");

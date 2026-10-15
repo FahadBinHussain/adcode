@@ -47,6 +47,26 @@ describe("undo checkpoints for applied edits", () => {
     await writeFile(join(store, 'cp-badbadbad.json'), '{"id":"cp-badbadbad","root":null,"createdAt":1,"files":[]}');
     expect(await restarted.list(project)).toHaveLength(1);
   });
+  it("keeps two chats working at once in separate checkpoints, each undoable on its own", async () => {
+    const cp = checkpoints();
+    const first = cp.open(project, "chat-a");
+    const second = cp.open(project, "chat-b");
+    await writeFile(join(project, "a.txt"), "from a");
+    first.record("a.txt", null, "from a");
+    await writeFile(join(project, "b.txt"), "from b");
+    second.record("b.txt", null, "from b");
+    const savedB = await second.finish();
+    const savedA = await first.finish();
+    expect(savedA?.files.map((file) => file.path)).toEqual(["a.txt"]);
+    expect(savedB?.files.map((file) => file.path)).toEqual(["b.txt"]);
+    expect([savedA?.sessionId, savedB?.sessionId]).toEqual(["chat-a", "chat-b"]);
+    await cp.undo(savedB!.id, project, false);
+    expect(await exists(join(project, "b.txt"))).toBe(false);
+    expect(await readFile(join(project, "a.txt"), "utf8")).toBe("from a");
+    // A finished turn records nothing more.
+    first.record("late.txt", null, "late");
+    expect(await first.finish()).toBeNull();
+  });
   it("brings back a deleted file and moves a moved one back, binary files byte for byte", async () => {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0xfe]);
     await writeFile(join(project, "notes.md"), "keep me");

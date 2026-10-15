@@ -30,7 +30,7 @@ import { loadKeybindings } from "../main/keybindings.ts";
 import { disposeAllTerminals } from "../main/terminal.ts";
 import { shutdownAllServers } from "../main/lsp.ts";
 import { stopPreview } from "../main/preview.ts";
-import { aiStopToolProcesses, aiTeamList, refreshModelLists } from "../main/ai.ts";
+import { aiRuns, aiStopToolProcesses, aiTeamList, refreshModelLists } from "../main/ai.ts";
 import { flushModelOutcomes } from "../main/modelOutcomes.ts";
 import { flushAiUsage } from "../main/aiUsage.ts";
 import { getAdRuntime } from "../main/adRuntime.ts";
@@ -80,6 +80,9 @@ useBackendAccount(account);
 
 async function busy(): Promise<boolean> {
   if (dispatcher.inFlight(LONG_CHANNELS) > 0) return true;
+  // A chat keeps working with no call open: going on by itself after a step limit, or after
+  // the tab that started it was closed. The sandbox stays up for it.
+  if (aiRuns().length > 0) return true;
   const teams = await aiTeamList();
   return teams.some((team) => team.state === "preparing" || team.state === "running" || team.state === "merging");
 }

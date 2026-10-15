@@ -376,6 +376,21 @@ export const nativeTheme = { shouldUseDarkColors: true, themeSource: "system", o
 
 export const powerMonitor = { on: (): void => {}, getSystemIdleTime: (): number => 0 };
 
+/** A sandbox is kept running by the cloud's own rules while a chat works, not by a blocker. */
+export const powerSaveBlocker = { start: (_type?: string): number => 0, stop: (_id?: number): void => {}, isStarted: (_id?: number): boolean => false };
+
+/** No desktop to notify: the browser tab marks a chat that finished while nobody looked. */
+export class Notification {
+  static isSupported(): boolean {
+    return false;
+  }
+  constructor(_options?: unknown) {}
+  show(): void {}
+  on(_event: string, _listener: () => void): this {
+    return this;
+  }
+}
+
 export default {
   app,
   ipcMain,
@@ -392,4 +407,6 @@ export default {
   webUtils,
   nativeTheme,
   powerMonitor,
+  powerSaveBlocker,
+  Notification,
 };

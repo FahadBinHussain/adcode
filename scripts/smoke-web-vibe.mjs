@@ -34,6 +34,12 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /* ── A fake model that builds one page ─────────────────────────────────── */
 
 const PAGE = "<!doctype html><html><head><title>Bakery smoke</title></head><body><h1>Fresh bread daily</h1></body></html>";
+const SLOW_PROMPT = "parallel-slow";
+const FAST_PROMPT = "parallel-fast";
+const LONG_PROMPT = "keep-going-smoke";
+const FAIL_PROMPT = "parallel-fail";
+/** When the fake model was sent the main process's own "Continue" - the page was frozen then. */
+let keptGoingAt = 0;
 const requests = [];
 let viewPageReport = "";
 const fake = createServer(async (req, res) => {
@@ -42,6 +48,35 @@ const fake = createServer(async (req, res) => {
   const request = JSON.parse(body || "{}");
   requests.push(request);
   const messages = request.messages ?? [];
+  const userTexts = messages.filter((message) => message.role === "user").map((message) => String(message.content));
+  const said = (words) => userTexts.some((text) => text.includes(words));
+  const answer = (deltas) => {
+    const last = deltas.at(-1);
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.end(`${deltas.map((delta) => `data: ${JSON.stringify({ choices: [{ delta, finish_reason: delta === last ? (last.tool_calls ? "tool_calls" : "stop") : null }] })}\n\n`).join("")}data: [DONE]\n\n`);
+  };
+  // Two chats at once: one slow enough to still be working when the other has finished.
+  if (said(SLOW_PROMPT)) {
+    await sleep(6_000);
+    return answer([{ content: "Slow chat done." }]);
+  }
+  if (said(FAST_PROMPT)) return answer([{ content: "Fast chat done." }]);
+  // A chat that fails while another is on screen: refused outright, not worth a retry.
+  if (said(FAIL_PROMPT)) {
+    await sleep(1_500);
+    res.writeHead(400, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ error: { message: "smoke: refused on purpose" } }));
+  }
+  // A long job: list files until the step limit, then - only once the main process has said
+  // "Continue" by itself - finish. Each list is its own call, so none is a repeated failure.
+  if (said(LONG_PROMPT)) {
+    if (userTexts.at(-1)?.includes("Continue from where you stopped")) {
+      keptGoingAt = Date.now();
+      return answer([{ content: "Kept going and finished." }]);
+    }
+    const step = messages.filter((message) => message.role === "tool").length;
+    return answer([{ tool_calls: [{ index: 0, id: `list-${String(step)}`, function: { name: "list_files", arguments: JSON.stringify({ path: "." }) } }] }]);
+  }
   const start = messages.findLastIndex((message) => message.role === "user" && String(message.content).includes(PROMPT));
   const answered = start === -1 ? 0 : messages.slice(start + 1).filter((message) => message.role === "tool").length;
   // Write the page, then look at it with the agent's own browser, then answer.
@@ -208,6 +243,73 @@ try {
   const after = await browser.evaluate("window.adcode.chat.sessions().then((sessions) => sessions.length)", { timeoutMs: 30_000 });
   checks.reconnectRestores = before > 0 && after === before;
 
+  /* ── Chats that keep working ──────────────────────────────────────────── */
+
+  const newChat = () => browser.evaluate(`(() => { document.querySelector('[aria-label="Start a new conversation"]').click(); return true; })()`);
+  const sendInChat = (text) => browser.evaluate(`(() => {
+    const input = document.querySelector('.chat-card .chat-input');
+    input.value = ${JSON.stringify(text)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.chat-toolbar .chat-send').click();
+    return true;
+  })()`);
+  const bubbleSays = (words) => `[...document.querySelectorAll('.chat-bubble-assistant')].some((bubble) => bubble.textContent.includes(${JSON.stringify(words)}))`;
+
+  // One chat working slowly; a second sent while it works, which finishes first.
+  await newChat();
+  await sleep(300);
+  await sendInChat(`${SLOW_PROMPT}: take your time`);
+  await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 1)", { timeoutMs: 15_000 });
+  const slowId = await browser.evaluate("window.adcode.ai.runs().then((runs) => runs[0]?.sessionId ?? null)");
+  await newChat();
+  await sleep(300);
+  await sendInChat(`${FAST_PROMPT}: quick one`);
+  checks.twoChatsAtOnce = await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 2)", { timeoutMs: 10_000 });
+  checks.fastChatAnswered = await browser.waitFor(bubbleSays("Fast chat done."), { timeoutMs: 20_000 });
+  checks.slowChatStillWorking = await browser.evaluate(`window.adcode.ai.runs().then((runs) => runs.some((run) => run.sessionId === ${JSON.stringify(slowId)}))`);
+  checks.slowChatMarkedWorking = await browser.waitFor(`document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(slowId)}] .chat-history-status')?.dataset.status === 'working'`, { timeoutMs: 5_000 });
+  await shot("chats-at-once");
+  // Opening the working chat shows its turn so far, then its answer when it comes.
+  await browser.evaluate(`(() => { document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(slowId)}] .chat-history-open').click(); return true; })()`);
+  checks.workingChatReplays = await browser.waitFor(`document.querySelector('.chat-turn[data-state="running"]') !== null || ${bubbleSays("Slow chat done.")}`, { timeoutMs: 10_000 });
+  checks.slowChatAnswered = await browser.waitFor(bubbleSays("Slow chat done."), { timeoutMs: 20_000 });
+  checks.fastAnswerNotInSlowChat = !(await browser.evaluate(bubbleSays("Fast chat done.")));
+  // A chat that fails while another is on screen is marked as needing the person, not as done.
+  await newChat();
+  await sleep(300);
+  await sendInChat(`${FAIL_PROMPT}: this one will not work`);
+  await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 1)", { timeoutMs: 15_000 });
+  const failId = await browser.evaluate("window.adcode.ai.runs().then((runs) => runs[0]?.sessionId ?? null)");
+  await newChat();
+  await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 0)", { timeoutMs: 30_000 });
+  checks.failedChatMarked = await browser.waitFor(`document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(failId)}] .chat-history-status')?.dataset.status === 'attention'`, { timeoutMs: 5_000 });
+
+  // A long job past its step limit, with the page frozen solid: only the main process can
+  // carry it on. The page comes back to the finished answer.
+  await newChat();
+  await sleep(300);
+  await sendInChat(`${LONG_PROMPT}: list everything, over and over`);
+  await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 1)", { timeoutMs: 15_000 });
+  const longId = await browser.evaluate("window.adcode.ai.runs().then((runs) => runs[0]?.sessionId ?? null)");
+  await browser.cdp("Page.setWebLifecycleState", { state: "frozen" });
+  const frozenAt = Date.now();
+  for (let waited = 0; keptGoingAt === 0 && waited < 120_000; waited += 250) await sleep(250);
+  await sleep(1_000);
+  await browser.cdp("Page.setWebLifecycleState", { state: "active" });
+  checks.keptGoingWhilePageFrozen = keptGoingAt > frozenAt;
+  // Coming back. The dev server reloads a page whose live-reload socket dropped while it was
+  // frozen - which is the tab coming back after being away, so the job must be there either way.
+  await sleep(1_500);
+  if (await browser.evaluate("document.querySelector('.web-gate-card') !== null")) {
+    await browser.evaluate(`(() => { [...document.querySelectorAll('button')].find((b) => b.textContent.includes('dev mode'))?.click(); return true; })()`);
+    await browser.waitFor("document.querySelector('.vibe-pages') && document.body.dataset.sessionReady === 'true'", { timeoutMs: 90_000 });
+  }
+  await browser.waitFor(`document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(longId)}] .chat-history-open') !== null`, { timeoutMs: 20_000 });
+  await browser.evaluate(`(() => { document.querySelector('.chat-history-row[data-session-id=${JSON.stringify(longId)}] .chat-history-open').click(); return true; })()`);
+  checks.longJobFinished = await browser.waitFor(bubbleSays("Kept going and finished."), { timeoutMs: 30_000 });
+  checks.noChatLeftWorking = await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 0)", { timeoutMs: 10_000 });
+  await shot("kept-going");
+
   await browser.viewport(390, 844, true);
   await sleep(1200);
   await shot("phone");
@@ -218,6 +320,14 @@ try {
   checks.consoleErrors = browser.consoleErrors.filter((text) => !/127\.0\.0\.1:9|ERR_CONNECTION_REFUSED|Failed to load resource/.test(text));
 } catch (error) {
   checks.threw = String(error?.stack ?? error);
+  // What the page looked like when it went wrong: enough to tell a product bug from a test one.
+  checks.consoleErrors = browser.consoleErrors;
+  checks.pageAtFailure = await browser.evaluate(`({
+    transcript: document.querySelector('.chat-transcript')?.innerText.slice(-1500) ?? null,
+    history: [...document.querySelectorAll('.chat-history-row')].map((row) => row.dataset.sessionId + ' ' + (row.querySelector('.chat-history-status')?.dataset.status ?? '')),
+    dialogs: [...document.querySelectorAll('dialog[open]')].map((dialog) => dialog.className),
+  })`).catch((reason) => String(reason));
+  checks.runsAtFailure = await browser.evaluate("window.adcode.ai.runs()").catch((reason) => String(reason));
 } finally {
   await browser.close();
   stack.kill();
@@ -273,6 +383,8 @@ const passed = checks.threw === undefined && checks.gateShown && checks.gateDevM
   checks.timelineWhileWorking && checks.liveHeading === "Working" && checks.spinnerAtFoot && checks.mascotsWhileWorking <= 1 &&
   checks.timeline?.heading === "Worked" && checks.timeline.folded && checks.timeline.answerOutsideFold && checks.timeline.textBetweenStepsInFold &&
   checks.timeline.thought === "Planning the bakery page" && checks.timeline.mascotsLeft === 0 && checks.unfolds &&
+  checks.twoChatsAtOnce && checks.fastChatAnswered && checks.slowChatStillWorking && checks.slowChatMarkedWorking && checks.workingChatReplays &&
+  checks.slowChatAnswered && checks.fastAnswerNotInSlowChat && checks.failedChatMarked && checks.keptGoingWhilePageFrozen && checks.longJobFinished && checks.noChatLeftWorking &&
   checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.refusalExplained === true && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");

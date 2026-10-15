@@ -588,6 +588,11 @@ export const CHANNELS = {
   aiCancelInlineEdit: "ai:cancel-inline-edit",
   aiCancel: "ai:cancel",
   aiReset: "ai:reset",
+  /** The conversations working right now. */
+  aiRunsList: "ai:runs-list",
+  aiRunsChanged: "ai:runs-changed",
+  /** A working conversation's turn so far, for a chat opened partway through it. */
+  aiLiveTurnState: "ai:live-turn-state",
   aiAnswerAnyway: "ai:answer-anyway",
   aiEvent: "ai:event",
   aiCompact: "ai:compact",
@@ -1206,9 +1211,22 @@ export interface ThemedConfirmRequest {
 }
 
 /** One automatic-mode turn's edits, undoable from the chat. Paths are workspace-relative. */
+/** A conversation that is working, in the background or on screen. */
+export interface AiRunView {
+  readonly sessionId: string;
+  readonly title: string;
+  readonly startedAt: number;
+  /** Times it has kept going by itself after reaching a step limit. */
+  readonly continued: number;
+  /** It is the conversation the windows show: a new chat learns its id from this. */
+  readonly shown: boolean;
+}
+
 export interface AiCheckpointView {
   readonly id: string;
   readonly createdAt: number;
+  /** The conversation whose turn made these changes, on the live broadcast. */
+  readonly sessionId?: string;
   readonly undone?: boolean;
   /** `deleted`: the turn deleted the file, or moved it away from this path. */
   readonly files: ReadonlyArray<{
@@ -1868,14 +1886,23 @@ export interface AdcodeApi {
      * Attachments ride with this turn only: images as multimodal parts, text
      * documents inlined as fenced context. History replays stay text-only.
      */
-    send(text: string, attachments?: readonly AiAttachmentView[], editor?: AiEditorContextView | null): Promise<boolean>;
+    send(text: string, attachments?: readonly AiAttachmentView[], editor?: AiEditorContextView | null, sessionId?: string): Promise<boolean>;
     complete(input: AiCompletionInputView): Promise<string | null>;
     cancelCompletion(requestId: number): void;
     /** One tool-free rewrite of an editor selection; the result lands in the buffer for review. */
     inlineEdit(input: AiInlineEditInputView): Promise<AiInlineEditResultView>;
     cancelInlineEdit(): void;
-    cancel(): void;
+    /** Stop the conversation on screen, or the one named. Other conversations keep working. */
+    cancel(sessionId?: string): void;
     reset(): void;
+    /** The conversations working right now - several can, each in its own chat. */
+    runs(): Promise<readonly AiRunView[]>;
+    onRunsChanged(listener: (runs: readonly AiRunView[]) => void): () => void;
+    /**
+     * A working conversation's turn so far: the events the timeline draws, with streamed
+     * pieces joined. Empty when it is not working.
+     */
+    liveTurn(sessionId: string): Promise<readonly unknown[]>;
     /** Summarise the older part of the conversation now, optionally with a focus. */
     compact(focus?: string): Promise<AiCompactResultView>;
     contextUsage(): Promise<AiContextUsageView>;

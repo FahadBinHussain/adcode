@@ -64,8 +64,18 @@ export function planUndo(
 
 const CHECKPOINT_ID = /^cp-[a-z0-9-]{8,64}$/;
 
+/** One turn's recording. Several can be open at once: each chat working in parallel has its own. */
+export interface CheckpointTurn {
+  /** One write by the assistant; a null `after` is a deletion. The first write of a path keeps its "before". */
+  record(path: string, before: string | null, after: string | null, encoding?: "utf8" | "base64"): void;
+  /** End the turn; the saved checkpoint, or null when nothing was written. Records nothing after. */
+  finish(): Promise<EditCheckpoint | null>;
+}
+
 export interface CheckpointStore {
-  /** Start recording a turn in this project. */
+  /** Start recording a turn in this project, alongside any others already recording. */
+  open(root: string, sessionId?: string): CheckpointTurn;
+  /** Start recording the one default turn (`record` and `finish` below act on it). */
   begin(root: string, sessionId?: string): void;
   /** One write by the assistant; a null `after` is a deletion. The first write of a path keeps its "before". */
   record(path: string, before: string | null, after: string | null, encoding?: "utf8" | "base64"): void;
@@ -85,7 +95,7 @@ export function createCheckpointStore(deps: {
   readonly now?: () => number;
 }): CheckpointStore {
   type Entry = { before: string | null; after: string | null; encoding: "utf8" | "base64" };
-  let turn: { root: string; sessionId?: string; files: Map<string, Entry> } | null = null;
+  type Recording = { root: string; sessionId?: string; files: Map<string, Entry> };
   const file = (id: string): string => join(deps.directory(), `${id}.json`);
 
   async function readCurrent(root: string, path: string, encoding: "utf8" | "base64" = "utf8"): Promise<string | null> {
@@ -131,37 +141,59 @@ export function createCheckpointStore(deps: {
     }
   }
 
+  async function seal(finished: Recording): Promise<EditCheckpoint | null> {
+    if (finished.files.size === 0) return null;
+    const checkpoint: EditCheckpoint = {
+      id: `cp-${randomUUID()}`,
+      root: finished.root,
+      createdAt: (deps.now ?? Date.now)(),
+      // A file the turn created and then put back to nothing changed nothing.
+      files: [...finished.files]
+        .filter(([, entry]) => entry.before !== entry.after)
+        .map(([path, { encoding, ...entry }]) => ({ path, ...entry, ...(encoding === "base64" ? { encoding } : {}) })),
+      undone: false,
+      ...(finished.sessionId === undefined ? {} : { sessionId: finished.sessionId }),
+    };
+    if (checkpoint.files.length === 0) return null;
+    await save(checkpoint);
+    await prune().catch(() => undefined);
+    return checkpoint;
+  }
+
+  function open(root: string, sessionId?: string): CheckpointTurn {
+    let recording: Recording | null = { root, files: new Map(), ...(sessionId === undefined ? {} : { sessionId }) };
+    return {
+      record(path, before, after, encoding = "utf8"): void {
+        if (recording === null) return;
+        const existing = recording.files.get(path);
+        // A path keeps the encoding it was first recorded in, so its "before" stays readable.
+        recording.files.set(path, existing === undefined ? { before, after, encoding } : { ...existing, after });
+      },
+      async finish(): Promise<EditCheckpoint | null> {
+        const finished = recording;
+        recording = null;
+        return finished === null ? null : seal(finished);
+      },
+    };
+  }
+
+  let current: CheckpointTurn | null = null;
+
   return {
+    open,
+
     begin(root, sessionId): void {
-      turn = { root, files: new Map(), ...(sessionId === undefined ? {} : { sessionId }) };
+      current = open(root, sessionId);
     },
 
     record(path, before, after, encoding = "utf8"): void {
-      if (turn === null) return;
-      const existing = turn.files.get(path);
-      // A path keeps the encoding it was first recorded in, so its "before" stays readable.
-      turn.files.set(path, existing === undefined ? { before, after, encoding } : { ...existing, after });
+      current?.record(path, before, after, encoding);
     },
 
     async finish(): Promise<EditCheckpoint | null> {
-      const finished = turn;
-      turn = null;
-      if (finished === null || finished.files.size === 0) return null;
-      const checkpoint: EditCheckpoint = {
-        id: `cp-${randomUUID()}`,
-        root: finished.root,
-        createdAt: (deps.now ?? Date.now)(),
-        // A file the turn created and then put back to nothing changed nothing.
-        files: [...finished.files]
-          .filter(([, entry]) => entry.before !== entry.after)
-          .map(([path, { encoding, ...entry }]) => ({ path, ...entry, ...(encoding === "base64" ? { encoding } : {}) })),
-        undone: false,
-        ...(finished.sessionId === undefined ? {} : { sessionId: finished.sessionId }),
-      };
-      if (checkpoint.files.length === 0) return null;
-      await save(checkpoint);
-      await prune().catch(() => undefined);
-      return checkpoint;
+      const finished = current;
+      current = null;
+      return finished === null ? null : finished.finish();
     },
 
     async list(root): Promise<EditCheckpoint[]> {

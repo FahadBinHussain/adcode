@@ -2511,6 +2511,24 @@ button.chat-model[data-ready="false"]::before {
   animation: chat-spin 0.8s linear infinite;
 }
 
+/* Finished while another chat was on screen: the accent dot, until it is opened. */
+.chat-history-status[data-status="finished"]::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chat-success, var(--success));
+}
+
+/* Stopped or failed while another chat was on screen: it needs the person. */
+.chat-history-status[data-status="attention"]::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning, #d9a441);
+}
+
 .chat-history-status[data-status="forked"]::before {
   content: "⎇";
   font-size: 11px;

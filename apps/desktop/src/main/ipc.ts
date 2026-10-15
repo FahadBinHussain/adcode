@@ -113,6 +113,8 @@ import {
   aiDeleteSession,
   aiRenameSession,
   aiResumeSession,
+  aiRuns,
+  aiLiveTurn,
   aiSessions,
   aiWorkspaceApply,
   aiWorkspaceChanges,
@@ -195,6 +197,9 @@ import {
 } from "./fileOps.ts";
 
 const isString = (value: unknown): value is string => typeof value === "string";
+/** A conversation id as the main process makes them (`s` + time + random), or nothing. */
+const sessionIdFrom = (value: unknown): string | undefined =>
+  isString(value) && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined;
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
@@ -1064,9 +1069,14 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
     return clearProviderKey(provider);
   });
 
-  ipcMain.handle(CHANNELS.aiSend, (_event, text: unknown, attachments: unknown, editor: unknown) => {
+  ipcMain.handle(CHANNELS.aiSend, (_event, text: unknown, attachments: unknown, editor: unknown, sessionId: unknown) => {
     if (!isString(text)) throw new Error("expected text");
-    return aiSend(text, parseAiAttachments(attachments), parseAiEditorContext(editor));
+    return aiSend(text, parseAiAttachments(attachments), parseAiEditorContext(editor), sessionIdFrom(sessionId));
+  });
+  ipcMain.handle(CHANNELS.aiRunsList, () => aiRuns());
+  ipcMain.handle(CHANNELS.aiLiveTurnState, (_event, sessionId: unknown) => {
+    const id = sessionIdFrom(sessionId);
+    return id === undefined ? [] : aiLiveTurn(id);
   });
 
   ipcMain.handle(CHANNELS.aiCompletion, (_event, input: unknown) =>
@@ -1083,7 +1093,7 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
   );
   ipcMain.on(CHANNELS.aiCancelInlineEdit, () => aiCancelInlineEdit());
 
-  ipcMain.on(CHANNELS.aiCancel, () => aiCancel());
+  ipcMain.on(CHANNELS.aiCancel, (_event, sessionId: unknown) => aiCancel(sessionIdFrom(sessionId)));
   ipcMain.on(CHANNELS.aiReset, () => aiReset());
   // The focus is checked in aiCompact: anything but a short string is refused there.
   ipcMain.handle(CHANNELS.aiCompact, (_event, focus: unknown) => aiCompact(focus));

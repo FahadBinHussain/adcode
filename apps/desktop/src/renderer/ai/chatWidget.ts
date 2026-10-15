@@ -32,6 +32,7 @@ import type {
   AiTeamSuggestionView,
   AiTeamView,
   AiCheckpointView,
+  AiRunView,
   AiWorkspaceChangeView,
   AiWorkspaceTaskView,
   ChatSessionView,
@@ -131,6 +132,8 @@ export interface ChatWidget {
   compactConversation(focus?: string): void;
   /** Show what the last compaction wrote. */
   viewConversationSummary(): void;
+  /** Bring chat forward with its conversations listed: which are working, which finished. */
+  showConversations(): void;
   close(): void;
   isOpen(): boolean;
   /**
@@ -579,6 +582,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   resetButton.setAttribute("aria-label", "Start a new conversation");
   resetButton.addEventListener("click", () => {
     resumeGeneration += 1;
+    leaveShownChat();
     window.adcode.ai.reset();
     resetActivity();
     chatPreview.clear();
@@ -955,6 +959,105 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   let saved: readonly ChatSessionView[] = [];
   let activeSessionId: string | null = null;
+
+  /*
+   * Chats working at once. A turn belongs to its conversation, not to this window: it goes on
+   * when another chat is opened, and the main process keeps it going (see main/chatRuns.ts).
+   * Here is only what the window needs to show for it - which chats are working, which
+   * finished while another was on screen, and the follow-ups waiting for each.
+   */
+  let runningChats = new Map<string, AiRunView>();
+  /** Finished while another chat was on screen, and how: marked in History until opened. */
+  const finishedUnseen = new Map<string, "finished" | "stopped" | "failed">();
+  /** How each run ended, said just before the run list drops it. */
+  const runEndings = new Map<string, "finished" | "stopped" | "failed">();
+  /** Follow-ups typed in a chat that was then left while it worked: they go when it finishes. */
+  const parkedFollowUps = new Map<string, QueuedMessage<PendingAttachment>[]>();
+  /** Set while a working chat's turn so far is fetched: its live events are already in it. */
+  let replayingFor: string | null = null;
+  /** This window sent from a new conversation, and is waiting to learn which one it became. */
+  let awaitingNewChat = false;
+  /**
+   * Chats this window navigated away from. A run list sent just before the main process heard
+   * "+ New" can still mark the chat being left as shown; it must not become the new chat.
+   */
+  const leftChats = new Set<string>();
+
+  /** Whether an agent event is for the chat on screen. A new chat learns its id here. */
+  function eventIsShown(eventSession: string | null): boolean {
+    if (eventSession === null || eventSession === activeSessionId) return true;
+    if (activeSessionId !== null || leftChats.has(eventSession)) return false;
+    // A new conversation has no id until its first send: the run the main process shows is
+    // this one (whichever window sent it). An event for no running chat is a refused send -
+    // this window's own, if it is waiting for one.
+    const run = runningChats.get(eventSession);
+    if (run === undefined ? !awaitingNewChat : !run.shown) return false;
+    activeSessionId = eventSession;
+    awaitingNewChat = false;
+    return true;
+  }
+
+  function applyRuns(list: readonly AiRunView[]): void {
+    const next = new Map(list.map((run) => [run.sessionId, run] as const));
+    let anyEnded = false;
+    for (const id of runningChats.keys()) {
+      if (next.has(id)) continue;
+      anyEnded = true;
+      if (id !== activeSessionId) finishedUnseen.set(id, runEndings.get(id) ?? "finished");
+      runEndings.delete(id);
+      sendParkedFollowUp(id);
+    }
+    // A chat that started, or one saved for the first time as it starts: it belongs in History.
+    const anyNew = [...next.keys()].some((id) => !saved.some((one) => one.id === id));
+    runningChats = next;
+    if (activeSessionId === null) {
+      const shown = list.find((run) => run.shown && !leftChats.has(run.sessionId));
+      if (shown !== undefined) {
+        activeSessionId = shown.sessionId;
+        awaitingNewChat = false;
+      }
+    }
+    if (anyEnded) noteFinishedWhileHidden();
+    if (anyEnded || anyNew) void refreshHistory();
+    else paintWorkingStatus();
+  }
+
+  /** A chat left while it worked: the follow-ups typed there go with it, not to the next chat. */
+  function leaveShownChat(): void {
+    if (activeSessionId !== null && runningChats.has(activeSessionId) && followUps.items().length > 0) {
+      parkedFollowUps.set(activeSessionId, [...followUps.items()]);
+    }
+    followUps.clear();
+    if (activeSessionId !== null) leftChats.add(activeSessionId);
+    awaitingNewChat = false;
+    turnActive = false;
+    replayingFor = null;
+    if (sendButton.dataset["mode"] === "stop") setSendMode("send");
+  }
+
+  function sendParkedFollowUp(id: string): void {
+    const parked = parkedFollowUps.get(id);
+    if (parked === undefined || parked.length === 0) return;
+    const [first, ...rest] = parked;
+    if (rest.length > 0) parkedFollowUps.set(id, rest);
+    else parkedFollowUps.delete(id);
+    if (first === undefined) return;
+    const payload: AiAttachmentView[] = first.attachments.map((one) => ({ name: one.name, kind: one.kind, mediaType: one.mediaType, data: one.data }));
+    void window.adcode.ai.send(first.text.trim(), payload.length === 0 ? undefined : payload, null, id).catch(() => undefined);
+  }
+
+  /** A chat finished while this window was hidden: the tab or window title says so until it is seen. */
+  let titleBeforeMark: string | null = null;
+  function noteFinishedWhileHidden(): void {
+    if (!document.hidden || titleBeforeMark !== null) return;
+    titleBeforeMark = document.title;
+    document.title = `● ${titleBeforeMark}`;
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden || titleBeforeMark === null) return;
+    document.title = titleBeforeMark;
+    titleBeforeMark = null;
+  });
   const historyMenu = createContextMenu(document.body);
   let historyMenuTrigger: HTMLButtonElement | null = null;
   attachContextMenuDismissal(historyMenu, () => historyMenuTrigger?.focus());
@@ -990,10 +1093,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     const status = document.createElement("span");
     status.className = "chat-history-status";
     status.setAttribute("aria-hidden", "true");
-    const isWorking = session.id === activeSessionId && card.dataset["working"] === "true";
-    const kind = isWorking ? "working" : session.renamed ? "forked" : "idle";
+    const isWorking = runningChats.has(session.id) || (session.id === activeSessionId && card.dataset["working"] === "true");
+    const ending = isWorking ? undefined : finishedUnseen.get(session.id);
+    const kind = isWorking ? "working" : ending === "finished" ? "finished" : ending !== undefined ? "attention" : session.renamed ? "forked" : "idle";
     status.dataset["status"] = kind;
-    status.title = isWorking ? "Working" : session.renamed ? "Renamed" : "Idle";
+    status.title = isWorking ? "Working" : ending === "finished" ? "Finished - not opened yet" : ending !== undefined ? "Stopped before finishing - open it to see why" : session.renamed ? "Renamed" : "Idle";
     row.append(status);
 
     const openIt = document.createElement("button");
@@ -1108,6 +1212,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   async function resume(id: string): Promise<void> {
     const generation = ++resumeGeneration;
     if (docked) api.open();
+    if (id !== activeSessionId) leaveShownChat();
     const session = await window.adcode.chat.resume(id);
     if (session === null || generation !== resumeGeneration) return;
     const recorded = await window.adcode.ai.checkpoints(session.id).catch(() => []);
@@ -1133,6 +1238,16 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       let editIndex = 0;
       for (const message of session.messages) {
         while (editIndex < edits.length && edits[editIndex]!.createdAt < message.at) appendEditSummary(edits[editIndex++]!);
+        // "Continue", said by Keep going until done or the Continue button, was never typed: a
+        // reopened chat shows it as the note it was, not as twenty messages from the person.
+        if (message.role === "user" && message.text.trim() === CONTINUE_PROMPT) {
+          const note = document.createElement("p");
+          note.className = "chat-mode-note";
+          note.textContent = "Continued after the step limit";
+          transcript.append(note);
+          messageNodes.push(note);
+          continue;
+        }
         messageNodes.push(bubble(message.role === "user" ? "user" : "assistant", message.text, [], message.at,message.includedRequestId));
       }
       while (editIndex < edits.length) appendEditSummary(edits[editIndex++]!);
@@ -1148,10 +1263,35 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     }
     refreshContextMeter();
 
+    finishedUnseen.delete(session.id);
+    leftChats.delete(session.id);
+    for (const item of parkedFollowUps.get(session.id) ?? []) followUps.add(item.text, item.attachments);
+    parkedFollowUps.delete(session.id);
     renderMemory(session);
     renderHistory();
     historyOpen = false;
     applyDisclosures();
+    scrollToEnd(true);
+    if (runningChats.has(session.id)) await replayRunningTurn(session.id, generation);
+  }
+
+  /**
+   * A chat opened while it works: draw its turn so far through the same handler as live events,
+   * so it reads as if it had been watched all along. Live events for it that arrive while the
+   * turn is fetched are already in it, and are dropped.
+   */
+  async function replayRunningTurn(id: string, generation: number): Promise<void> {
+    replayingFor = id;
+    const answer = await window.adcode.ai.liveTurn(id).catch(() => [] as readonly unknown[]);
+    const events: readonly unknown[] = Array.isArray(answer) ? answer : [];
+    if (generation !== resumeGeneration || activeSessionId !== id) return;
+    replayingFor = null;
+    // The turn started before this chat was opened: its heading counts from then.
+    turnActive = false;
+    timelineStartsAt = runningChats.get(id)?.startedAt ?? null;
+    // Working, even before its next event: an empty status opens the turn and its timeline.
+    handleAgentEvent({ kind: "status", text: "", sessionId: id }, true);
+    for (const event of events) handleAgentEvent(event, true);
     scrollToEnd(true);
   }
 
@@ -2523,6 +2663,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    * after its last step - the answer - is left below it, outside the fold.
    */
   let timeline: TurnTimeline | null = null;
+  /** When the next timeline's turn began, if earlier than now (a replayed turn). */
+  let timelineStartsAt: number | null = null;
 
   function ensureTimeline(): TurnTimeline {
     if (timeline !== null) return timeline;
@@ -2531,7 +2673,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     // The timeline names the step and keeps the time, so the "is writing" row underneath
     // shows only the spinner and Stop rather than a second, competing clock.
     working.dataset["activity"] = "open";
-    timeline = createTurnTimeline();
+    timeline = createTurnTimeline(timelineStartsAt === null ? undefined : { startedAt: timelineStartsAt });
+    timelineStartsAt = null;
     transcript.append(timeline.element);
     scrollToEnd();
     return timeline;
@@ -2754,19 +2897,27 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     scrollToEnd();
   }
 
-  /** Current-chat spinner in History without a full re-render (keeps scroll). */
+  /** Working and finished marks in History without a full re-render (keeps scroll). */
   function paintWorkingStatus(): void {
     const working = card.dataset["working"] === "true";
     for (const row of historyList.querySelectorAll<HTMLElement>(".chat-history-row[data-session-id]")) {
       const icon = row.querySelector<HTMLElement>(".chat-history-status");
       if (!icon) continue;
-      const isActive = row.dataset["sessionId"] === activeSessionId;
-      if (isActive && working) {
+      const id = row.dataset["sessionId"] ?? "";
+      const isActive = id === activeSessionId;
+      if (runningChats.has(id) || (isActive && working)) {
         icon.dataset["status"] = "working";
         icon.title = "Working";
+      } else if (finishedUnseen.has(id)) {
+        const ended = finishedUnseen.get(id);
+        icon.dataset["status"] = ended === "finished" ? "finished" : "attention";
+        icon.title = ended === "finished" ? "Finished - not opened yet" : "Stopped before finishing - open it to see why";
       } else if (isActive && row.dataset["active"] === "true") {
         icon.dataset["status"] = "idle";
         icon.title = "Current conversation";
+      } else if (icon.dataset["status"] === "working") {
+        icon.dataset["status"] = "idle";
+        icon.title = "Idle";
       }
     }
   }
@@ -2942,8 +3093,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   }
 
   /** Re-send a prompt, unless a turn is already running. */
-  const KEEP_GOING_LIMIT = 5;
-  let keptGoing = 0;
   /** Output-limit stops since a turn last finished: a second one means Continue is not helping. */
   let outputLimitStops = 0;
   /**
@@ -4082,6 +4231,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   /* ── Events from the agent ────────────────────────────────────────────── */
 
   function setSendMode(mode: "send" | "stop"): void {
+    // Sending from a conversation that has no id yet: its first event or run names it.
+    if (mode === "stop" && activeSessionId === null) awaitingNewChat = true;
     working.hidden = mode !== "stop";
     if (mode === "stop") {
       resumeOnSwitch = null;
@@ -4123,8 +4274,25 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     paintWorkingStatus();
   }
 
-  window.adcode.ai.onEvent((raw) => {
+  window.adcode.ai.onEvent((raw) => handleAgentEvent(raw));
+  // An older cloud sandbox (a page deployed ahead of it) knows no runs: it answers nothing, and
+  // its events carry no conversation, which reads as "the chat on screen" - as before.
+  window.adcode.ai.onRunsChanged((list) => applyRuns(Array.isArray(list) ? list : []));
+  void window.adcode.ai.runs().then((list) => applyRuns(Array.isArray(list) ? list : []), () => undefined);
+
+  /** One agent event, live or replayed. `replaying` skips what must happen once: opening the preview. */
+  function handleAgentEvent(raw: unknown, replaying = false): void {
     const event = raw as { kind: string; [key: string]: unknown };
+    const eventSession = typeof event["sessionId"] === "string" ? event["sessionId"] : null;
+    // How a run ended, for its mark in History - for every chat, shown or not.
+    if (event.kind === "run-ended") {
+      const ended = event["ended"];
+      if (eventSession !== null && (ended === "finished" || ended === "stopped" || ended === "failed")) runEndings.set(eventSession, ended);
+      return;
+    }
+    // Another chat's work: History shows it working, and opening that chat shows all of it.
+    if (!eventIsShown(eventSession)) return;
+    if (!replaying && replayingFor !== null && eventSession === replayingFor) return;
     if (event.kind === "included-request") {
       includedFeedbackRequest = typeof event["requestId"] === "string" ? event["requestId"] : null;
       if (streamingBubble !== null && includedFeedbackRequest !== null) streamingBubble.dataset["includedRequestId"] = includedFeedbackRequest;
@@ -4216,6 +4384,14 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         break;
       }
 
+      case "continuing": {
+        // Out of steps, and Keep going until done is on: the main process carries on by itself.
+        const label = `Reached the step limit - keeping going (${String(event["count"] ?? "")} of ${String(event["limit"] ?? "")})`;
+        workingText.textContent = label;
+        ensureTimeline().setStatus(label);
+        break;
+      }
+
       case "compacting": {
         workingText.textContent = "Compacting the conversation";
         ensureTimeline().setStatus("Compacting the conversation");
@@ -4265,7 +4441,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
             if (result.type === "live-preview" && result.status) {
               const page = typeof result.page === "string" ? result.page : null;
               chatPreview.show(result.status, page);
-              if (page !== null) deps.showPreviewPage?.(page);
+              if (page !== null && !replaying) deps.showPreviewPage?.(page);
             }
           } catch { /* A failed tool's text stays in the activity trace. */ }
         }
@@ -4318,13 +4494,9 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         if (/step limit|response limit/i.test(detail)) {
           trace("Error", detail, "error");
           // A follow-up the person queued steers better than "continue": send it instead.
+          // (While Keep going until done is on, the main process continues by itself and this
+          // error only arrives once it has used all its continuations.)
           if (/step limit/i.test(detail) && drainFollowUps()) break;
-          if (keepGoing && /step limit/i.test(detail) && keptGoing < KEEP_GOING_LIMIT) {
-            keptGoing += 1;
-            modeNote(`Reached the step limit - keeping going (${keptGoing} of ${KEEP_GOING_LIMIT}).`);
-            continueWhenIdle(CONTINUE_PROMPT);
-            break;
-          }
           // The agent already continued a cut-off reply by itself, with more room each time.
           // Reaching the output limit again after a Continue means one more will not help:
           // say what will, instead of offering the same button again.
@@ -4380,7 +4552,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         break;
       }
     }
-  });
+  }
 
   /*
    * What an automatic-mode turn changed, with Undo.
@@ -4390,6 +4562,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    * edits the user made afterwards until they say so.
    */
   window.adcode.ai.onCheckpoint((checkpoint) => {
+    // Another chat's changes: its Undo card is there when that chat is opened.
+    if (checkpoint.sessionId !== undefined && checkpoint.sessionId !== activeSessionId) return;
     appendEditSummary(checkpoint);
     scrollToEnd();
   });
@@ -4407,8 +4581,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    */
   function submit(fromKey = false): void {
     closeOpenMenu();
-    // A person stepping in resets Keep going's count, whether to stop or to redirect.
-    keptGoing = 0;
     // A Team suggestion still waiting on its debounce belongs to text that is leaving now.
     if (suggestionTimer !== null) {
       window.clearTimeout(suggestionTimer);
@@ -4617,12 +4789,10 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     if (sendButton.dataset["mode"] !== "stop") return;
     waitingForIncludedLimit = false;
     includedWaitGeneration += 1;
-    // A person stepping in resets Keep going's count.
-    keptGoing = 0;
     closeOpenMenu();
     workingText.textContent = "Stopping";
     workingStop.disabled = true;
-    window.adcode.ai.cancel();
+    window.adcode.ai.cancel(activeSessionId ?? undefined);
   }
 
   // Esc stops a running turn from anywhere in the chat. Marked handled, so the floating
@@ -4685,7 +4855,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     if (item === undefined) return;
     if (sendButton.dataset["mode"] === "stop") {
       sendAfterCancel = item;
-      window.adcode.ai.cancel();
+      window.adcode.ai.cancel(activeSessionId ?? undefined);
       return;
     }
     sendQueued(item);
@@ -4867,6 +5037,17 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       api.open();
       resetButton.click();
       requestAnimationFrame(() => requestAnimationFrame(() => input.focus()));
+    },
+
+    showConversations(): void {
+      api.open();
+      if (externalHistory) {
+        deps.revealHistory?.();
+      } else if (!historyOpen) {
+        historyOpen = true;
+        applyDisclosures();
+      }
+      void refreshHistory();
     },
 
     openTeamSetup(): void {

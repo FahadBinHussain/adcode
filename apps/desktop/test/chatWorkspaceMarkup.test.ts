@@ -291,7 +291,7 @@ describe("long chat memory in the chat", () => {
   });
 
   it("never treats a meter update or a Compact now between turns as the start of a turn", () => {
-    const handler = source.slice(source.indexOf("window.adcode.ai.onEvent((raw) => {"));
+    const handler = source.slice(source.indexOf("function handleAgentEvent(raw: unknown, replaying = false): void {"));
     const context = handler.indexOf('if (event.kind === "context") {');
     const turnStart = handler.indexOf("if (!ending && !turnActive) {");
     expect(context).toBeGreaterThan(0);

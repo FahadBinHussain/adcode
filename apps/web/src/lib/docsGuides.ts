@@ -1053,17 +1053,38 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
     steps: [
       "Keep going until done is on from the start. To change it, open the approval menu in the chat's composer, or find it in Settings.",
       "Give the assistant a big job: a whole site, a refactor across the project, a feature with tests.",
-      "If it reaches its step limit, ADCode sends Continue for it, up to five times in a row, and notes each one in the conversation.",
-      "Your own message or Stop resets the count, so you can always step in.",
+      "If it reaches its step limit, ADCode carries on by itself, up to twenty times in a row - about a thousand steps - and the timeline notes each one.",
+      "The app carries on, not the chat window: it keeps going while ADCode is minimised, while you work in another chat, and on the web with the tab in the background. Stop ends it.",
       "With it off, the assistant stops at its step limit and a Continue button picks up where it left off.",
       "For work that runs without you, schedule the job in Automations - edits apply as it works by default.",
     ],
     benefits: [
       "Long jobs finish instead of pausing at a step limit while you are away.",
-      "A hard cap of five continuations keeps a confused run from going on forever.",
+      "A hard cap of twenty continuations keeps a confused run from going on forever.",
     ],
     betterThan:
       "Agents that stop at a step limit and wait for a human turn an overnight job into a morning of pressing Continue. ADCode carries on by itself, within a limit you can see.",
+  },
+
+  "ai-background-chats": {
+    steps: [
+      "Send a message in a chat - ask for a landing page, say.",
+      "While it works, open another conversation from Conversations, or press + New, and send something else. Up to four chats work at once (one at a time in Review mode).",
+      "Watch Conversations: a spinner marks each chat that is working, a green dot one that finished while you were elsewhere, and an amber dot one that stopped before finishing - each until you open it.",
+      "Open a working chat and its timeline so far is there, carrying on live. Stop stops only the chat on screen.",
+      "Type into a chat while it works and the message waits for that chat - even if you go to another one meanwhile.",
+      "Minimise ADCode or switch to another program: the work goes on, the computer is kept from suspending the app, and a notification says when a chat finishes.",
+      "On the web, put the tab in the background or close it: the cloud workspace stays awake while a chat works (it counts against the day's cloud time), and the tab's title gets a dot when one finishes.",
+      "Run AI: Show Working Chats from the command palette to see them all.",
+    ],
+    benefits: [
+      "Two or three jobs at once instead of one after another - a page in one chat, a game in another.",
+      "Nothing to babysit: a long job finishes while the app is minimised or you are in another chat.",
+      "Each chat keeps its own history, its own Undo card and its own follow-up messages, so parallel work never mixes.",
+      "Usage from every chat counts in one place, in the composer's usage meter.",
+    ],
+    betterThan:
+      "Most AI editors run one conversation at a time and stop, or quietly stall, when you look away: open another chat and the first one is cancelled. ADCode treats a chat's work as belonging to the chat - several run side by side, and none of them needs the window in front to finish.",
   },
 
   "ai-workspace-storage": {
