@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AdcodeLoader } from "@/components/AdcodeLoader";
 import { useAuth } from "@/components/AuthProvider";
 import { apiFetch, MESSAGES, type AdvertiserView, type CheckoutView } from "@/lib/api";
 import { money, dollarsToMicros } from "@/components/money";
@@ -82,7 +83,7 @@ export function BillingBody() {
     window.location.href = session.value.checkoutUrl;
   };
 
-  if (loading) return <p className="lede">Loading…</p>;
+  if (loading) return <AdcodeLoader />;
 
   return (
     <>

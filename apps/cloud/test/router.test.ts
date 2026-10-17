@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { route, type RouterDeps } from "../src/router.ts";
 import type { Env } from "../src/env.ts";
+import { INDEXABLE_LAUNCH_ROBOTS, LAUNCH_ROBOTS, WEB_APP_SCHEMA_CSP } from "../src/seo.ts";
 
 function fakeEnv(): { env: Env; userFetch: ReturnType<typeof vi.fn>; assetsFetch: ReturnType<typeof vi.fn>; names: string[] } {
   const names: string[] = [];
@@ -121,6 +122,7 @@ describe("the page", () => {
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("frame-src https://*.web.bluethenics.com https://adcode-test.firebaseapp.com");
     expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain(WEB_APP_SCHEMA_CSP);
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
@@ -129,5 +131,87 @@ describe("the page", () => {
     const response = await route(new Request("https://p-5173-abcdefghij.web.bluethenics.com/index.html"), env, deps);
     expect(response.status).toBe(404);
     expect(assetsFetch).not.toHaveBeenCalled();
+  });
+
+  it("indexes only the complete public launch page on the production root", async () => {
+    const { env, assetsFetch, names } = fakeEnv();
+    assetsFetch.mockImplementation(async () => new Response(`<!doctype html><head>${LAUNCH_ROBOTS}</head><h1>ADCode Web</h1>`, { headers: { "content-type": "text/html", etag: '"old-build"', "content-length": "1" } }));
+    const response = await route(new Request("https://web.bluethenics.com/"), env, deps);
+    expect(response.headers.get("x-robots-tag")).toBe("index, follow, max-image-preview:large");
+    expect(await response.text()).toContain(INDEXABLE_LAUNCH_ROBOTS);
+    expect(response.headers.has("etag")).toBe(false);
+    expect(response.headers.has("content-length")).toBe(false);
+    expect(names).toEqual([]);
+  });
+
+  it("keeps old builds, query URLs, alternate hosts and development deployments noindex", async () => {
+    const { env } = fakeEnv();
+    expect((await route(new Request("https://web.bluethenics.com/"), env, deps)).headers.get("x-robots-tag")).toContain("noindex");
+    for (const url of ["https://web.bluethenics.com/?project=private", "https://staging.example/", "https://web.bluethenics.com/index.html"]) {
+      const { env: built, assetsFetch } = fakeEnv();
+      assetsFetch.mockImplementation(async () => new Response(`<head>${LAUNCH_ROBOTS}</head>`, { headers: { "content-type": "text/html" } }));
+      const response = await route(new Request(url), built, deps);
+      expect(response.headers.get("x-robots-tag")).toContain("noindex");
+      expect(await response.text()).toContain(LAUNCH_ROBOTS);
+    }
+    const { env: dev, assetsFetch } = fakeEnv();
+    assetsFetch.mockImplementation(async () => new Response(LAUNCH_ROBOTS, { headers: { "content-type": "text/html" } }));
+    expect((await route(new Request("https://web.bluethenics.com/"), { ...dev, ALLOW_DEV_TOKEN: "1" }, deps)).headers.get("x-robots-tag")).toContain("noindex");
+  });
+
+  it("returns a real 404 for the HTML fallback and serves ordinary assets unchanged", async () => {
+    const { env, assetsFetch } = fakeEnv();
+    const missing = await route(new Request("https://web.bluethenics.com/does-not-exist"), env, deps);
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("x-robots-tag")).toContain("noindex");
+    assetsFetch.mockImplementation(async () => new Response("export {}", { headers: { "content-type": "text/javascript", etag: '"asset"' } }));
+    const asset = await route(new Request("https://web.bluethenics.com/assets/app.js"), env, deps);
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("etag")).toBe('"asset"');
+    expect(await asset.text()).toBe("export {}");
+  });
+});
+
+describe("crawler discovery", () => {
+  it("serves real robots and sitemap responses without waking a workspace", async () => {
+    const { env, assetsFetch, names } = fakeEnv();
+    const robots = await route(new Request("https://web.bluethenics.com/robots.txt"), env, deps);
+    expect(robots.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await robots.text()).toContain("Sitemap: https://web.bluethenics.com/sitemap.xml");
+    const sitemap = await route(new Request("https://web.bluethenics.com/sitemap.xml"), env, deps);
+    expect(sitemap.headers.get("content-type")).toBe("application/xml; charset=utf-8");
+    const xml = await sitemap.text();
+    expect(xml).toContain("<loc>https://web.bluethenics.com/</loc>");
+    expect(xml.match(/<loc>/g)).toHaveLength(1);
+    expect(xml).not.toMatch(/api|admin|preview/);
+    expect(assetsFetch).not.toHaveBeenCalled();
+    expect(names).toEqual([]);
+  });
+
+  it("blocks staging crawlers and advertises no staging URLs", async () => {
+    const { env } = fakeEnv();
+    const robots = await route(new Request("https://staging.example/robots.txt"), env, deps);
+    expect(await robots.text()).toBe("User-agent: *\nDisallow: /\n");
+    const sitemap = await route(new Request("https://staging.example/sitemap.xml"), env, deps);
+    expect(await sitemap.text()).not.toContain("<loc>");
+  });
+
+  it("does not expose the public sitemap from a private preview", async () => {
+    const { env } = fakeEnv();
+    const preview = vi.fn(async () => new Response("Not found", { status: 404, headers: { "x-robots-tag": "noindex" } }));
+    const response = await route(new Request("https://p-5173-abcdefghij.web.bluethenics.com/sitemap.xml"), env, { ...deps, preview });
+    expect(preview).toHaveBeenCalledOnce();
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("<loc>");
+  });
+
+  it("supports HEAD discovery and rejects other methods", async () => {
+    const { env } = fakeEnv();
+    const head = await route(new Request("https://web.bluethenics.com/sitemap.xml", { method: "HEAD" }), env, deps);
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    const post = await route(new Request("https://web.bluethenics.com/robots.txt", { method: "POST" }), env, deps);
+    expect(post.status).toBe(405);
+    expect(post.headers.get("allow")).toBe("GET, HEAD");
   });
 });

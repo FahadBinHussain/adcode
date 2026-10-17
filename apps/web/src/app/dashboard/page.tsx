@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AdcodeLoader } from "@/components/AdcodeLoader";
 import { AppShell, type SideNavGroup } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { CopyField } from "@/components/CopyField";
+import { EmailPreferences } from "@/components/EmailPreferences";
 import { InvitePanel } from "@/components/InvitePanel";
 import { LedgerRows } from "@/components/LedgerRows";
 import { PayoutPanel } from "@/components/PayoutPanel";
@@ -43,6 +45,7 @@ const DASHBOARD_SIDEBAR: SideNavGroup[] = [
       { href: "/dashboard#payouts", label: "Payouts", icon: "send" },
       { href: "/dashboard#activity", label: "Activity", icon: "clock" },
       { href: "/dashboard#ledger", label: "Ledger", icon: "list" },
+      { href: "/dashboard#email-preferences", label: "Email preferences", icon: "send" },
     ],
   },
 ];
@@ -151,7 +154,7 @@ function DashboardBody() {
     };
   }, [activity, days]);
 
-  if (loading) return <p className="lede">Loading…</p>;
+  if (loading) return <AdcodeLoader fill />;
 
   const totals = activity?.totals;
   const written = (totals?.manualChars ?? 0) + (totals?.agentChars ?? 0);
@@ -377,6 +380,7 @@ function DashboardBody() {
         </>
       </section>
 
+      <EmailPreferences />
       <section className="workspace-section" id="ledger" aria-labelledby="ledger-title">
         <h2 className="workspace-section-title" id="ledger-title">Ledger</h2>
         <>

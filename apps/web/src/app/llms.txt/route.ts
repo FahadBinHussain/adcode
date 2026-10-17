@@ -1,9 +1,10 @@
 import { FAQ } from "@/lib/schema";
+import { DEFAULT_CREDIT_PLAN } from "@adcode/api/src/credits.ts";
 import { allPosts } from "@/lib/posts";
 import { docsBySection } from "@/lib/docs";
 import { landingIndex } from "@/lib/landings";
 import { allReleases } from "@/lib/releases";
-import { PARENT, SITE, SOURCE, url } from "@/lib/site";
+import { PARENT, SITE, SOURCE, WEB_VERSION_URL, url } from "@/lib/site";
 
 /**
  * `/llms.txt` - a plain-text summary for answer engines and assistants.
@@ -65,7 +66,7 @@ export async function GET(): Promise<Response> {
 
 > ${SITE.description}
 
-${SITE.name} is a free, ad-supported AI code editor for Windows and Linux (macOS is not published yet). It is
+${SITE.name} is a free, ad-supported AI code editor in your browser and on Windows and Linux (a native macOS desktop build is not published yet). It is
 funded by advertisers rather than subscriptions, and it credits a share of advertising
 revenue to the developer using it.
 
@@ -76,10 +77,15 @@ revenue to the developer using it.
   compiler errors, live collaboration.
 - AI: agents that edit across files, run tests, and keep going until done; several agents at
   once on an Agents board; Race mode to compare models on one task; Undo for every turn.
-  Four providers or any OpenAI-compatible endpoint (including a local model), on your own key.
+  Included partner models need no API key: ${DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US")} credits every ${DEFAULT_CREDIT_PLAN.sessionHours} hours,
+  up to ${DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US")} a week. At the limit, tasks wait for a refill.
+  Your own provider key follows that provider's billing; local models run in the desktop app.
+- Browser version: ${WEB_VERSION_URL}. Vibe mode in a private cloud workspace, with one hour
+  of cloud time every ${DEFAULT_CREDIT_PLAN.sessionHours} hours, separate from AI credits. Sign in to start.
 - Ad format: one small sponsored card in the corner of the window.
 - Ad targeting: a fixed vocabulary of 45 generic tags for language, framework, tool, and
-  platform. File contents, paths, and project names are never transmitted.
+  platform. Source code, paths and project names are not used for ad targeting.
+  AI requests and browser cloud workspaces process project data separately; see the privacy policy.
 - Revenue share: the developer receives 50% of the winning ad's clearing CPM.
 - Earnings record: an append-only ledger. Entries are never edited or deleted; corrections
   are recorded as reversals that reference the original entry.
@@ -97,6 +103,7 @@ ad server are in one repository: ${SOURCE.repo}
 ## Pages
 
 - [Home](${url("/")}): what ADCode is and how earnings work.
+- [Open in your browser](${WEB_VERSION_URL}): start a private cloud workspace with no download.
 - [Download and releases](${url("/versions")}): one-line install for Windows and Linux, and what changed in each release.
 - [Advertise](${url("/#advertise")}): targeting, pricing, and verification for advertisers.
 - [Documentation](${url("/docs")}): every feature, plus the explanations of how the system works.

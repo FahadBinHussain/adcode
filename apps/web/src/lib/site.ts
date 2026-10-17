@@ -136,7 +136,7 @@ export const SITE = {
   name: "ADCode",
   tagline: "Earn while you code",
   description:
-    "ADCode is a free AI code editor - AI agents, Monaco editing, real terminals, git - that shows an occasional sponsored card and credits you half the revenue, on a ledger you can audit.",
+    "ADCode is a free AI code editor for your browser, Windows and Linux. Build with included AI agents and receive half of eligible ad revenue.",
   origin: SITE_ORIGIN,
   locale: "en_US",
 } as const;

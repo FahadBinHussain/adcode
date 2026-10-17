@@ -18,6 +18,7 @@ export * from "./continuation.ts";
 export * from "./terminalTeam.ts";
 export * from "./teamMailbox.ts";
 export * from "./subagents.ts";
+export * from "./toolRules.ts";
 export * from "./toolDraft.ts";
 export * from "./adapter.ts";
 

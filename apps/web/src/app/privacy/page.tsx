@@ -126,6 +126,16 @@ An invite page remembers its code in this browser's local storage for 30 days, s
 
 The signed-in areas — the dashboard, advertiser portal, and admin panel — use a session cookie strictly to keep you signed in.
 
+## Optional product emails
+
+Product updates, project ideas, and reminders after time away are optional. The email checkbox in [your dashboard](/dashboard#email-preferences) starts unchecked. A verified account email is required, and creating an account does not subscribe you.
+
+For subscribers, we store the email preference, consent date and wording version, and the most recent account or editor activity time. We use those records to choose reminders and stop follow-ups when you return. We also keep delivery status and opt-out, bounce, or complaint records so that we can avoid unwanted email.
+
+Resend delivers these messages. It receives the recipient email address and the email content and reports delivery events. We do not send Resend your source code, prompts, projects, or earnings details. Email open and click tracking are disabled; links can contain general campaign labels without an account identifier.
+
+Every product email includes an unsubscribe link that works without signing in. You can also change your preference in the dashboard. Unsubscribing stops future product emails and reminders without changing your ADCode account or service notices.
+
 ## Sharing
 
 We share personal data with nobody for advertising purposes.
@@ -142,6 +152,8 @@ We use Google Cloud and Firebase to run the service, Dodo Payments to take payme
 ## Retention
 
 Ledger rows are kept as long as the account exists, because they are the record of what you were paid. Serve records expire automatically within hours. General support feedback is kept until it is resolved. Included AI reporting metadata is retained for usage and reliability reporting; it has no automatic expiry at present. Model feedback remains until its rating is removed or you request its deletion. You can request deletion of included AI reporting metadata through the contact below. A web version workspace that nobody opens for 90 days is deleted, archives and all.
+
+Email preference and delivery records are linked to the account and removed when the account is deleted. Suppression addresses are retained to honour opt-outs and avoid sending to addresses that bounce or complain. These email records currently have no automatic expiry.
 
 ## Children
 

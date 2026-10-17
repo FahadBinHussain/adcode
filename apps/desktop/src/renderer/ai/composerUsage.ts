@@ -72,7 +72,7 @@ export function composerUsageModels(view: AiUsageView | null, allowance: Tagflow
   const tokens = count(totals.inputTokens) + count(totals.outputTokens);
   return [
     unknown(`${totals.estimated ? "≈ " : ""}${formatTokens(tokens)} today`, `${formatTokens(tokens)} tokens used on this computer today, across chat and agents${totals.estimated ? "; some counts are estimated" : ""}. This provider does not report an account limit. Open AI usage for details.`),
-    { ...unknown("Today", `${totals.requests.toLocaleString()} AI requests on this computer today, across chat and agents. This provider does not report an account limit. Open AI usage for details.`), value: formatTokens(totals.requests) },
+    { ...unknown(`${totals.requests.toLocaleString()} today`, `${totals.requests.toLocaleString()} AI requests on this computer today, across chat and agents. This provider does not report an account limit. Open AI usage for details.`), value: formatTokens(totals.requests) },
   ];
 }
 

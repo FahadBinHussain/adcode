@@ -38,7 +38,7 @@ function carryInvite(invite: string | undefined): void {
  * it. Before hydration it renders the neutral choice, so first paint is honest and only
  * gets more specific once JavaScript runs.
  */
-export function HeroInstall({ source = "hero", advertise = true, tour, invite }: { source?: string; advertise?: boolean; tour?: string; invite?: string }) {
+export function HeroInstall({ source = "hero", advertise = true, tour, invite, secondaryLink, compact = false }: { source?: string; advertise?: boolean; tour?: string; invite?: string; secondaryLink?: { href: string; label: string }; compact?: boolean }) {
   const [platform, setPlatform] = useState<Platform>("unknown");
   useEffect(() => setPlatform(detectPlatform(navigator.userAgent, navigator.maxTouchPoints)), []);
 
@@ -56,7 +56,7 @@ export function HeroInstall({ source = "hero", advertise = true, tour, invite }:
    * button, and the advertiser pill is labelled for its audience and drawn in the money
    * colour, so each reader sees which one is theirs.
    */
-  const secondary = tour !== undefined ? (
+  const secondary = secondaryLink !== undefined ? (<a href={secondaryLink.href} className="marketplace-secondary">{secondaryLink.label} <span aria-hidden="true">↗</span></a>) : tour !== undefined ? (
     <a href={tour} className="marketplace-secondary">See how it works</a>
   ) : advertise ? (
     <a href="/#advertise" className="marketplace-secondary" data-tracked onClick={trackAdvertise}>
@@ -65,9 +65,9 @@ export function HeroInstall({ source = "hero", advertise = true, tour, invite }:
   ) : null;
   const advertiseNote = advertise && tour !== undefined ? <AdvertisePill onClick={trackAdvertise} /> : null;
 
-  if (route === "store") return <WindowsInstall source={source} secondary={secondary} advertiseNote={advertiseNote} invite={invite} />;
+  if (route === "store") return <WindowsInstall source={source} secondary={secondary} advertiseNote={advertiseNote} invite={invite} compact={compact} />;
   if (route === "download") return <LinuxInstall source={source} secondary={secondary} advertiseNote={advertiseNote} invite={invite} />;
-  if (route === "send") return <SendToDesktop source={source} advertise={advertise} invite={invite} />;
+  if (route === "send") return <SendToDesktop source={source} advertise={advertise} invite={invite} secondaryLink={secondaryLink} />;
 
   if (route === "soon") {
     return (
@@ -117,7 +117,7 @@ function WindowsLogo() {
   );
 }
 
-function WindowsInstall({ source, secondary, advertiseNote, invite }: { source: string; secondary: React.ReactNode; advertiseNote: React.ReactNode; invite: string | undefined }) {
+function WindowsInstall({ source, secondary, advertiseNote, invite, compact }: { source: string; secondary: React.ReactNode; advertiseNote: React.ReactNode; invite: string | undefined; compact: boolean }) {
   const [started, setStarted] = useState(false);
   const [terminal, setTerminal] = useState(false);
 
@@ -154,7 +154,7 @@ function WindowsInstall({ source, secondary, advertiseNote, invite }: { source: 
         </ol>
       ) : (
         <p className="hero-install-note">
-          Signed by Microsoft, so Windows installs it without a warning. Windows 10 and 11.{" "}
+          {compact ? "Windows 10 & 11 · Microsoft Store." : "Signed by Microsoft, so Windows installs it without a warning. Windows 10 and 11."}{" "}
           <button type="button" className="install-link-button" aria-expanded={terminal} onClick={() => setTerminal((open) => !open)}>
             {terminal ? "Hide the terminal command" : "Prefer a terminal?"}
           </button>
@@ -201,7 +201,7 @@ function LinuxInstall({ source, secondary, advertiseNote, invite }: { source: st
  * pressed, so a dismissed sheet or a blocked clipboard is not a sent link. The email link
  * counts on the click: whether the message went is the mail app's to know.
  */
-function SendToDesktop({ source, advertise, invite }: { source: string; advertise: boolean; invite: string | undefined }) {
+function SendToDesktop({ source, advertise, invite, secondaryLink }: { source: string; advertise: boolean; invite: string | undefined; secondaryLink: { href: string; label: string } | undefined }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   // An invite has to survive the hop from phone to computer, so the link sent is the invite.
   const link = invite === undefined ? installLinkFor(SITE.origin) : `${SITE.origin}/i/${invite}?utm_source=send-to-desktop`;
@@ -224,10 +224,10 @@ function SendToDesktop({ source, advertise, invite }: { source: string; advertis
         </button>
         <a
           className="marketplace-secondary"
-          href={`mailto:?subject=${encodeURIComponent(SEND_SUBJECT)}&body=${encodeURIComponent(body)}`}
-          onClick={() => trackWebsiteEvent("send_to_desktop", 0, undefined, source)}
+          href={secondaryLink?.href ?? (`mailto:?subject=${encodeURIComponent(SEND_SUBJECT)}&body=${encodeURIComponent(body)}`)}
+          onClick={() => { if (!secondaryLink) trackWebsiteEvent("send_to_desktop", 0, undefined, source); }}
         >
-          Email me the link
+          {secondaryLink?.label ?? "Email me the link"}
         </a>
       </div>
       {state === "failed" && <p className="hero-install-note" role="status">Sharing was blocked. The link is {link}</p>}

@@ -10,7 +10,7 @@ export const metadata: Metadata = pageMetadata({
   title: "Invite & earn",
   socialTitle: "Invite & earn: get a share of what ADCode makes from the people you bring",
   description:
-    "Send your ADCode invite link. For a year you get 10% of what ADCode earns from the ads the people you invite see, and 5% of what any advertiser you bring spends - from ADCode's half, never theirs.",
+    "Invite people to ADCode and earn for a year: 10% of ADCode's ad earnings from invited users and 5% of invited advertisers' spend. See how referrals work.",
 });
 
 /*

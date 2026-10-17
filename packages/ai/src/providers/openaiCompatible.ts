@@ -118,6 +118,21 @@ export function providerErrorMessage(payload: unknown): string | null {
   return null;
 }
 
+/**
+ * How much of a request's prompt the provider read from its cache, or undefined when it did
+ * not say. OpenAI, OpenRouter and Groq report `prompt_tokens_details.cached_tokens`; DeepSeek
+ * reports `prompt_cache_hit_tokens`. Either way it is part of `prompt_tokens`, not added to it.
+ */
+export function cachedPromptTokens(tally: Record<string, unknown>): number | undefined {
+  const details = tally["prompt_tokens_details"];
+  if (typeof details === "object" && details !== null) {
+    const cached = (details as Record<string, unknown>)["cached_tokens"];
+    if (typeof cached === "number" && Number.isFinite(cached) && cached >= 0) return cached;
+  }
+  const hit = tally["prompt_cache_hit_tokens"];
+  return typeof hit === "number" && Number.isFinite(hit) && hit >= 0 ? hit : undefined;
+}
+
 /** The effort level to send this model, or undefined to send none. */
 function effortLevel(profile: WireProfile, deps: OpenAiCompatibleDeps, request: ProviderRequest): string | undefined {
   if (profile.effort === "none" || request.effort === undefined) return undefined;
@@ -138,7 +153,14 @@ function currentTurnStart(request: ProviderRequest): number {
   return -1;
 }
 
-/** Translate our neutral message shape into the chat-completions one. */
+/**
+ * Translate our neutral message shape into the chat-completions one.
+ *
+ * Deterministic on purpose. OpenAI, DeepSeek, Groq and others cache a prompt's prefix with no
+ * field to ask for it, matching byte for byte, so the same history has to come out the same on
+ * every step: instructions first and the host context after them, then the turns in order,
+ * nothing reordered, timestamped or re-encoded. Only the newest turn should differ.
+ */
 function toWireMessages(request: ProviderRequest, providerId: string, profile: WireProfile): unknown[] {
   const wire: unknown[] = [{ role: "system", content: request.system }];
   const turnStart = currentTurnStart(request);
@@ -364,7 +386,7 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
 
       let buffer = "";
       let finish: string | null = null;
-      let usage: { inputTokens: number; outputTokens: number } | null = null;
+      let usage: { inputTokens: number; outputTokens: number; cachedTokens?: number } | null = null;
       // Providers holding a request upstream (OpenRouter sends `: OPENROUTER
       // PROCESSING` keepalives while queued) say nothing for minutes. The first
       // comment becomes one waiting note so a long queue reads as waiting, and
@@ -416,9 +438,11 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
           if (typeof counted === "object" && counted !== null) {
             const tally = counted as Record<string, unknown>;
             if (typeof tally["prompt_tokens"] === "number" || typeof tally["completion_tokens"] === "number") {
+              const cached = cachedPromptTokens(tally);
               usage = {
                 inputTokens: typeof tally["prompt_tokens"] === "number" ? tally["prompt_tokens"] : 0,
                 outputTokens: typeof tally["completion_tokens"] === "number" ? tally["completion_tokens"] : 0,
+                ...(cached === undefined ? {} : { cachedTokens: cached }),
               };
             }
           }

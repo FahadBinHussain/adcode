@@ -53,15 +53,15 @@ describe("support requests", () => {
 });
 
 describe("global portal actions", () => {
-  it("presents the advertiser and user destinations as one two-sided action rail", () => {
+  it("offers one clearly labelled Advertise button", () => {
     const markup = renderToStaticMarkup(<PortalActions />);
 
     expect(markup).toContain("glass-portal-rail");
     expect(markup).toContain('href="/portal"');
-    expect(markup).toContain("Advertiser portal");
-    expect(markup).toContain('href="/dashboard"');
-    expect(markup).toContain("User portal");
-    expect((markup.match(/class="glass-portal-button(?: glass-portal-button-primary)?"/g) ?? [])).toHaveLength(2);
+    expect(markup).toContain("Advertise</span>");
+    expect(markup).not.toContain('href="/dashboard"');
+    expect(markup).not.toContain("User portal");
+    expect((markup.match(/class="glass-portal-button header-advertise"/g) ?? [])).toHaveLength(1);
   });
 });
 

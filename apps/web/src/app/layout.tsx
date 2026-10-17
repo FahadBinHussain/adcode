@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter_Tight, JetBrains_Mono, Inter } from "next/font/google";
+import { Space_Grotesk, Manrope, Geist_Mono } from "next/font/google";
 import { SITE, VERIFICATION } from "@/lib/site";
 import { ALTERNATE_TYPES, SHARE_IMAGE } from "@/lib/seo";
 import { Nav } from "@/components/Nav";
@@ -14,32 +14,31 @@ import { organisation, softwareApplication, webSite } from "@/lib/schema";
 import "./globals.css";
 import "./design-system.css";
 import "./redesign.css";
+import "./home-landing.css";
+import "./site-pages.css";
+import "./auth.css";
 
 /*
- * Self-hosted through next/font, so the page makes no request to a font CDN. That keeps
- * the render blocking-free and means the site does not leak a visitor's IP to a third
- * party before they have agreed to anything - which the privacy page then gets to say
- * truthfully.
+ * Space Grotesk gives headings their character, Manrope keeps body copy easy to read,
+ * and Geist Mono carries code and numbers. Loading them once in the root layout makes
+ * the same typography available throughout the website through the existing variables.
  *
- * No `weight` on any of the three, deliberately. All three are variable fonts, and naming
- * weights makes next/font download one static instance per weight - eight files where
- * three would do. It was also quietly wrong: this stylesheet asks for weights like 520,
- * 540 and 620, and with only 500/600/700 on the page the browser was synthesising the
- * ones in between by smearing the outlines. The variable font has them for real.
+ * next/font downloads and self-hosts the files at build time, so the browser makes no
+ * request to Google. Omitting weight preserves each font's variable weight range.
  */
-const display = Inter_Tight({
+const display = Space_Grotesk({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
 });
 
-const body = Inter({
+const body = Manrope({
   subsets: ["latin"],
   variable: "--font-body",
   display: "swap",
 });
 
-const mono = JetBrains_Mono({
+const mono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
   display: "swap",

@@ -272,6 +272,14 @@ body[data-workspace-mode="vibe"] .vibe-sidebar .vibe-nav-label {
 }
 body[data-workspace-mode="vibe"] .vibe-history-host { display: flex; flex: 1; min-height: 0; }
 body[data-workspace-mode="vibe"] .vibe-history-host .chat-history {
+  /* ai.css turns a narrow chat card's history into an absolute overlay; in the sidebar it is a
+     list in the flow, or on a phone it covers New conversation and the project card. */
+  position: static;
+  inset: auto;
+  z-index: auto;
+  grid-area: auto;
+  max-width: none;
+  box-shadow: none;
   width: 100%;
   height: 100%;
   padding: 0;
@@ -313,14 +321,15 @@ body[data-workspace-mode="vibe"] .vibe-history-host .chat-history-row[data-activ
 /* Only "working" and "finished, not seen yet" mean anything to a Vibe user; a dot per row or a
    branch glyph for a renamed chat is noise in a list this narrow. */
 body[data-workspace-mode="vibe"] .vibe-history-host .chat-history-status:not([data-status="working"], [data-status="finished"], [data-status="attention"]) { display: none; }
+/* One line, like every chat list people know: two-line clamping made a row 18px taller the
+   moment its spinner appeared and shorter again when it finished. */
 body[data-workspace-mode="vibe"] .vibe-history-host .chat-history-open {
-  display: -webkit-box;
+  display: block;
+  min-width: 0;
   padding: 4px 0;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   overflow: hidden;
-  white-space: normal;
-  word-break: break-word;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.35;

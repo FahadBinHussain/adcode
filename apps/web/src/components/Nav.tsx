@@ -8,7 +8,7 @@ import { Mark } from "./Mark";
 import { useAuth } from "./AuthProvider";
 import { PortalActions } from "./PortalActions";
 import { ThemePicker } from "./ThemeProvider";
-import { TEAM } from "@/lib/site";
+import { TEAM, WEB_VERSION_URL } from "@/lib/site";
 
 export function Nav() {
   const pathname = usePathname();
@@ -47,7 +47,7 @@ export function Nav() {
     <>
       <Link href="/#product" className="glass-nav-link">Product</Link>
       <a href="/#about" className="glass-nav-link">About us</a>
-      <Link href="/portal" className="glass-nav-link nav-mobile-only">Advertiser portal</Link>
+      <Link href="/portal" className="glass-nav-link nav-mobile-only">Advertise</Link>
       <Link
         href="/docs"
         className="glass-nav-link"
@@ -84,7 +84,7 @@ export function Nav() {
   );
 
   return (
-    <header className="marketplace-nav">
+    <header className="marketplace-nav" data-home={pathname === "/" ? "true" : undefined}>
       <div className="marketplace-wrap marketplace-nav-inner">
         <Link href="/" className="marketplace-brand" aria-label="ADCode home"><Mark /><span>ADCode</span></Link>
         <nav className="glass-nav" aria-label="Main navigation">
@@ -93,7 +93,7 @@ export function Nav() {
           <a href={TEAM.bookingUrl} className="glass-nav-link nav-team nav-team-action" target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a>
           <PortalActions />
           {/* The primary action on every page: most visitors came to get the editor. */}
-          <Link href="/versions" className="nav-download">Download</Link>
+          <a href={WEB_VERSION_URL} className="nav-download">Open in browser</a>
           <div className="glass-nav-mobile" ref={menu}>
             <button type="button" className="glass-menu-trigger" aria-label="Open navigation menu" aria-controls="glass-mobile-navigation" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
               <span /><span />

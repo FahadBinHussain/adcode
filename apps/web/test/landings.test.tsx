@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { DEFAULT_CREDIT_PLAN } from "../../../services/api/src/credits";
 import { describe, expect, it } from "vitest";
 import { LandingArticle } from "../src/components/LandingArticle";
 import { Footer } from "../src/components/Footer";
@@ -15,7 +16,7 @@ import {
 } from "../src/lib/landings";
 import { landingArticle } from "../src/lib/schema";
 import { DESCRIPTION_LIMIT, TITLE_LIMIT } from "../src/lib/seo";
-import { url } from "../src/lib/site";
+import { WEB_VERSION_URL, url } from "../src/lib/site";
 
 /**
  * These pages exist to be arrived at from a search result, which makes their failure mode
@@ -24,6 +25,22 @@ import { url } from "../src/lib/site";
  * never ranks, or - in the FAQ case - earns a structured data penalty.
  */
 describe("landing pages", () => {
+  it("explains included AI limits and links search visitors to the browser app", () => {
+    for (const slug of ["free-ai-code-editor", "online-ai-code-editor"]) {
+      const page = getLanding(slug);
+      expect(page).not.toBeNull();
+      if (page === null) continue;
+      const text = landingPlainText(page);
+      expect(text).toContain(DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US"));
+      expect(text).toContain(DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US"));
+      expect(text).toContain(`every ${DEFAULT_CREDIT_PLAN.sessionHours} hours`);
+      expect(text).not.toContain("No request cap on the AI features");
+      const markup = renderToStaticMarkup(<LandingArticle page={page} />);
+      expect(markup).toContain(`href="${WEB_VERSION_URL}"`);
+      expect(markup).toContain('href="/versions"');
+    }
+  });
+
   it("gives every page a unique path", () => {
     const paths = LANDINGS.map(landingPath);
     expect(new Set(paths).size).toBe(paths.length);

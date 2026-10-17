@@ -146,6 +146,7 @@ export const BRIDGE = [
   { path: "ai.controls", kind: "invoke", channel: CHANNELS.aiControlsRead },
   { path: "ai.control", kind: "invoke", channel: CHANNELS.aiControlsAction },
   { path: "ai.previewSkill", kind: "invoke", channel: CHANNELS.aiControlsPreviewSkill },
+  { path: "ai.openAgentSettings", kind: "invoke", channel: CHANNELS.aiAgentSettingsOpen },
   { path: "ai.onControlsChanged", kind: "subscribe", channel: CHANNELS.aiControlsChanged },
   { path: "ai.status", kind: "invoke", channel: CHANNELS.aiProviders },
   { path: "ai.onStatusChanged", kind: "subscribe", channel: CHANNELS.aiProvidersChanged },

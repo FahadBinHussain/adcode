@@ -12,6 +12,7 @@
 import { brandMark } from "../renderer/workbench/brandMark.ts";
 import { currentUser, firebaseConfigured, idToken, resetPassword, signInWith, signInWithEmail, signOutHere } from "./firebaseAuth.ts";
 import { firebaseErrorText } from "./gateText.ts";
+import { WEB_APP_GUIDE_URL, WEB_APP_HEADING, WEB_APP_INTRO } from "./seo.ts";
 
 declare const __ADCODE_WEB_DEV__: boolean;
 
@@ -46,17 +47,102 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: stri
 const GOOGLE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h6a5.1 5.1 0 0 1-2.2 3.4v2.8h3.6c2.1-2 3.2-4.9 3.2-8.2z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.8c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.9A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.1a6.6 6.6 0 0 1 0-4.2V7H2.1a11 11 0 0 0 0 10l3.7-2.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7l3.7 2.9C6.7 7.3 9.1 5.4 12 5.4z"/></svg>';
 const GITHUB_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5a10.5 10.5 0 0 0-3.3 20.5c.5.1.7-.2.7-.5v-1.8c-2.9.6-3.5-1.4-3.5-1.4-.5-1.2-1.2-1.5-1.2-1.5-1-.7 0-.6 0-.6 1 .1 1.6 1.1 1.6 1.1.9 1.6 2.5 1.2 3.1.9.1-.7.4-1.2.7-1.4-2.3-.3-4.8-1.2-4.8-5.2 0-1.1.4-2.1 1.1-2.8-.1-.3-.5-1.4.1-2.8 0 0 .9-.3 2.9 1.1a9.9 9.9 0 0 1 5.3 0c2-1.4 2.9-1.1 2.9-1.1.6 1.4.2 2.5.1 2.8.7.7 1.1 1.7 1.1 2.8 0 4-2.5 4.9-4.8 5.2.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10.5 10.5 0 0 0 12 1.5z"/></svg>';
 
+/*
+ * The stage beside the card: what ADCode does, shown rather than said. An agent's run types
+ * itself out on a slow loop over a live grid - the request, the tools it calls, the check that
+ * passes, the preview that opens. Decoration only (aria-hidden); with reduced motion it is the
+ * finished run, still.
+ */
+const RUN: readonly { readonly kind: "ask" | "step" | "done"; readonly text: string; readonly detail?: string }[] = [
+  { kind: "ask", text: "build a booking page for my barber shop" },
+  { kind: "step", text: "Read", detail: "package.json · src/App.tsx" },
+  { kind: "step", text: "Helpers", detail: "3 working at once" },
+  { kind: "step", text: "Wrote", detail: "src/Booking.tsx +184" },
+  { kind: "step", text: "Ran", detail: "npm run build · passed" },
+  { kind: "done", text: "Preview ready", detail: "localhost:5173" },
+];
+let stageTimer: number | undefined;
+/** Bumped by every screen change, so a gate fading out never hides the screen that replaced it. */
+let generation = 0;
+
+const reducedMotion = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function stage(): HTMLElement {
+  const root = element("aside", "web-gate-stage");
+  root.setAttribute("aria-hidden", "true");
+  const grid = element("div", "web-gate-grid");
+  const glow = element("div", "web-gate-glow");
+  const brand = element("div", "web-gate-brand");
+  brand.append(brandMark({ size: 34, plate: true, accent: true }), element("span", "web-gate-wordmark", "ADCode"));
+  const pitch = element("div", "web-gate-pitch");
+  pitch.append(element("h2", undefined, "Describe it. Watch it get built."), element("p", undefined, "Agents write the code, run it and show it to you - in a private workspace that lives in your browser."));
+  const terminal = element("div", "web-gate-terminal");
+  const bar = element("div", "web-gate-terminal-bar");
+  bar.append(element("i"), element("i"), element("i"), element("span", undefined, "agent · live"));
+  const lines = element("ol", "web-gate-lines");
+  terminal.append(bar, lines);
+  const proof = element("ul", "web-gate-proof");
+  for (const fact of ["2,000 free AI credits every 5 hours", "A real Linux workspace, saved for you", "Half of the ad revenue is yours"]) proof.append(element("li", undefined, fact));
+  root.append(grid, glow, brand, pitch, terminal, proof);
+  play(lines);
+  return root;
+}
+
+function line(step: typeof RUN[number]): HTMLLIElement {
+  const item = element("li", `web-gate-line is-${step.kind}`);
+  if (step.kind === "ask") {
+    item.append(element("span", "web-gate-prompt", "›"), element("span", "web-gate-typed", ""));
+  } else {
+    item.append(element("span", "web-gate-tick", step.kind === "done" ? "●" : "✓"), element("strong", undefined, step.text), element("span", "web-gate-detail", step.detail ?? ""));
+  }
+  return item;
+}
+
+/** Type the request, then let each step land after the one before, and start again. */
+function play(lines: HTMLElement): void {
+  window.clearTimeout(stageTimer);
+  if (reducedMotion()) {
+    lines.replaceChildren(...RUN.map(line));
+    const typed = lines.querySelector(".web-gate-typed");
+    if (typed !== null) typed.textContent = RUN[0]!.text;
+    return;
+  }
+  lines.replaceChildren();
+  const ask = line(RUN[0]!);
+  lines.append(ask);
+  const typed = ask.querySelector(".web-gate-typed")!;
+  typed.classList.add("is-typing");
+  let at = 0;
+  const type = (): void => {
+    if (!lines.isConnected) return;
+    typed.textContent = RUN[0]!.text.slice(0, ++at);
+    if (at < RUN[0]!.text.length) { stageTimer = window.setTimeout(type, 34 + Math.random() * 40); return; }
+    typed.classList.remove("is-typing");
+    let step = 1;
+    const next = (): void => {
+      if (!lines.isConnected) return;
+      if (step < RUN.length) { lines.append(line(RUN[step++]!)); stageTimer = window.setTimeout(next, 620); return; }
+      stageTimer = window.setTimeout(() => play(lines), 4200);
+    };
+    stageTimer = window.setTimeout(next, 480);
+  };
+  stageTimer = window.setTimeout(type, 500);
+}
+
 function shell(): { card: HTMLElement; body: HTMLElement } {
   const root = host();
+  generation += 1;
   root.replaceChildren();
   root.hidden = false;
   root.className = "web-gate";
   const card = element("main", "web-gate-card");
-  const brand = element("div", "web-gate-brand");
-  brand.append(brandMark({ size: 52, plate: true, accent: true }), element("span", "web-gate-wordmark", "ADCode"));
+  const brand = element("div", "web-gate-brand web-gate-card-brand");
+  brand.append(brandMark({ size: 40, plate: true, accent: true }), element("span", "web-gate-wordmark", "ADCode"));
   const body = element("div", "web-gate-body");
   card.append(brand, body);
-  root.append(card);
+  const panel = element("div", "web-gate-panel");
+  panel.append(card);
+  root.append(stage(), panel);
   return { card, body };
 }
 
@@ -64,8 +150,8 @@ function shell(): { card: HTMLElement; body: HTMLElement } {
 function signInCard(): Promise<"signed-in" | "dev"> {
   return new Promise((resolve) => {
     const { body } = shell();
-    const title = element("h1", "web-gate-title", "Build anything by describing it.");
-    const lead = element("p", "web-gate-lead", "ADCode's Vibe mode, in your browser. Say what you want; the AI builds it, runs it and shows you, in your own private cloud workspace.");
+    const title = element("h1", "web-gate-title", WEB_APP_HEADING);
+    const lead = element("p", "web-gate-lead", `${WEB_APP_INTRO} Free - no card, no API key.`);
     const error = element("p", "web-gate-error");
     error.setAttribute("role", "alert");
     error.hidden = true;
@@ -171,6 +257,8 @@ function signInCard(): Promise<"signed-in" | "dev"> {
 
     const fine = element("p", "web-gate-fine");
     fine.append(
+      Object.assign(element("a", undefined, "How ADCode Web works"), { href: WEB_APP_GUIDE_URL }),
+      document.createTextNode(". "),
       document.createTextNode("An hour of cloud time every 5 hours, free. Ads keep it free, and you earn a share of them. "),
       Object.assign(element("a", undefined, "Terms"), { href: `${SITE}/terms`, target: "_blank", rel: "noopener" }),
       document.createTextNode(" · "),
@@ -210,9 +298,12 @@ export function showWaking(message = "Waking your workspace…", detail = "A few
   const { body } = shell();
   const spinner = element("div", "web-gate-spinner");
   spinner.setAttribute("aria-hidden", "true");
+  spinner.append(element("i"), element("i"));
   const status = element("p", "web-gate-title web-gate-title-small", message);
   status.setAttribute("role", "status");
-  body.append(spinner, status, element("p", "web-gate-lead", detail));
+  const progress = element("div", "web-gate-progress");
+  progress.setAttribute("aria-hidden", "true");
+  body.append(spinner, status, element("p", "web-gate-lead", detail), progress);
 }
 
 /** A full-screen message with actions: no time left in this session, the web version is full, and so on. */
@@ -230,8 +321,19 @@ export function showBlocked(title: string, detail: string, actions: readonly { l
   body.append(heading, lead, row);
 }
 
+/** Fades the gate out over the app, then removes it; a screen shown meanwhile cancels the fade. */
 export function hideGate(): void {
   const root = host();
-  root.hidden = true;
-  root.replaceChildren();
+  if (root.hidden) return;
+  const mine = generation;
+  const finish = (): void => {
+    if (mine !== generation) return;
+    window.clearTimeout(stageTimer);
+    root.hidden = true;
+    root.classList.remove("is-leaving");
+    root.replaceChildren();
+  };
+  if (reducedMotion()) { finish(); return; }
+  root.classList.add("is-leaving");
+  window.setTimeout(finish, 260);
 }

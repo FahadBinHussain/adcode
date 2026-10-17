@@ -16,6 +16,7 @@
 import { tokenFromProtocols, verifyIdToken, type Verified } from "./auth.ts";
 import type { Env } from "./env.ts";
 import { parsePreviewHost } from "./previewAuth.ts";
+import { INDEXABLE_LAUNCH_ROBOTS, LAUNCH_ROBOTS, publicAppHost, robots, sitemap, WEB_APP_SCHEMA_CSP } from "./seo.ts";
 
 export interface RouterDeps {
   readonly verify: (token: string) => Promise<Verified | null>;
@@ -43,7 +44,7 @@ export function defaultDeps(env: Env): RouterDeps {
 }
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" } });
 }
 
 function bearer(request: Request): string | null {
@@ -69,7 +70,7 @@ export function contentSecurityPolicy(env: Env): string {
   return [
     "default-src 'none'",
     // 'wasm-unsafe-eval' compiles the bundled syntax grammars; apis.google.com is Firebase's sign-in popup helper.
-    "script-src 'self' 'wasm-unsafe-eval' https://apis.google.com",
+    `script-src 'self' 'wasm-unsafe-eval' https://apis.google.com ${WEB_APP_SCHEMA_CSP}`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' data: blob: https:",
@@ -87,14 +88,33 @@ export function contentSecurityPolicy(env: Env): string {
 async function servePage(request: Request, env: Env): Promise<Response> {
   const response = await env.ASSETS.fetch(request);
   const headers = new Headers(response.headers);
+  const url = new URL(request.url);
+  let body = response.body;
+  let status = response.status;
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()");
   if ((headers.get("content-type") ?? "").includes("text/html")) {
     headers.set("content-security-policy", contentSecurityPolicy(env));
     headers.set("cache-control", "no-cache");
+    headers.set("x-robots-tag", "noindex, nofollow");
+    const publicRoot = publicAppHost(url.hostname, env.APP_HOST, env.ALLOW_DEV_TOKEN) && url.pathname === "/" && url.search === "" && status === 200;
+    if (publicRoot && request.method === "GET") {
+      const html = await response.text();
+      // An old build without the public introduction must remain noindex.
+      const indexable = html.includes(LAUNCH_ROBOTS);
+      body = new Response(indexable ? html.replace(LAUNCH_ROBOTS, INDEXABLE_LAUNCH_ROBOTS) : html).body;
+      if (indexable) headers.set("x-robots-tag", "index, follow, max-image-preview:large");
+      headers.delete("content-length");
+      headers.delete("etag");
+    } else if (publicRoot && request.method === "HEAD") {
+      // Crawlers learn indexing from GET; HEAD has no HTML to verify the launch marker.
+      headers.delete("x-robots-tag");
+    }
+    // The asset binding's SPA fallback otherwise makes every nonexistent path a soft 404.
+    if (url.pathname !== "/" && url.pathname !== "/index.html" && status === 200) status = 404;
   }
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  return new Response(request.method === "HEAD" ? null : body, { status, headers });
 }
 
 export async function route(request: Request, env: Env, deps: RouterDeps = defaultDeps(env)): Promise<Response> {
@@ -106,6 +126,17 @@ export async function route(request: Request, env: Env, deps: RouterDeps = defau
   }
   // A hostname under the preview suffix that is not a well-formed preview is nothing at all.
   if (url.hostname.endsWith(env.PREVIEW_SUFFIX)) return new Response("Not found", { status: 404 });
+
+  if (url.pathname === "/robots.txt" || url.pathname === "/sitemap.xml") {
+    const headers = new Headers({ "content-type": url.pathname === "/robots.txt" ? "text/plain; charset=utf-8" : "application/xml; charset=utf-8", "cache-control": "public, max-age=3600", "x-robots-tag": "noindex" });
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      headers.set("allow", "GET, HEAD");
+      return new Response("Method not allowed", { status: 405, headers });
+    }
+    const publicHost = publicAppHost(url.hostname, env.APP_HOST, env.ALLOW_DEV_TOKEN);
+    const body = url.pathname === "/robots.txt" ? robots(publicHost) : sitemap(publicHost);
+    return new Response(request.method === "HEAD" ? null : body, { headers });
+  }
 
   if (url.pathname === "/socket") {
     if ((request.headers.get("upgrade") ?? "").toLowerCase() !== "websocket") return new Response("Expected a WebSocket", { status: 426 });

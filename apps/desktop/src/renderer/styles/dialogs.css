@@ -134,6 +134,12 @@
   padding-top: 26px;
 }
 
+/* A question from the main process can list things - the commands a project's hooks run - one per line. */
+.confirm-dialog .result-summary {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 .confirm-buttons {
   display: flex;
   gap: 8px;

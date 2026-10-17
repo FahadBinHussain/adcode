@@ -21,6 +21,7 @@
 import { resolveTxt } from "node:dns/promises";
 
 const DEFAULT_ORIGIN = "https://adcode.bluethenics.com";
+const REQUEST_TIMEOUT_MS = 20_000;
 const origin = (process.argv[2] ?? process.env["NEXT_PUBLIC_SITE_ORIGIN"] ?? DEFAULT_ORIGIN).replace(
   /\/$/,
   "",
@@ -73,6 +74,7 @@ async function get(path) {
     const response = await fetch(`${origin}${path}`, {
       redirect: "manual",
       headers: { "user-agent": "adcode-seo-audit" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     return {
       status: response.status,
@@ -316,6 +318,53 @@ const decode = (text) =>
 const metaContent = (body, attribute, name) =>
   new RegExp(`<meta ${attribute}="${name.replace(/[.:]/g, "\\$&")}" content="([^"]*)"`).exec(body)?.[1];
 
+/** Attribute order, quote style and HTML tag casing do not change an indexing rule. */
+function htmlAttribute(tag, name) {
+  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
+  return match === null ? undefined : decode(match[1] ?? match[2] ?? match[3]);
+}
+
+/** Public sitemap entries must return HTML and remain indexable at their own address. */
+function publicPageProblems(path, response) {
+  const problems = [];
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!/^(?:text\/html|application\/xhtml\+xml)(?:\s*;|$)/i.test(contentType)) {
+    problems.push(`content-type is ${contentType || "missing"}, expected HTML`);
+  }
+
+  const canonicals = [...response.body.matchAll(/<link\b[^>]*>/gi)]
+    .map(([tag]) => tag)
+    .filter((tag) => (htmlAttribute(tag, "rel") ?? "").toLowerCase().split(/\s+/).includes("canonical"));
+  if (canonicals.length !== 1) {
+    problems.push(`${String(canonicals.length)} canonical links, expected one`);
+  } else {
+    const canonical = htmlAttribute(canonicals[0], "href") ?? "";
+    try {
+      const target = new URL(canonical);
+      const trim = (value) => value.replace(/\/$/, "");
+      if (trim(target.pathname) !== trim(path) || target.search !== "" || target.hash !== "") {
+        problems.push(`canonical points to ${canonical}`);
+      } else if (target.origin !== origin && !origin.startsWith("http://localhost")) {
+        problems.push(`canonical host is ${target.origin}`);
+      }
+    } catch {
+      problems.push(`canonical is not an absolute URL: ${canonical || "missing href"}`);
+    }
+  }
+
+  const excludesIndex = (value) => /(?:^|[\s,:])(?:noindex|none)(?=$|[\s,;])/i.test(value);
+  for (const [tag] of response.body.matchAll(/<meta\b[^>]*>/gi)) {
+    const name = (htmlAttribute(tag, "name") ?? "").toLowerCase();
+    if (["robots", "googlebot", "bingbot"].includes(name) && excludesIndex(htmlAttribute(tag, "content") ?? "")) {
+      problems.push(`${name} meta excludes indexing`);
+    }
+  }
+  const header = response.headers.get("x-robots-tag") ?? "";
+  if (excludesIndex(header)) problems.push(`X-Robots-Tag excludes indexing: ${header}`);
+
+  return problems;
+}
+
 /**
  * What a link unfurls to on X, Slack, Discord, LinkedIn and in iMessage.
  *
@@ -359,6 +408,7 @@ async function checkEveryPage(locations) {
   heading(`every sitemap page (${String(locations.length)})`);
   const titles = new Map();
   const incomplete = [];
+  let publicPageFailures = 0;
   let longDescriptions = 0;
   const queue = [...locations];
 
@@ -368,8 +418,14 @@ async function checkEveryPage(locations) {
       const path = new URL(location).pathname;
       const response = await get(path);
       if (response.status !== 200) {
+        publicPageFailures += 1;
         fail(`${path} returns 200`, `HTTP ${String(response.status)}`);
         continue;
+      }
+      const publicProblems = publicPageProblems(path, response);
+      if (publicProblems.length > 0) {
+        publicPageFailures += 1;
+        fail(`${path} is canonical, indexable HTML`, publicProblems.join(", "));
       }
       const problems = shareCardProblems(path, response.body);
       if (problems.length > 0) incomplete.push(`${path} (${problems.join(", ")})`);
@@ -386,6 +442,8 @@ async function checkEveryPage(locations) {
     }
   };
   await Promise.all(Array.from({ length: 8 }, worker));
+
+  if (publicPageFailures === 0) pass("every sitemap page is canonical, indexable HTML");
 
   if (incomplete.length === 0) pass("every page has a complete share card");
   else {
@@ -443,6 +501,7 @@ async function checkRouting() {
     const insecure = await fetch(origin.replace(/^https:/, "http:") + "/", {
       redirect: "manual",
       headers: { "user-agent": "adcode-seo-audit" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     }).catch(() => null);
     const location = insecure?.headers.get("location") ?? "";
 
@@ -502,8 +561,8 @@ async function checkMachineText() {
  *
  * A Search Console *domain* property is verified by a TXT record, and one on
  * `bluethenics.com` covers `adcode.bluethenics.com` - which is how this site is actually
- * verified. Checking only for the meta tag reported "not verified" about a property that
- * had been collecting data for a month.
+ * configured. A public token is evidence of verification setup; this audit cannot read
+ * the account's ownership state, indexing coverage, or search performance.
  */
 async function txtRecordsUpward(host) {
   const labels = host.split(".");
@@ -524,24 +583,26 @@ async function checkVerification() {
 
   const googleDns = txt.find((record) => record.value.startsWith("google-site-verification="));
   if (/name="google-site-verification"/.test(response.body)) {
-    pass("Search Console ownership verified", "meta tag");
+    pass("Search Console verification token present", "meta tag; account and indexing status not checked");
   } else if (googleDns !== undefined) {
-    pass("Search Console ownership verified", `DNS TXT on ${googleDns.name}`);
+    pass("Search Console verification token present", `DNS TXT on ${googleDns.name}; account and indexing status not checked`);
   } else if (host === "localhost") {
-    pass("Search Console ownership verified", "not checkable on localhost - DNS proves it in production");
+    pass("Search Console verification evidence", "not checked on localhost");
   } else {
     fail(
-      "Search Console ownership verified",
-      "no meta tag and no google-site-verification TXT record - SETUP.md step 21",
+      "Search Console verification token present",
+      "no public meta/DNS token found; other verification methods and account status not checked - SETUP.md step 21",
     );
   }
 
   /*
-   * Bing is a warning, not a failure: IndexNow already hands it every URL, and Bing
-   * Webmaster Tools imports the property from Search Console in two clicks.
+   * A missing Bing meta tag does not prove the property is unverified: file or DNS
+   * verification may be in use. Only report what an anonymous request can establish.
    */
-  if (/name="msvalidate\.01"/.test(response.body)) pass("Bing Webmaster Tools verified", "meta tag");
-  else warn("Bing Webmaster Tools verified", "sign in at bing.com/webmasters and import from Search Console");
+  if (/name="msvalidate\.01"/.test(response.body))
+    pass("Bing verification meta tag present", "account and indexing status not checked");
+  else
+    warn("Bing verification evidence", "no meta tag found; DNS/file verification and account status not checked");
 }
 
 async function checkParentLink() {
@@ -562,6 +623,7 @@ async function checkParentLink() {
 
   const parent = await fetch("https://bluethenics.com/", {
     headers: { "user-agent": "adcode-seo-audit" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
     .then(async (r) => ({ status: r.status, body: await r.text() }))
     .catch(() => ({ status: 0, body: "" }));

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import Home from "../src/app/page";
 import { MarketPriceChart } from "../src/components/MarketPriceChart";
 import { AdPreviewMark } from "../src/components/AdPreviewMark";
+import { WEB_VERSION_URL } from "../src/lib/site";
 import {
   campaignNumbers,
   dollarsToMicrosExact,
@@ -93,7 +94,7 @@ describe("landing page focus", () => {
     expect(markup).not.toContain('class="market-panel"');
   });
 
-  it("tells a developer how far away a working app is before asking anything else", () => {
+  it("offers installation and browser access before the advertiser journey", () => {
     const markup = renderToStaticMarkup(<Home />);
     const at = (needle: string): number => {
       const index = markup.indexOf(needle);
@@ -101,15 +102,16 @@ describe("landing page focus", () => {
       return index;
     };
 
-    // The hero's second button explains the product instead of switching audience...
-    expect(markup).toContain('href="#how-it-works"');
-    expect(markup).toContain("See how it works");
-    expect(markup).not.toContain("Advertise to developers");
-    // ...and advertisers keep a tracked line in the hero and their whole section.
-    expect(markup).toContain("Start a campaign from $1");
-    // Proof, then steps, then the developer story's close, then the advertiser half.
-    expect(at('class="hero-proof"')).toBeLessThan(at('id="how-it-works"'));
-    expect(at('id="how-it-works"')).toBeLessThan(at('class="closing-cta'));
+    // Before the product demonstration, visitors can install or open the real web app.
+    const hero = markup.slice(at('id="earn"'), at('class="app-showcase"'));
+    const links = [...hero.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)];
+    expect(links.map(([, href]) => href)).toEqual([WEB_VERSION_URL, "/versions"]);
+    expect(links[0]?.[2]).toContain("Open ADCode in browser");
+    expect(links[1]?.[2]).toContain("Get the desktop app");
+
+    // Advertising remains reachable after the developer's closing install action.
+    expect(at('class="hero-proof"')).toBeLessThan(at('class="closing-cta'));
     expect(at('class="closing-cta')).toBeLessThan(at('id="advertise"'));
+    expect(at('id="advertise"')).toBeLessThan(at('href="/portal"'));
   });
 });

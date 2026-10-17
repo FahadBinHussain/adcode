@@ -24,11 +24,14 @@ import { createSupabaseStore } from "@adcode/api/adapters/supabaseStore.ts";
 import { createFirebaseJwksVerifier } from "@adcode/api/adapters/firebaseJwks.ts";
 import { createDodoProvider } from "@adcode/api/adapters/dodoPayments.ts";
 import { createWebsiteAnalyticsStore } from "@adcode/api/adapters/websiteAnalyticsStore.ts";
+import { mailingStore } from "./mailing";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const handleApiRequest = createFetchHandler({
   tagflow: { country: () => getCloudflareContext().cf?.country },
   websiteAnalytics: createWebsiteAnalyticsStore(),
+  mailing: mailingStore,
+  mailingWebhookSecret: () => process.env["RESEND_WEBHOOK_SECRET"],
   store: createSupabaseStore(),
   verifier: createFirebaseJwksVerifier(),
   payments: createDodoProvider(),

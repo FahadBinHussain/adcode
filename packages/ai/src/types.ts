@@ -206,14 +206,33 @@ export type AgentEvent =
   /**
    * What one request to the provider cost in tokens, for the usage totals - never recorded
    * in the conversation. `estimated` when the provider did not say and the agent counted.
+   * `cachedTokens` is the part of `inputTokens` the provider read back from its prompt cache,
+   * present only when the provider reported it.
    */
-  | { readonly kind: "usage"; readonly inputTokens: number; readonly outputTokens: number; readonly estimated: boolean };
+  | {
+      readonly kind: "usage";
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+      readonly cachedTokens?: number;
+      readonly estimated: boolean;
+    };
 
 export type StopReason = "end-turn" | "tool-use" | "max-tokens" | "refusal" | "cancelled";
 
 export interface ProviderRequest {
   readonly model: string;
   readonly system: string;
+  /**
+   * This request is one step of a conversation that will be sent again, longer, so its prefix
+   * is worth caching. One-off requests (a completion, a summary) leave it out: writing a cache
+   * entry costs a quarter more than plain input, repaid only when a later request reads it.
+   *
+   * `stableSystem` is how many leading characters of `system` read the same on every step:
+   * the instructions, ahead of the host context read fresh each round-trip (the cursor line,
+   * a preview that started). The system breakpoint goes there, so a changed context costs the
+   * history's cache but not the tools' and instructions'.
+   */
+  readonly cache?: { readonly stableSystem: number };
   readonly messages: readonly Message[];
   readonly tools: readonly ToolDefinition[];
   readonly maxTokens: number;
@@ -230,8 +249,11 @@ export type ProviderEvent =
   | { readonly kind: "tool-call"; readonly call: ToolCallBlock }
   /** One streamed fragment of a call's JSON arguments, passed through as it arrives. */
   | { readonly kind: "tool-input"; readonly index: number; readonly id: string; readonly name: string; readonly fragment: string }
-  /** The provider's own count for this request, when it reports one. At most once, before `stop`. */
-  | { readonly kind: "usage"; readonly inputTokens: number; readonly outputTokens: number }
+  /**
+   * The provider's own count for this request, when it reports one. At most once, before `stop`.
+   * `inputTokens` is everything the request carried; `cachedTokens` the part of it read from cache.
+   */
+  | { readonly kind: "usage"; readonly inputTokens: number; readonly outputTokens: number; readonly cachedTokens?: number }
   | { readonly kind: "stop"; readonly reason: StopReason; readonly detail?: string };
 
 export interface Provider {

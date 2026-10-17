@@ -229,7 +229,7 @@ export function LandingBidBuilder() {
         </div>
 
         <div className="bid-total"><span><small>Estimated maximum</small><strong>{numbers === null ? "—" : formatUsdMicros(numbers.budgetMicros)}</strong></span><p>Delivery depends on demand. Your creative is reviewed before it can run.</p></div>
-        <button className="bid-checkout" type="submit" disabled={busy || loading}>{busy ? (status ?? "Preparing…") : loading ? "Loading account…" : user === null ? "Sign in to continue" : "Continue to secure checkout"}<span aria-hidden="true">→</span></button>
+        <button className="bid-checkout" type="submit" disabled={busy || loading} aria-busy={busy || loading}>{busy ? (status ?? "Preparing…") : loading ? "Loading account…" : user === null ? "Sign in to continue" : "Continue to secure checkout"}<span aria-hidden="true">→</span></button>
         {user === null && <p className="bid-provider">Sign in first, then review your payment at checkout. Your form stays filled in.</p>}
         <p className="bid-provider">Checkout by Dodo Payments · Credits are added only after a signed payment confirmation.</p>
       </form>

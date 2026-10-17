@@ -61,6 +61,7 @@ function mergeRow(into: UsageRow[], row: UsageRow): UsageRow[] {
     requests: base.requests + row.requests,
     inputTokens: base.inputTokens + row.inputTokens,
     outputTokens: base.outputTokens + row.outputTokens,
+    cachedTokens: (base.cachedTokens ?? 0) + (row.cachedTokens ?? 0),
     estimatedRequests: base.estimatedRequests + row.estimatedRequests,
     pricedRequests: base.pricedRequests + row.pricedRequests,
     costMicros: base.costMicros + row.costMicros,

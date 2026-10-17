@@ -5,6 +5,8 @@
  * quiet, a bug here is obvious the first time anyone calls the endpoint. All the logic
  * worth testing hard lives in the modules this one wires together.
  */
+import { UNSUBSCRIBE_TOKEN, type MailingStore } from "./mailing.ts";
+import { verifyMailingWebhook } from "./mailingDelivery.ts";
 import type { WorkerSecrets } from "./workerSecrets.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
@@ -255,6 +257,8 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 export interface ApiOptions {
   tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined; workerSecrets?: WorkerSecrets };
   websiteAnalytics?: WebsiteAnalyticsStore;
+  mailing?: MailingStore;
+  mailingWebhookSecret?: () => string | undefined;
   port?: number;
   store?: Store;
   verifier?: TokenVerifier;
@@ -544,6 +548,52 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
       return;
     }
 
+    if (path === "/v1/email/unsubscribe") {
+      const token = url.searchParams.get("token") ?? "";
+      if (!UNSUBSCRIBE_TOKEN.test(token)) { send(res, 400, { error: "invalid-link" }, cors); return; }
+      if (!options.mailing) { send(res, 503, { error: "mailing-unavailable" }, cors); return; }
+      const htmlHeaders = {
+        "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        "x-robots-tag": "noindex, nofollow",
+      };
+      const shell = (content: string) => '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADCode email preferences</title><body style="margin:0;background:#f1efea;color:#292820;font:16px/1.7 Arial,Helvetica,sans-serif"><main style="max-width:480px;margin:12vh auto;padding:28px"><p style="font-weight:bold">adcode.</p>' + content + '</main></body></html>';
+      if (req.method === "GET") {
+        res.writeHead(200, htmlHeaders);
+        res.end(shell('<h1>Make room in your inbox.</h1><p>Stop ADCode product updates and project reminders. Your account stays just as it is.</p><form method="post" action="?token=' + token + '"><button style="padding:14px 24px;background:#292820;color:#fcfbf7;border:0;border-radius:8px;font:inherit;cursor:pointer">Unsubscribe</button></form>'));
+      } else if (req.method === "POST") {
+        const form = new URLSearchParams(await readBody(req));
+        await options.mailing.unsubscribe(token, clock.now());
+        if (form.get("List-Unsubscribe") === "One-Click") {
+          res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+          res.end("");
+          return;
+        }
+        res.writeHead(200, htmlHeaders);
+        res.end(shell('<h1>You are unsubscribed.</h1><p>You will no longer receive ADCode product updates or project reminders. You can change this in your account whenever you like.</p><a href="/dashboard#email-preferences" style="color:#292820">Return to ADCode</a>'));
+      } else { send(res, 405, { error: "method-not-allowed" }, { ...cors, allow: "GET, POST" }); }
+      return;
+    }
+    if (path === "/v1/email/webhook" && req.method === "POST") {
+      const secret = options.mailingWebhookSecret?.();
+      if (!options.mailing || !secret) { send(res, 503, { error: "mailing-unavailable" }, cors); return; }
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw) > 200_000 || !verifyMailingWebhook(raw, {
+        "svix-id": firstHeader(req.headers["svix-id"]),
+        "svix-timestamp": firstHeader(req.headers["svix-timestamp"]),
+        "svix-signature": firstHeader(req.headers["svix-signature"]),
+      }, secret, clock.now())) { send(res, 400, { error: "invalid-signature" }, cors); return; }
+      let event: unknown;
+      try { event = JSON.parse(raw); } catch { send(res, 400, { error: "malformed-event" }, cors); return; }
+      const record = event as { type?: unknown; data?: { email_id?: unknown } };
+      if (typeof record?.type !== "string" || typeof record.data?.email_id !== "string") {
+        send(res, 400, { error: "malformed-event" }, cors); return;
+      }
+      await options.mailing.event(firstHeader(req.headers["svix-id"])!, record.type, record.data.email_id, clock.now());
+      send(res, 200, { received: true }, { ...cors, "cache-control": "no-store" });
+      return;
+    }
     const jsonBodyOr400 = async (): Promise<unknown | undefined> => {
       try {
         return JSON.parse(await readBody(req)) as unknown;
@@ -691,7 +741,26 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
      * below still re-checks it. A client that lies to itself about this reaches endpoints
      * that refuse it anyway.
      */
+    if (path === "/v1/email-preferences" && (req.method === "GET" || req.method === "PATCH")) {
+      if (!options.mailing) { send(res, 503, { error: "mailing-unavailable" }, cors); return; }
+      if (req.method === "PATCH") {
+        const raw = await jsonBodyOr400();
+        if (raw === undefined) return;
+        if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
+            typeof (raw as Record<string, unknown>)["subscribed"] !== "boolean" ||
+            Object.keys(raw).some((key) => key !== "subscribed")) {
+          send(res, 400, { error: "malformed-preferences" }, cors); return;
+        }
+        const prefs = await options.mailing.preferences(auth.uid);
+        if (!prefs.eligible) { send(res, 409, { error: "verified-email-required" }, cors); return; }
+        await options.mailing.consent(auth.uid, (raw as { subscribed: boolean }).subscribed, clock.now());
+      }
+      await options.mailing.touch(auth.uid, clock.now());
+      send(res, 200, await options.mailing.preferences(auth.uid), { ...cors, "cache-control": "no-store" });
+      return;
+    }
     if (path === "/v1/me" && req.method === "GET") {
+      if (options.mailing) await options.mailing.touch(auth.uid, clock.now()).catch(() => { console.error("Mailing return tracking unavailable"); });
       send(res, 200, { uid: auth.uid, isAdmin: auth.isAdmin }, cors);
       return;
     }

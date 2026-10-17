@@ -8,6 +8,7 @@ import { HeroVideo } from "./HeroVideo";
 export function AppShowcase() {
   return <figure className="app-showcase" id="product">
     <div className="showcase-stage">
+      <div className="home-demo-heading"><span>ADCode in action</span><span>Prompt → Plan → Build → Preview</span></div>
       <HeroVideo />
     </div>
     <figcaption><span>One sentence in. A planned, written and running game out.</span><span>Recorded in ADCode - the model&apos;s replies were scripted for the recording.</span></figcaption>

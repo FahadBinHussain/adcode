@@ -14,6 +14,9 @@
  *   `"summarized"` explicitly - with the default it would render a blank panel.
  * - `stop_reason: "refusal"` arrives as a normal HTTP 200 with possibly-empty content.
  *   Reading `content[0]` without checking it first is a crash on a successful response.
+ * - Nothing is cached unless asked. Without `cache_control` every agent step re-pays the
+ *   whole system prompt, tool list and history; `cacheBreakpoints` places the four the API
+ *   allows on what the next step will send again.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { effortFor } from "../effort.ts";
@@ -57,6 +60,74 @@ export interface AnthropicProviderDeps {
   readonly client?: Anthropic;
   /** What the catalogue knows about each model: the effort levels it lists, above all. */
   readonly traits?: TraitsLookup;
+}
+
+/** The most `cache_control` breakpoints one request may carry; a fifth is a 400. */
+export const MAX_CACHE_BREAKPOINTS = 4;
+
+const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
+
+/** A block that may carry a breakpoint: the API refuses one on an empty text block. */
+function cacheable(block: Anthropic.ContentBlockParam): boolean {
+  return block.type !== "text" || block.text.trim().length > 0;
+}
+
+/** The message with a breakpoint on its last block that can take one, or as it was. */
+function markLast(message: Anthropic.MessageParam): Anthropic.MessageParam {
+  if (typeof message.content === "string") return message;
+  const content = [...message.content];
+  for (let index = content.length - 1; index >= 0; index--) {
+    if (!cacheable(content[index]!)) continue;
+    content[index] = { ...content[index]!, cache_control: EPHEMERAL } as Anthropic.ContentBlockParam;
+    return { ...message, content };
+  }
+  return message;
+}
+
+/**
+ * The system prompt as blocks, with a breakpoint after the part that stays the same.
+ *
+ * The host context (cursor line, running commands, the preview) is read fresh every step,
+ * so it sits after the breakpoint: when it changes, the tools and instructions still come
+ * from cache. Blank prompts go as they were - the API refuses a breakpoint on empty text.
+ */
+function systemBlocks(system: string, stable: number | undefined): string | Anthropic.TextBlockParam[] {
+  if (system.trim().length === 0) return system;
+  const cut = stable !== undefined && stable > 0 && stable < system.length ? stable : system.length;
+  const fixed = system.slice(0, cut).trimEnd();
+  const fresh = system.slice(cut).trimStart();
+  if (fixed.length === 0) return [{ type: "text", text: system, cache_control: EPHEMERAL }];
+  return [
+    { type: "text", text: fixed, cache_control: EPHEMERAL },
+    ...(fresh.length === 0 ? [] : [{ type: "text" as const, text: fresh }]),
+  ];
+}
+
+/**
+ * Breakpoints on what the next request will send again, at most four in all.
+ *
+ * Caching is a prefix match over tools, then system, then messages, and a cache entry is
+ * only written where a breakpoint sits. So: one after the tool list, one after the stable
+ * instructions, one at the end of the newest message - which writes this step's prefix for
+ * the next one - and one where the previous request ended, the last user message before the
+ * newest, which reads back what that request wrote. Looking back from the newest breakpoint
+ * alone reaches only twenty blocks, and one step of parallel tool calls can be more.
+ */
+export function cacheBreakpoints(
+  tools: readonly Anthropic.Tool[],
+  messages: readonly Anthropic.MessageParam[],
+): { tools: Anthropic.Tool[]; messages: Anthropic.MessageParam[] } {
+  const marked = [...messages];
+  const last = marked.length - 1;
+  if (last >= 0) marked[last] = markLast(marked[last]!);
+  for (let index = last - 1; index >= 0; index--) {
+    if (marked[index]!.role !== "user") continue;
+    marked[index] = markLast(marked[index]!);
+    break;
+  }
+  const listed = [...tools];
+  if (listed.length > 0) listed[listed.length - 1] = { ...listed[listed.length - 1]!, cache_control: EPHEMERAL };
+  return { tools: listed, messages: marked };
 }
 
 interface ToolUseAccumulator {
@@ -148,7 +219,8 @@ async function* readStream(stream: ClaudeStream, signal: AbortSignal, reading: {
 
   const final = await stream.finalMessage();
 
-  // Cached input is still input the request carried; it is counted with the rest.
+  // Cached input is still input the request carried; it is counted with the rest, and the
+  // part read back from cache is said separately, since it is billed at a tenth.
   const usage = (final as { usage?: Record<string, unknown> }).usage;
   if (typeof usage === "object" && usage !== null) {
     const count = (key: string): number => (typeof usage[key] === "number" ? (usage[key] as number) : 0);
@@ -156,6 +228,7 @@ async function* readStream(stream: ClaudeStream, signal: AbortSignal, reading: {
       kind: "usage",
       inputTokens: count("input_tokens") + count("cache_read_input_tokens") + count("cache_creation_input_tokens"),
       outputTokens: count("output_tokens"),
+      cachedTokens: count("cache_read_input_tokens"),
     };
   }
 
@@ -196,19 +269,18 @@ export function createAnthropicProvider(deps: AnthropicProviderDeps): Provider {
       const effort = supports.adaptive
         ? effortFor(request.effort, deps.traits?.(request.model)?.effortLevels ?? CLAUDE_LEVELS)
         : undefined;
-      const params = (size: number) => ({
-        model: request.model,
-        max_tokens: size,
-        system: request.system,
-        // Adaptive is the only on-mode, and on 4.7 and later `summarized` is what makes the
-        // trace widget show anything at all. Older models are asked plainly.
-        ...(supports.adaptive
-          ? { thinking: supports.display ? { type: "adaptive" as const, display: "summarized" as const } : { type: "adaptive" as const } }
-          : {}),
-        ...(effort === undefined ? {} : { output_config: { effort: effort as "low" | "medium" | "high" | "max" } }),
-        messages: request.messages.map((message) => ({
+      // The history and tools, translated once: the same for every attempt below, and byte for
+      // byte what the next step sends again up to its new turn. Marked for caching only when
+      // the request is a conversation step - a one-off would pay for a write nobody reads.
+      const translated = {
+        tools: request.tools.map((tool): Anthropic.Tool => ({
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.inputSchema as Anthropic.Tool["input_schema"],
+        })),
+        messages: request.messages.map((message): Anthropic.MessageParam => ({
           role: message.role,
-          content: message.content.map((block) => {
+          content: message.content.map((block): Anthropic.ContentBlockParam => {
             if (block.type === "text") return { type: "text" as const, text: block.text };
             // Images arrive on the user turn that attached them, or after the tool
             // results of the step that took them; the agent loop retires older ones.
@@ -238,11 +310,21 @@ export function createAnthropicProvider(deps: AnthropicProviderDeps): Provider {
             };
           }),
         })),
-        tools: request.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema as Anthropic.Tool["input_schema"],
-        })),
+      };
+      const cached = request.cache === undefined ? translated : cacheBreakpoints(translated.tools, translated.messages);
+      const system = request.cache === undefined ? request.system : systemBlocks(request.system, request.cache.stableSystem);
+      const params = (size: number) => ({
+        model: request.model,
+        max_tokens: size,
+        system,
+        // Adaptive is the only on-mode, and on 4.7 and later `summarized` is what makes the
+        // trace widget show anything at all. Older models are asked plainly.
+        ...(supports.adaptive
+          ? { thinking: supports.display ? { type: "adaptive" as const, display: "summarized" as const } : { type: "adaptive" as const } }
+          : {}),
+        ...(effort === undefined ? {} : { output_config: { effort: effort as "low" | "medium" | "high" | "max" } }),
+        messages: cached.messages,
+        tools: cached.tools,
       });
 
       // A model whose output cap is below the request answers "max_tokens: 16384 > 8192"

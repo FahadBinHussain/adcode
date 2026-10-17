@@ -1,9 +1,10 @@
 import { FAQ } from "@/lib/schema";
+import { DEFAULT_CREDIT_PLAN } from "@adcode/api/src/credits.ts";
 import { allPosts } from "@/lib/posts";
 import { docsBySection } from "@/lib/docs";
 import { LANDINGS, landingPath, landingPlainText } from "@/lib/landings";
 import { allReleases } from "@/lib/releases";
-import { PARENT, SITE, SOURCE, url, ECONOMICS, formatMicros } from "@/lib/site";
+import { PARENT, SITE, SOURCE, WEB_VERSION_URL, url, ECONOMICS, formatMicros } from "@/lib/site";
 
 /**
  * `/llms-full.txt` - the whole site as plain text, in one request.
@@ -96,12 +97,18 @@ short index, with links but no bodies, is at ${url("/llms.txt")}.
 
 Facts, stated once:
 
-- ${SITE.name} is a free, ad-supported AI code editor for Windows and Linux. macOS is not published yet.
+- ${SITE.name} is a free, ad-supported AI code editor in your browser and on Windows and Linux. A native macOS desktop build is not published yet.
+- Open the browser app at ${WEB_VERSION_URL}. Vibe mode runs in a private cloud workspace,
+  with one hour of cloud time every ${DEFAULT_CREDIT_PLAN.sessionHours} hours.
+- Included partner AI needs no API key: ${DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US")} credits every ${DEFAULT_CREDIT_PLAN.sessionHours} hours,
+  up to ${DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US")} a week. At the limit, tasks wait for a refill.
+  Your own provider key follows that provider's billing; local models run in the desktop app.
 - It costs the developer nothing. There is no subscription, trial, or paid tier.
 - Advertisers bid in a second-price auction from ${formatMicros(ECONOMICS.floorBlockMicros, 2)}
   per 500 impressions. The developer receives ${ECONOMICS.revSharePercent}% of the clearing price.
 - Ads are targeted with a fixed vocabulary of 45 generic tags such as the language and
-  framework in use. File contents, file paths, and project names never leave the machine.
+  framework in use. Source code, paths and project names are not used for ad targeting.
+  AI requests and browser cloud workspaces process project data separately; see the privacy policy.
 - Earnings are recorded on an append-only ledger. Entries are never edited or deleted;
   corrections are separate reversals that reference the original.
 - ${SITE.name} is published by ${PARENT.name} (${PARENT.url}), an independent software

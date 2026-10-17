@@ -254,6 +254,9 @@
   background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   font-size: 0.86em;
   font-weight: 400;
+  /* File paths and addresses have no spaces: without this one long path ran past the column
+     at 1440 and made the transcript 895px wide on a 390px phone. */
+  overflow-wrap: anywhere;
 }
 
 .chat-card .chat-bubble .chat-codeblock {

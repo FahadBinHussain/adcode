@@ -118,6 +118,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
     actions: [command("ai.showUsage", "Show usage")],
     keywords: ["usage", "tokens", "token count", "cost", "spend", "spending", "billing", "how much", "price", "per model", "budget", "activity", "streak", "heatmap", "calendar", "active days"],
   },
+  "ai.promptCaching": {
+    actions: [command("ai.showCacheSavings", "Show cached tokens")],
+    keywords: ["prompt caching", "prompt cache", "cache", "cached", "cached tokens", "cache hits", "cache_control", "cheaper", "save tokens", "save money", "repeated context", "long sessions", "faster replies", "cost less"],
+  },
   "ai.credits": {
     actions: [command("ai.showCredits", "Show credits")],
     keywords: ["credits", "free credits", "ai credits", "5 hour", "five hour", "session limit", "weekly limit", "usage limit", "refill", "reset", "claude max", "allowance", "daily allowance", "quota", "out of credits", "heabsy", "rate"],
@@ -129,6 +133,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   "ai.subagents": {
     actions: [command("ai.delegate", "Split a task across helpers")],
     keywords: ["sub-agent", "subagent", "sub agents", "helpers", "agents start agents", "spawn agent", "delegate", "split task", "divide task", "parallel", "fan out", "task tool", "explore agent"],
+  },
+  "ai.agentRules": {
+    actions: [command("ai.agentRules", "Open the project rules"), command("ai.agentRulesUser", "Open my rules for every project")],
+    keywords: ["permissions", "permission rules", "allow", "deny", "ask first", "approval", "block a command", "git push", "hooks", "pre tool use", "post tool use", "stop hook", "session start", "settings.json", ".adcode/settings.json", "unattended", "guardrails", "safety", "claude code hooks", "lint after edit"],
   },
   "ai.tagflow": {
     actions: [command("ai.tagflow", "Choose included AI")],
@@ -575,7 +583,7 @@ const DESKTOP_ONLY: ReadonlySet<string> = new Set([
   "adcode.git.gutterDiff", "adcode.git.blame", "adcode.git.fileTimeline", "adcode.git.mergeConflict",
   "adcode.session.autoSave", "adcode.session.localFileHistory", "adcode.session.crashRecovery",
   "adcode.updates.auto", "adcode.appearance.zoom",
-  "ai.inlineEdit", "adcode.ai.inlineCompletion", "adcode.ai.terminalAgentDetection", "ai.terminalTeam", "adcode.ai.autoContinue", "adcode.ai.mcpServer",
+  "ai.inlineEdit", "adcode.ai.inlineCompletion", "adcode.ai.terminalAgentDetection", "ai.terminalTeam", "adcode.ai.autoContinue", "adcode.ai.mcpServer", "ai.agentRules",
   "workbench.modes", "workbench.openIde", "workbench.aiContext", "workbench.terminal", "workbench.run", "workbench.collab",
   "workbench.imagePreview", "workbench.webVersion", "gestures.multiSelect", "structure.popup", "structure.cssLinks",
 ]);

@@ -1,5 +1,6 @@
 import Link from "@/components/IntentLink";
 import { docsBySection } from "@/lib/docs";
+import { DocsNavigation } from "./DocsNavigation";
 
 interface Props {
   /**
@@ -32,6 +33,7 @@ export async function DocsSidebar({ currentDoc, reading }: Props) {
 
   return (
     <aside className="docs-sidebar" aria-label="Documentation navigation">
+      <DocsNavigation>
       <div className="docs-sidebar-primary">
         <h2>Documentation</h2>
         <Link href="/docs" aria-current={onIndex ? "page" : undefined} className="docs-nav-all">
@@ -90,6 +92,7 @@ export async function DocsSidebar({ currentDoc, reading }: Props) {
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
       </section>
+      </DocsNavigation>
     </aside>
   );
 }

@@ -89,7 +89,7 @@ describe("composer usage meters", () => {
     const view = summarizeUsage([{ day: "2026-10-11", provider: "custom", model: "my-model", source: "chat", requests: 3, inputTokens: 15_000, outputTokens: 5_000, costMicros: 0, estimatedRequests: 1, pricedRequests: 0 }], "today", now);
     const [usage, requests] = composerUsageModels(view, allowance(), false);
     expect(usage).toMatchObject({ percent: null, value: "—", detail: "≈ 20k today" });
-    expect(requests).toMatchObject({ percent: null, value: "3", detail: "Today" });
+    expect(requests).toMatchObject({ percent: null, value: "3", detail: "3 today" });
     expect(usage.tooltip).toContain("does not report an account limit");
   });
 

@@ -11,6 +11,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Bundle the email formatter: this checkout cannot create filesystem junctions.
+  transpilePackages: ["prettier"],
 
   /*
    * Required, not left over from the Cloud Run deployment this replaced. The adapter does

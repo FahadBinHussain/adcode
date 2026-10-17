@@ -9,7 +9,7 @@ import {
   relatedLandings,
 } from "@/lib/landings";
 import { breadcrumbs, faqPage, landingArticle } from "@/lib/schema";
-import { SITE } from "@/lib/site";
+import { SITE, WEB_VERSION_URL } from "@/lib/site";
 
 /**
  * One renderer for every landing page.
@@ -88,7 +88,8 @@ export function LandingArticle({ page }: { page: Landing }) {
                   subscription" instead of reading nine unlabelled cells - and it is also
                   what a search engine needs to lift a single row as an answer.
                 */}
-                <div className="table-scroll">
+                <p className="comparison-scroll-note">Scroll sideways to compare all columns.</p>
+                <div className="table-scroll" role="region" aria-label="Feature comparison" tabIndex={0}>
                   <table className="landing-table">
                     <caption className="sr-only">
                       A feature-by-feature comparison of {comparison.subject} and {SITE.name}
@@ -141,11 +142,13 @@ export function LandingArticle({ page }: { page: Landing }) {
             <section className="landing-cta">
               <h2>Try it</h2>
               <p>
-                {SITE.name} installs with one command on Windows and Linux, and
-                updates itself from then on.
+                Start {SITE.name} in your browser, or download the desktop editor for Windows and Linux.
               </p>
               <div className="landing-cta-actions">
-                <Link className="btn btn-primary" href="/versions">
+                <a className="btn btn-primary" href={WEB_VERSION_URL}>
+                  Open {SITE.name} in your browser
+                </a>
+                <Link className="btn btn-outline" href="/versions">
                   Download {SITE.name}
                 </Link>
                 <Link className="btn btn-outline" href="/docs">

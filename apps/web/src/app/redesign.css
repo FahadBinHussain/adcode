@@ -15,7 +15,7 @@
   --ink-raised: var(--card);
   --text: light-dark(#26251e, #edece7);
   --muted: light-dark(#65645d, #a8a69d);
-  /* 4.5:1 or better on surface, card and control alike - it labels small text everywhere. */
+  /* At least 4.5:1 on the neutral surfaces and controls used for small labels. */
   --faint: light-dark(#6b6a62, #96948b);
   --on-ink: var(--text);
   --on-ink-muted: var(--muted);
@@ -26,6 +26,12 @@
   --control: light-dark(#eaeae4, #24221b);
   --control-hover: light-dark(#e0e0d8, #302e25);
   --selected: light-dark(#e3e3dc, #302e25);
+  /* Brand text and filled controls use separate tones to keep both readable. */
+  --brand: var(--text);
+  --brand-solid: var(--text);
+  --brand-contrast: var(--surface);
+  --brand-soft: var(--control);
+  /* Existing accent consumers expect a contrasting neutral foreground/fill pair. */
   --accent: var(--text);
   --accent-text: var(--surface);
   --money: light-dark(#14785a, #68d6b1);
@@ -310,7 +316,7 @@ button, input, select, textarea { font-family: inherit; }
 @media (max-width: 1100px) { .portal-overview { grid-template-columns: 1fr; grid-template-areas: "filters" "metrics" "balance" "activity" "spend"; } }
 /* Keep the complete count on one line, including when it gains another digit. */
 /* Restrained editorial styling, shared by both appearances. */
-h1, h2, h3, h4 { font-family: var(--font-body), -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: -.025em; }
+h1, h2, h3, h4 { font-family: var(--font-display), -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: -.025em; }
 .marketplace-nav { height: 64px; border-bottom-color: transparent; background: var(--surface); backdrop-filter: none; }
 .marketplace-brand { font-size: 20px; font-weight: 600; letter-spacing: -.035em; }
 .glass-nav-link, .glass-auth-control { color: var(--text); font-weight: 400; }
@@ -320,7 +326,7 @@ h1, h2, h3, h4 { font-family: var(--font-body), -apple-system, BlinkMacSystemFon
 .studio-hero { padding-top: clamp(72px, 8vw, 120px); }
 .studio-hero-top { display: grid; padding-bottom: 48px; }
 .studio-hero .marketplace-hero-copy { max-width: 680px; }
-.studio-hero h1 { font-family: var(--font-body), sans-serif; font-size: clamp(27px, 2.35vw, 34px); font-weight: 400; letter-spacing: -.025em; line-height: 1.25; }
+.studio-hero h1 { font-family: var(--font-display), sans-serif; font-size: clamp(27px, 2.35vw, 34px); font-weight: 400; letter-spacing: -.025em; line-height: 1.25; }
 .studio-hero .marketplace-hero-copy > p { margin-top: 18px; color: var(--muted); font-size: 14px; line-height: 1.7; }
 .studio-hero .hero-install { margin-top: 24px; gap: 8px; }
 .studio-hero .marketplace-hero-copy > small { margin-top: 12px; font-size: 11px; }
@@ -708,3 +714,26 @@ body:has(.auth-screen) .website-consent { position: static; margin: 24px auto; b
   .free-plan { padding-block: 56px 0; }
   .free-plan-grid { grid-template-columns: 1fr; margin-top: 28px; }
 }
+
+/* Shared interaction feedback across marketing pages, docs, and account controls.
+   Selected colors switch together; focus and disabled states stay immediate. */
+:root { --interaction-ease: cubic-bezier(.23, 1, .32, 1); }
+:where(button, .btn, .glass-submit, .glass-portal-button, .nav-download, .marketplace-primary, .marketplace-secondary, .download-card, .docs-pager-link) {
+  transition-property: opacity, transform, box-shadow;
+  transition-duration: 160ms;
+  transition-timing-function: var(--interaction-ease);
+}
+:where(button, a, input, select, textarea, summary):focus-visible { transition: none; }
+:where(button, .btn, .glass-submit):disabled { transform: none; box-shadow: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :where(button, .btn, .glass-submit, .glass-portal-button, .nav-download, .marketplace-primary, .marketplace-secondary):not(:disabled):not([aria-disabled="true"]):active { transform: scale(.98); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(button, .btn, .glass-submit, .glass-portal-button, .nav-download, .marketplace-primary, .marketplace-secondary) { transition: none; }
+  :where(button, .btn, .glass-submit, .glass-portal-button, .nav-download, .marketplace-primary, .marketplace-secondary):active { transform: none; }
+}
+
+/* One explicit advertiser entry replaces the former portal pair. */
+.marketplace-nav .glass-portal-button.header-advertise { display: inline-flex; }
+.marketplace-nav .header-advertise > span { font-size: 12px; }
+.marketplace-nav .header-advertise > span::after { content: none; }

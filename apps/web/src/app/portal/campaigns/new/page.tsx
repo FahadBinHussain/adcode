@@ -57,6 +57,13 @@ export function NewCampaignForm() {
   const [cpm, setCpm] = useState(formatMicros(ECONOMICS.floorBlockMicros, 2).replace("$", ""));
   const [campaignName, setCampaignName] = useState("");
 
+  const checklist = [
+    { label: "Brand and message", done: brand.trim().length > 0 && headline.trim().length > 0 },
+    { label: "Logo uploaded", done: logo !== null },
+    { label: "HTTPS destination", done: /^https:\/\/[^/\s]+\.[^/\s]+/.test(clickUrl) },
+    { label: "Budget and bid set", done: dollarsToMicros(budget) !== null && Number(budget) >= 1 && dollarsToMicros(cpm) !== null && Number(cpm) >= Number(ECONOMICS.floorBlockMicros) / 1_000_000 },
+  ];
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<string | null>(null);
@@ -183,7 +190,7 @@ export function NewCampaignForm() {
   };
 
   return (
-    <form onSubmit={submit} className="campaign-builder">
+    <form onSubmit={submit} className="campaign-builder" aria-busy={busy}>
       <div className="campaign-builder-form">
         {error !== null && (
           <div className="notice" data-tone="error" role="alert">
@@ -193,7 +200,7 @@ export function NewCampaignForm() {
 
         <section className="ios-card">
           <header className="ios-card-head">
-            <h2>Your card</h2>
+            <span className="portal-step">01 / CREATIVE</span><h2>Your card</h2>
             <p>This is all a developer ever sees. It sits in the corner of their editor.</p>
           </header>
 
@@ -268,7 +275,7 @@ export function NewCampaignForm() {
 
         <section className="ios-card">
           <header className="ios-card-head">
-            <h2>Budget and reach</h2>
+            <span className="portal-step">02 / DELIVERY</span><h2>Budget and reach</h2>
             <p>Serving stops the moment the budget is spent. There is no overrun.</p>
           </header>
 
@@ -287,6 +294,9 @@ export function NewCampaignForm() {
             />
           </div>
 
+          <div className="portal-budget-presets" role="group" aria-label="Budget shortcuts">
+              {["10.00", "50.00", "100.00", "250.00"].map(amount => <button key={amount} type="button" aria-pressed={budget === amount} onClick={() => setBudget(amount)} disabled={busy}>${Number(amount)}</button>)}
+            </div>
           <div className="field">
             <label>Who sees it</label>
             <span className="field-hint">
@@ -356,10 +366,10 @@ export function NewCampaignForm() {
 
       {/* Sticky on a wide screen, because the whole point is watching it change as you
           type; it falls back to sitting above the form on a phone. */}
-      <aside className="campaign-builder-preview">
+      <aside className="campaign-builder-preview" aria-label="Ad preview and completion checklist">
         <div className="ios-card">
           <header className="ios-card-head">
-            <h2>How it looks</h2>
+            <span className="portal-step">LIVE PREVIEW</span><h2>Your ad, in context</h2>
             <p>Exactly what a developer sees — the same card, at the same size.</p>
           </header>
 
@@ -367,6 +377,10 @@ export function NewCampaignForm() {
             <SponsoredToastPreview brand={brand} headline={headline} body={body} logo={logo} />
           </div>
 
+          <div className="portal-checklist">
+            <h3>Ready to create <span>{checklist.filter(item => item.done).length}/{checklist.length}</span></h3>
+            <ul>{checklist.map(item => <li key={item.label} data-complete={item.done}><span aria-hidden="true">{item.done ? "✓" : "○"}</span>{item.label}<span className="sr-only">{item.done ? ": complete" : ": needed"}</span></li>)}</ul>
+          </div>
           <ul className="ios-group ios-group-plain">
             <li>
               <span>Budget</span>

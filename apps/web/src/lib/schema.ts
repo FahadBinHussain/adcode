@@ -12,6 +12,7 @@ import {
   PARENT,
   SAME_AS,
   SITE,
+  WEB_VERSION_URL,
   url,
   formatMicros,
   ECONOMICS,
@@ -134,11 +135,30 @@ export function softwareApplication(): Node {
       "Multiple integrated terminals",
       "Git: stage, commit, branches, blame, commit browser",
       "Workspace search and replace",
-      "Four AI providers or any OpenAI-compatible endpoint, on your own key",
+      "Included partner AI with credits, or your own provider key or local model",
       "Plain-English compiler errors",
       "Built-in preview server",
       "Live collaboration",
     ],
+  };
+}
+
+/** The browser application has its own URL and requirements, separate from desktop installers. */
+export function webApplication(): Node {
+  const origin = new URL("/", WEB_VERSION_URL).toString();
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "@id": new URL("/#app", origin).toString(),
+    name: "ADCode Web",
+    url: origin,
+    applicationCategory: "DeveloperApplication",
+    browserRequirements: "Requires JavaScript and a modern web browser.",
+    description: "Build with ADCode's AI agents in a private cloud workspace in your browser, with included AI credits and no download required.",
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    publisher: { "@id": url("/#organization") },
+    subjectOf: { "@type": "WebPage", "@id": url("/online-ai-code-editor") },
   };
 }
 
@@ -284,7 +304,7 @@ export const FAQ: readonly { q: string; a: string }[] = [
   },
   {
     q: "Does ADCode read my source code?",
-    a: "No. Ads are targeted using a fixed list of 45 generic tags such as the programming language and framework in use - for example 'lang:rust' or 'fw:react'. File contents, file paths, and project names never leave the machine. AI features send only what you explicitly ask them to send.",
+    a: "Ads are targeted using generic programming language and framework tags, such as 'lang:rust' or 'fw:react', rather than source code, file paths or project names. AI requests and browser cloud workspaces process project data separately, as described in the privacy policy.",
   },
   {
     q: "Is ADCode open source?",
@@ -300,7 +320,7 @@ export const FAQ: readonly { q: string; a: string }[] = [
   },
   {
     q: "What platforms does ADCode run on?",
-    a: "ADCode runs on Windows and Linux; a macOS build is waiting on Apple notarisation. On Windows it installs from the Microsoft Store in one click; on Linux there is a .deb and an AppImage, or a single terminal command on either. It updates itself when a new version is released.",
+    a: "Use ADCode in your browser at web.bluethenics.com with no download, or install the desktop editor on Windows and Linux. A native macOS desktop build is not published yet. Windows has a Microsoft Store installer; Linux has a .deb and an AppImage. Desktop builds update themselves when a new version is released.",
   },
 ];
 

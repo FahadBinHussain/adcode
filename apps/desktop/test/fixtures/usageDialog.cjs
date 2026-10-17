@@ -26,7 +26,7 @@ app.whenReady().then(async () => {
         const requests = index > 361 ? 4 : index % 9 === 0 ? 2 : 0;
         return { day: UsageFixture.shiftDay(today, index - 364), provider: 'tagflow', model: 'tagflow-code-27b', source: 'chat', requests, inputTokens: requests * 1200, outputTokens: requests * 450, estimatedRequests: 0, pricedRequests: requests, costMicros: 0 };
       });
-      rows.push({ day: today, provider: 'custom', model: 'a-model-with-a-long-name-and-no-known-price', source: 'agents', requests: 2, inputTokens: 4500, outputTokens: 920, estimatedRequests: 1, pricedRequests: 0, costMicros: 0 });
+      rows.push({ day: today, provider: 'custom', model: 'a-model-with-a-long-name-and-no-known-price', source: 'agents', requests: 2, inputTokens: 4500, outputTokens: 920, cachedTokens: 3000, estimatedRequests: 1, pricedRequests: 0, costMicros: 0 });
       let stored = rows, changed, failRead = true, failAllowance = true, unsubscribed = false, clearCalls = 0;
       const allowance = { available: true, blocked: false, limits: { dailyRequests: 50, dailyTokens: 1000000, dailyCostMicros: 1000000, requestsPerMinute: 10 }, usage: { day: today, requests: 8, inputTokens: 9000, outputTokens: 2000, costMicros: 100000, estimatedRequests: 0, reservedTokens: 1000, reservedCostMicros: 0 }, resetsAt: Date.parse(today + 'T00:00:00Z') + 86400000 };
       window.adcode = { aiUsage: {
@@ -57,6 +57,7 @@ app.whenReady().then(async () => {
       results.helpStaysOpen = document.querySelector('.usage-allowance-help') === help && help.open && document.activeElement === helpSummary;
       help.open = false;
       results.unknownCost = document.querySelector('.usage-models').textContent.includes('No price') && document.querySelector('.usage-models').textContent.includes('≈');
+      results.cachedVisible = document.querySelector('.usage-stats').textContent.includes('3.0k cached') && document.querySelector('.usage-cached-note').textContent.includes('prompt cache') && [...document.querySelectorAll('.usage-model-tokens')].some(tokens => tokens.title.includes('4,500 in (3,000 cached)'));
       const todayCell = document.querySelector('[data-day="' + today + '"]');
       todayCell.focus(); todayCell.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
       results.arrowNavigation = document.activeElement.dataset.day === UsageFixture.shiftDay(today, -7);

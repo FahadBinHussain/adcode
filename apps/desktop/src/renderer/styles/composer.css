@@ -2,8 +2,8 @@
 :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-composer,
 :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-conversation[data-empty="true"] > .chat-composer {
   container: composer / inline-size;
-  padding: 16px 16px 10px;
-  gap: 12px;
+  padding: 14px 14px 8px;
+  gap: 10px;
   border-radius: 20px;
   background: var(--bg-elevated);
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.08);
@@ -15,9 +15,14 @@
 }
 
 :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-input {
-  min-height: 56px;
+  min-height: 48px;
   padding: 0 2px;
   line-height: 1.6;
+}
+
+/* A phone zooms the page into any field under 16px and does not zoom back out. */
+@media (pointer: coarse) {
+  :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-input { font-size: 16px; }
 }
 
 .chat-card .chat-input::placeholder { color: var(--text-tertiary); }
@@ -102,10 +107,16 @@
   flex: none;
   width: 100%;
   min-width: 0;
-  padding: 10px 0 0;
+  padding: 6px 0 0;
   gap: 12px;
   border-top: 1px solid var(--border-hairline);
 }
+
+/*
+ * Nothing to count before a model is connected: "Tokens used - Unavailable" twice under an
+ * empty chat read as broken. The setup card above already says what to do first.
+ */
+.chat-card .chat-composer:has(.chat-model-pill[data-ready="false"]) .composer-meters { visibility: hidden; }
 
 .composer-hints {
   display: flex;
@@ -146,9 +157,9 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 40px;
+  min-height: 36px;
   margin: 0;
-  padding: 3px 5px;
+  padding: 1px 6px 1px 2px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
@@ -195,10 +206,25 @@
   .composer-meters { gap: 2px; }
 }
 
-@container composer (max-width: 370px) {
+/*
+ * Phone width: one toolbar row and one meter row. Attach, Files and Tools keep their icons and
+ * accessible names; the ring keeps its number and the line beside it keeps the amount, so the
+ * composer stops taking a third of the screen (265px at 390 wide before, about 150 now).
+ */
+@container composer (max-width: 440px) {
+  :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar { grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
+  .chat-composer-utilities { gap: 0; }
+  .chat-composer-utilities .composer-tool-label { display: none; }
+  :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar :is(.chat-team-button, .composer-tools > summary) {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+  .chat-composer-routing { width: auto; min-width: 0; justify-content: flex-end; }
+  :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .chat-model.chat-model-pill { flex: 1 1 auto; max-width: none; }
   :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-composer-footer { gap: 4px; }
   .composer-meters { flex: 1; justify-content: space-between; gap: 0; }
-  .chat-card .composer-meter { flex-direction: column; gap: 4px; padding: 3px 5px; }
-  .composer-meter-copy { align-items: center; gap: 3px; }
-  .composer-meter-detail { font-size: 9px; }
+  .composer-meter-label { display: none; }
+  .composer-meter-detail { font-size: 11px; }
 }

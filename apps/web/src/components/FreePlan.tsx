@@ -17,32 +17,32 @@ export function FreePlan() {
     <section className="free-plan marketplace-wrap" id="free-plan" aria-labelledby="free-plan-heading">
       <header className="free-plan-head">
         <p className="marketplace-eyebrow">THE FREE PLAN</p>
-        <h2 id="free-plan-heading">A full AI allowance every {plan.sessionHours} hours.<br /><span>Free, with no key.</span></h2>
-        <p>Like a Claude Max plan, minus the bill: your free AI refills every {plan.sessionHours} hours from your first message, with a weekly ceiling, and one balance covers every free model.</p>
+        <h2 id="free-plan-heading">Free AI. Room to build.</h2>
+        <p className="free-plan-intro">Start with included AI credits and a cloud workspace. No subscription or credit card required.</p>
       </header>
       <dl className="free-plan-grid">
         <div>
           <dt>AI credits</dt>
           <dd><strong>{credits(plan.sessionCredits)}</strong> every {plan.sessionHours} hours</dd>
-          <dd>{credits(plan.weeklyCredits)} a week. A credit is about 1,000 tokens; partner models that cost less go further.</dd>
         </div>
         <div>
           <dt>Helpers</dt>
           <dd><strong>Up to 4</strong> agents at once</dd>
-          <dd>Big jobs split across helpers that research and build side by side, with one Undo for all of it.</dd>
-        </div>
-        <div>
-          <dt>At the limit</dt>
-          <dd><strong>Nothing breaks</strong></dd>
-          <dd>A running task waits and carries on by itself when your credits refill. Your own key or a local model is never limited.</dd>
         </div>
         <div>
           <dt>In your browser</dt>
           <dd><strong>1 hour</strong> of cloud time every {plan.sessionHours} hours</dd>
-          <dd>The desktop app runs on your own computer, with no time limit at all.</dd>
         </div>
       </dl>
-      <p className="free-plan-foot"><Link href="/docs/ai-credits">How credits work <span aria-hidden="true">↗</span></Link></p>
+      <p className="free-plan-limit">Up to {credits(plan.weeklyCredits)} AI credits a week. At the limit, tasks wait for the next refill. Desktop projects have no cloud time limit.</p>
+      <details className="free-plan-details">
+        <summary>How the free plan works</summary>
+        <div>
+          <p>Your balance refills every {plan.sessionHours} hours from your first message, up to {credits(plan.weeklyCredits)} credits a week. A credit is about 1,000 tokens; partner models that cost less go further.</p>
+          <p>At the limit, a running task waits and resumes when credits refill. Your own key or a local model is never limited. The desktop app runs on your computer with no time limit.</p>
+          <Link href="/docs/ai-credits">Read about AI credits <span aria-hidden="true">↗</span></Link>
+        </div>
+      </details>
     </section>
   );
 }

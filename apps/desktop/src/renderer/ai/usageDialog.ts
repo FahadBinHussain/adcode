@@ -63,7 +63,7 @@ function modelRow(model: UsageModelView): HTMLElement {
   fill.style.setProperty("--share", `${Math.max(2, Math.round(model.share * 100))}%`);
   bar.append(fill);
   const tokens = el("span", "usage-model-tokens", `${model.estimated ? "≈ " : ""}${formatTokens(model.inputTokens + model.outputTokens)}`);
-  tokens.title = `${model.inputTokens.toLocaleString()} in · ${model.outputTokens.toLocaleString()} out${model.estimated ? " · some counts estimated" : ""}`;
+  tokens.title = `${model.inputTokens.toLocaleString()} in${model.cachedTokens > 0 ? ` (${model.cachedTokens.toLocaleString()} cached)` : ""} · ${model.outputTokens.toLocaleString()} out${model.estimated ? " · some counts estimated" : ""}`;
   const requests = el("span", "usage-model-requests", `${model.requests.toLocaleString()} ${model.requests === 1 ? "request" : "requests"}`);
   requests.title = `${model.chatRequests.toLocaleString()} from the chat · ${model.agentRequests.toLocaleString()} from agents`;
   const cost = el("span", "usage-model-cost", costText(model.costMicros, model.costPartial));
@@ -278,7 +278,7 @@ export function openUsageDialog(): Promise<void> {
       const totals = view.totals;
       const stats = el("div", "usage-stats");
       stats.append(
-        stat("Tokens", `${totals.estimated ? "≈ " : ""}${formatTokens(totals.inputTokens + totals.outputTokens)}`, `${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out`),
+        stat("Tokens", `${totals.estimated ? "≈ " : ""}${formatTokens(totals.inputTokens + totals.outputTokens)}`, `${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out${totals.cachedTokens > 0 ? ` · ${formatTokens(totals.cachedTokens)} cached` : ""}`),
         stat("Requests", totals.requests.toLocaleString(), `${view.models.length} ${view.models.length === 1 ? "model" : "models"}`),
         stat("Estimated cost", costText(totals.costMicros, totals.costPartial), totals.costPartial ? "Some models have no price" : "From catalogue prices"),
       );
@@ -303,6 +303,10 @@ export function openUsageDialog(): Promise<void> {
       list.setAttribute("aria-label", "Usage by model");
       for (const model of view.models) list.append(modelRow(model));
       parts.push(list);
+      if (totals.cachedTokens > 0) {
+        const share = Math.round((totals.cachedTokens / Math.max(1, totals.inputTokens)) * 100);
+        parts.push(el("p", "usage-note usage-cached-note", `${share}% of the input was cached: the instructions, tools and earlier conversation each step sends again, read back from the provider's prompt cache. It is billed at a fraction of fresh input, and the estimated cost uses that price where the catalogue lists one.`));
+      }
       if (totals.estimated) parts.push(el("p", "usage-note", "≈ marks counts ADCode estimated because the provider did not report them."));
       replace(...parts);
     }

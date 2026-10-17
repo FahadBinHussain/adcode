@@ -51,10 +51,15 @@ const PORTAL_SIDEBAR: SideNavGroup[] = [
 export default function PortalHome() {
   return (
     <AppShell
-      title="Campaigns"
-      subtitle="What you are spending, and what it is buying"
+      title="Advertiser workspace"
+      subtitle="Reach developers. Keep every campaign, credit, and result in view."
       sidebar={PORTAL_SIDEBAR}
     >
+      <div className="portal-launchpad">
+        <div><span className="portal-eyebrow">ADCODE / ADVERTISING</span><h2>Your next customer is building here.</h2><p>Create a card, choose your audience, and set a budget you control.</p></div>
+        <a className="btn btn-primary" href="#new-campaign">Create a campaign <SideIcon name="plus" /></a>
+        <div className="portal-launchpad-facts"><span><SideIcon name="target" />Verified views</span><span><SideIcon name="card" />Budgets from $1</span><span><SideIcon name="chart" />Clear reporting</span></div>
+      </div>
       <PortalBody />
     </AppShell>
   );
@@ -200,7 +205,7 @@ function PortalBody() {
 
   if (state === "signup") {
     return (
-      <div className="empty">
+      <div className="portal-first-campaign" id="new-campaign">
         <h3>Start your first campaign</h3>
         <p>
           One screen: your logo, your message, a budget. Your advertiser account is created
@@ -246,7 +251,7 @@ function PortalBody() {
 
         <div className="filter-row">
           <Segmented label="Reporting window" value={window} options={WINDOWS} onChange={setWindow} />
-          <span>Updates every 30 seconds</span>
+          <span className="portal-refresh"><i aria-hidden="true" />Refreshes every 30 seconds</span>
         </div>
 
         <div className="ios-tiles">

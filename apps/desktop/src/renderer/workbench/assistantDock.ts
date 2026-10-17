@@ -9,6 +9,7 @@ import { createVibePages } from "./vibePages.ts";
 import { createFloatingPanel, type FloatingPanel } from "./floatingPanel.ts";
 import { motionPersonality } from "../motionFlip.ts";
 import type { VibePage } from "./vibeSidebarModel.ts";
+import { isWebSurface } from "../surface.ts";
 
 interface AssistantDockDeps {
   readonly chat: ChatWidget;
@@ -118,12 +119,16 @@ export function createAssistantDock(deps: AssistantDockDeps) {
   const allFeatures = (): void => { document.getElementById("open-features")?.click(); };
   // Vibe's sidebar already shows its workflows, so its menu is only the less frequent
   // routes, grouped by what they act on. Code keeps the list its users learned.
-  const vibeTools = (): readonly ContextMenuNode[] => [
-    { kind: "heading", label: "Project" },
+  // The web version has no IDE behind Vibe, so its IDE-panel routes are left out there.
+  const ideRoutes = (): readonly ContextMenuNode[] => isWebSurface() ? [] : [
     { label: "Browse files in the IDE", run: () => deps.run("view.explorer") },
     { label: "Search in files", run: () => deps.run("view.search") },
     { label: "Source control", run: () => deps.run("view.scm") },
     { label: "Terminal", accelerator: "Ctrl+`", run: deps.toggleTerminal },
+  ];
+  const vibeTools = (): readonly ContextMenuNode[] => [
+    { kind: "heading", label: "Project" },
+    ...ideRoutes(),
     { label: "Project overview", run: () => showContext("project") },
     { kind: "heading", label: "Assistant" },
     { label: "Models & connections", run: () => deps.run("ai.connect") },

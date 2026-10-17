@@ -38,6 +38,20 @@ describe("recording", () => {
     expect(row).toMatchObject({ costMicros: 6_000, pricedRequests: 1 });
   });
 
+  it("keeps cached input as part of the input, priced at the catalogue's cache-read rate", () => {
+    const cachePriced = { ...price, cacheReadMicrosPerMillion: 300_000 };
+    // 1,000 in, 800 of them cached: 200 at $3/M + 800 at $0.30/M + 200 out at $15/M.
+    expect(costOf(cachePriced, 1_000, 200, 800)).toBe(600 + 240 + 3_000);
+    // No cache price in the catalogue: cached input is priced as input, never as free.
+    expect(costOf(price, 1_000, 200, 800)).toBe(6_000);
+    let rows = addUsage([], entry({ price: cachePriced, cachedTokens: 800 }));
+    rows = addUsage(rows, entry({ price: cachePriced, cachedTokens: 5_000 }));
+    expect(rows[0]).toMatchObject({ inputTokens: 2_000, cachedTokens: 1_800 });
+    const view = summarizeUsage(rows, "today", NOW);
+    expect(view.totals.cachedTokens).toBe(1_800);
+    expect(view.models[0]?.cachedTokens).toBe(1_800);
+  });
+
   it("keeps an unpriced model's cost unknown rather than zero", () => {
     const rows = addUsage([], entry({ provider: "custom", model: "mystery", price: null }));
     const view = summarizeUsage(rows, "today", NOW);
@@ -98,6 +112,9 @@ describe("the file", () => {
     expect(parseUsageRows(JSON.parse(JSON.stringify({ version: 1, rows })))).toEqual(rows);
     expect(parseUsageRows({ rows: [{ ...rows[0], source: "ads" }, { ...rows[0], requests: -1 }, "x", null] })).toEqual([]);
     expect(parseUsageRows("nonsense")).toEqual([]);
+    // A file from before cached counts were kept reads as nothing cached, never as invalid.
+    const older = Object.fromEntries(Object.entries(rows[0]!).filter(([key]) => key !== "cachedTokens"));
+    expect(parseUsageRows({ rows: [older] })).toEqual([{ ...older, cachedTokens: 0 }]);
   });
 
   it("forgets rows past the keep window", () => {

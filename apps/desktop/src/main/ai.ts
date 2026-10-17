@@ -118,6 +118,7 @@ import { ASSISTANT_EXTENSION_TOOLS, withAssistantExtensions } from "./assistantC
 import { memoryForWorkspace } from "./memory.ts";
 import { currentSettings, writeSetting } from "./settings.ts";
 import { describeDebugContext, recordDebug } from "./debugLog.ts";
+import { agentRulesContext, agentSessionStart, agentStopHooks, withAgentRules } from "./agentRules.ts";
 import { currentWorkspace } from "./workspace.ts";
 import { projectInstructions } from "./projectInstructions.ts";
 import { aiWorkspaceContext } from "./aiWorkspaceContext.ts";
@@ -701,6 +702,10 @@ interface ChatThread {
   lastUsed: number;
   /** The running turn's live status line, so a sub-agent's progress shows in its chat. */
   status: ((text: string) => void) | null;
+  /** What this conversation's sessionStart hooks printed; undefined until they have run. */
+  startContext: string | null | undefined;
+  /** Stops a running hook command when the person presses Stop. */
+  hookAbort: AbortController | null;
 }
 
 const threads = new Map<string, ChatThread>();
@@ -732,6 +737,8 @@ function threadFor(chat: ChatSession): ChatThread {
     stopRequested: false,
     lastUsed: Date.now(),
     status: null,
+    startContext: undefined,
+    hookAbort: null,
   };
   threads.set(chat.id, created);
   const idle = [...threads.values()].filter((thread) => !runs.isRunning(thread.session.id) && thread.session.id !== session?.id);
@@ -758,6 +765,7 @@ function dropThread(id: string): void {
   if (thread === undefined) return;
   thread.stopRequested = true;
   thread.agent?.cancel();
+  thread.hookAbort?.abort();
   threads.delete(id);
 }
 
@@ -1384,12 +1392,19 @@ function usagePrice(providerId: string, model: string): UsagePrice | null {
   const found = providerIn(catalogue, providerId)?.models.find((candidate) => candidate.id === model);
   const input = found?.inputCostMicrosPerMillion;
   const output = found?.outputCostMicrosPerMillion;
-  return typeof input === "number" && typeof output === "number" ? { inputMicrosPerMillion: input, outputMicrosPerMillion: output } : null;
+  const cacheRead = found?.cacheReadCostMicrosPerMillion;
+  return typeof input === "number" && typeof output === "number"
+    ? { inputMicrosPerMillion: input, outputMicrosPerMillion: output, ...(typeof cacheRead === "number" ? { cacheReadMicrosPerMillion: cacheRead } : {}) }
+    : null;
 }
 
 /** Count one request on the usage page. */
-function noteUsage(source: UsageSource, providerId: string, model: string, event: { readonly inputTokens: number; readonly outputTokens: number; readonly estimated: boolean }): void {
-  recordAiUsage({ source, provider: providerId, model, inputTokens: event.inputTokens, outputTokens: event.outputTokens, estimated: event.estimated, at: Date.now(), price: usagePrice(providerId, model) });
+function noteUsage(source: UsageSource, providerId: string, model: string, event: { readonly inputTokens: number; readonly outputTokens: number; readonly cachedTokens?: number; readonly estimated: boolean }): void {
+  recordAiUsage({
+    source, provider: providerId, model, inputTokens: event.inputTokens, outputTokens: event.outputTokens,
+    ...(event.cachedTokens === undefined ? {} : { cachedTokens: event.cachedTokens }),
+    estimated: event.estimated, at: Date.now(), price: usagePrice(providerId, model),
+  });
 }
 
 /** Read fresh on every call, so switching the design skill off applies to the next request. */
@@ -1462,6 +1477,10 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
   // Sub-agents share this runner, so their edits land in the same undoable turn. A lean
   // (local) model is not offered them: it should not be juggling helpers.
   const runner = withBuiltinSkills(withAssistantExtensions(toolRunner(() => thread.checkpoint)), designTasteOn);
+  // The project's tool rules and hooks check every call exactly once: the chat's own calls
+  // (delegate_task included) at its runner, each helper's at the helpers' runner.
+  const rules = { root: () => thread.root, sessionId: () => thread.session.id };
+  const helperRunner = withAgentRules(runner, { ...rules, agent: "helper" });
   const tools = lean ? chatTools() : [...chatTools(), DELEGATE_TASK];
   const context = async (): Promise<string> => {
       const root = thread.root;
@@ -1482,10 +1501,12 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
         describeBackgroundCommands(),
         // A lean request does not offer the guide's tool, so it is not told about the guide.
         lean ? null : builtinSkillGuidance(designTasteOn()),
+        await agentRulesContext(root).catch(() => null),
+        thread.startContext ?? null,
       ].filter((line): line is string => line !== null).join("\n");
   };
   const helper = (helperTools: readonly ToolDefinition[]): Agent => createAgent({
-    provider, model, tools: helperTools, runner, context,
+    provider, model, tools: helperTools, runner: helperRunner, context,
     effort: configuredEffort(), ...outputBudget(providerId, model), compaction: compactionFor(providerId, model),
   });
   const built = createAgent({
@@ -1498,12 +1519,12 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
     compaction: compactionFor(providerId, model),
     initialMessages: carried ?? restoreHistory(thread.session),
     context,
-    runner: withSubagents(runner, {
+    runner: withAgentRules(withSubagents(runner, {
       start: (_task, helperTools) => helper(helperTools),
       tools: () => tools,
       status: (text) => thread.status?.(text),
       onEvent: (_task, event) => { if (event.kind === "usage") noteUsage("agents", providerId, model, event); },
-    }),
+    }), { ...rules, agent: "chat" }),
     beforeRequest: async () => {
       // Direct edits apply immediately, so there is no task to create and
       // no budget to reserve. The turn step limit remains the backstop
@@ -1578,9 +1599,12 @@ export function aiContextUsage(): AiContextUsageView {
 }
 
 
+/** How many times stop hooks may send one message's agent back to work. */
+const STOP_HOOK_ROUNDS = 3;
+
 /** How one turn ended: done, or stopped by its step limit and to be picked up again by itself. */
 type TurnOutcome =
-  | { readonly kind: "done"; readonly ok: boolean; readonly ended: "finished" | "stopped" | "failed" }
+  | { readonly kind: "done"; readonly ok: boolean; readonly ended: "finished" | "stopped" | "failed"; readonly answer?: string }
   | { readonly kind: "continue" };
 
 /**
@@ -1618,14 +1642,31 @@ export async function aiSend(
     return false;
   }
   thread.stopRequested = false;
+  thread.hookAbort = new AbortController();
   announceRuns();
   let prompt = text;
   let files = attachments;
   let outcome: TurnOutcome = { kind: "done", ok: false, ended: "failed" };
+  let stopHookRounds = 0;
   try {
     for (;;) {
       outcome = await runTurn(thread, prompt, files, editor);
-      if (outcome.kind !== "continue") break;
+      if (outcome.kind === "done") {
+        // A stop hook that exits 2 sends the agent back to work with its reason - a few
+        // times at most, so a check that can never pass cannot keep a chat busy for ever.
+        if (!outcome.ok || thread.stopRequested || stopHookRounds >= STOP_HOOK_ROUNDS) break;
+        const reason = await agentStopHooks(thread.root, { sessionId: chat.id, again: stopHookRounds > 0, lastMessage: outcome.answer ?? "" }, thread.hookAbort.signal)
+          .catch((error: unknown) => {
+            recordDebug("warn", "ai:hooks", `Stop hooks failed: ${error instanceof Error ? error.message : String(error)}`);
+            return null;
+          });
+        if (reason === null || thread.stopRequested) break;
+        stopHookRounds += 1;
+        recordDebug("info", "ai:hooks", "A stop hook sent the agent back to work");
+        prompt = `A stop hook in .adcode/settings.json did not let you finish yet. It said:\n${reason}\nFix what it reports, check it, then finish.`;
+        files = [];
+        continue;
+      }
       if (thread.stopRequested) {
         // Stopped between two turns: the step-limit stop was never shown, so the stop is.
         chatEvents.push({ kind: "cancelled", sessionId: chat.id } as unknown as AgentEvent);
@@ -1637,6 +1678,7 @@ export async function aiSend(
     }
     return outcome.kind === "done" && outcome.ok;
   } finally {
+    thread.hookAbort = null;
     const ended = outcome.kind === "done" ? outcome.ended : "stopped";
     // How it ended goes out before the run list drops it, so a chat that failed in the
     // background is marked as needing the person, not as done.
@@ -1670,6 +1712,13 @@ async function runTurn(
     const providerId = activeProvider();
     const model = activeModel(providerId);
 
+    if (thread.startContext === undefined) {
+      thread.startContext = null;
+      thread.startContext = await agentSessionStart(thread.root, sessionId, thread.hookAbort?.signal ?? new AbortController().signal).catch((error: unknown) => {
+        recordDebug("warn", "ai:hooks", `sessionStart hooks failed: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+      });
+    }
     const ready = await ensureChatAgent(thread, providerId, model);
     if (typeof ready === "string") {
       send({ kind: "error", detail: ready });
@@ -1854,7 +1903,7 @@ async function runTurn(
     recordMilestone(turnSucceeded ? "turn_ok" : cancelled ? "prompt_sent" : "turn_failed");
     recordDebug("info", "ai", `Turn ${turnSucceeded ? "finished" : "ended early"} after ${((Date.now() - turnStarted) / 1000).toFixed(1)}s with ${toolCalls} tool call${toolCalls === 1 ? "" : "s"}`);
     if (keepGoing) return { kind: "continue" };
-    return { kind: "done", ok: turnSucceeded, ended: turnSucceeded ? "finished" : cancelled ? "stopped" : "failed" };
+    return { kind: "done", ok: turnSucceeded, ended: turnSucceeded ? "finished" : cancelled ? "stopped" : "failed", answer };
   } catch (error) {
     // §9: a failure here costs an answer, never the editor.
     if (activeTaskId !== null) {
@@ -2126,7 +2175,8 @@ export function createBuiltInAiTeamNodeRunner(): AiTeamNodeRunner {
       compaction: compactionFor(input.route.providerId, input.route.modelId),
       // The skill tool only reads text bundled with the app, so tool access does not gate it.
       tools: [...access.tools, ...planTool, ...(memoryOn ? MEMORY_TOOLS : []), ...(onTeam ? TEAM_TOOLS : []), ...(tasteOn ? [BUILTIN_SKILL_TOOL] : [])],
-      runner: withBuiltinSkills(runner, () => tasteOn),
+      // The project's tool rules and hooks bind Team and solo agents as they bind the chat.
+      runner: withAgentRules(withBuiltinSkills(runner, () => tasteOn), { root: () => task.workspaceRoot, agent: input.kind === "solo" ? "agent" : "team", sessionId: () => task.id }),
       effort: configuredEffort(),
       system: system.join("\n"),
     });
@@ -2426,6 +2476,7 @@ export function aiCancel(sessionId?: string): void {
   if (thread !== null) {
     thread.stopRequested = true;
     thread.agent?.cancel();
+    thread.hookAbort?.abort();
   }
   if (activeTaskId !== null) {
     const taskId = activeTaskId;

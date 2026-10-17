@@ -23,7 +23,6 @@ const MODES: Record<Mode, { label: string; icon: string; title: string; lead: st
     lead: "ADCode opens in Vibe: a conversation, not a wall of code. Say what you want and watch it get built.",
     points: [
       "Agents plan the work, write the code and run your tests.",
-      "Run several at once - each works in its own copy of the project.",
       "Changes land straight away, with Undo on every turn.",
       "See it running in Preview, then Commit & Push in one click.",
     ],
@@ -36,7 +35,6 @@ const MODES: Record<Mode, { label: string; icon: string; title: string; lead: st
     points: [
       "Monaco editing, real terminals and git with a visual history.",
       "The assistant floats over your code - select lines, press Ctrl+L, ask.",
-      "Explain, refactor, write tests or find issues from a right-click.",
       "Vibe is one click away, with the conversation where you left it.",
     ],
   },
@@ -46,11 +44,13 @@ const ORDER: readonly Mode[] = ["vibe", "code"];
 
 export function ModeShowcase() {
   const [mode, setMode] = useState<Mode>("vibe");
+  const [animateChange, setAnimateChange] = useState(false);
   const tabs = useRef<Record<Mode, HTMLButtonElement | null>>({ vibe: null, code: null });
 
   const onKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
+    setAnimateChange(false);
     const next = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length]!;
     setMode(next);
     tabs.current[next]?.focus();
@@ -58,9 +58,9 @@ export function ModeShowcase() {
 
   const copy = MODES[mode];
   return (
-    <section className="modes marketplace-wrap" aria-labelledby="modes-heading">
+    <section className="modes marketplace-wrap" id="how-it-works" aria-labelledby="modes-heading" data-home-reveal>
       <div className="modes-intro">
-        <h2 id="modes-heading">Talk it into existence.<br />Or write every line.</h2>
+        <p className="marketplace-eyebrow">TWO WAYS TO FIND YOUR FLOW</p><h2 id="modes-heading">Your project.<br />Your way of working.</h2>
         <p>Two windows on one project. Switch whenever the work changes.</p>
         <div className="modes-switch" role="tablist" aria-label="ADCode modes">
           {ORDER.map((value) => (
@@ -74,7 +74,7 @@ export function ModeShowcase() {
               aria-controls="modes-panel"
               tabIndex={mode === value ? 0 : -1}
               data-mode={value}
-              onClick={() => setMode(value)}
+              onClick={(event) => { setAnimateChange(event.detail > 0); setMode(value); }}
               onKeyDown={onKey}
             >
               <span aria-hidden="true">{MODES[value].icon}</span> {MODES[value].label}
@@ -83,13 +83,13 @@ export function ModeShowcase() {
         </div>
       </div>
 
-      <div className="modes-body" id="modes-panel" role="tabpanel" aria-labelledby={`modes-tab-${mode}`} data-mode={mode}>
-        <div className="modes-copy">
+      <div className="modes-body" id="modes-panel" role="tabpanel" aria-labelledby={`modes-tab-${mode}`} data-mode={mode} data-animate={animateChange}>
+        <div className="modes-copy" key={mode}>
           <h3>{copy.title}</h3>
           <p>{copy.lead}</p>
           <ul>{copy.points.map((point) => <li key={point}>{point}</li>)}</ul>
         </div>
-        <figure className="modes-stage" aria-label={mode === "vibe"
+        <figure className="modes-stage" key={"stage-" + mode} aria-label={mode === "vibe"
           ? "Illustration of ADCode's Vibe window: a conversation where an agent added a streak counter, with an Undo card and a sponsored card in the corner"
           : "Illustration of ADCode's Code window: file tree, editor, terminal and the assistant floating over the code"}
         >

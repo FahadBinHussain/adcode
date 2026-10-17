@@ -1235,6 +1235,27 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Most editors keep AI instructions in their own settings format, which nothing else reads and nobody commits. AGENTS.md is a plain file in your repository, reviewed like code and shared with every agent your team uses; ADCode reads it, and the CLAUDE.md and GEMINI.md files you may already have, without asking you to convert anything.",
   },
 
+  "ai-agent-rules": {
+    steps: [
+      "Open your project and run AI: Open Agent Rules and Hooks from the command palette (or the feature library). ADCode creates .adcode/settings.json with a commented starter and opens it.",
+      "Under permissions, add rules to deny, ask or allow. A rule is a tool name with an optional pattern in brackets: \"deny\": [\"run_command(git push*)\", \"edit_file(.env*)\"], \"ask\": [\"delete_file(*)\"]. Save - the next step the AI takes is checked against it.",
+      "To be asked before every command except your tests, write \"ask\": [\"run_command\"] and \"allow\": [\"run_command(npm test*)\"]: the more specific rule decides, and deny always wins.",
+      "Add hooks for your own checks: \"postToolUse\": [{ \"matcher\": \"edit_file\", \"command\": \"npx eslint --quiet .\" }] tells the AI about lint errors right after an edit, and \"stop\": [{ \"command\": \"npm test --silent\" }] sends it back to work while the tests fail. A hook blocks by exiting with code 2 and printing the reason to stderr.",
+      "The first time a chat starts in a project with hooks, ADCode lists the commands and asks Run them or Don't run. You are asked again only when they change.",
+      "For rules you want in every project - never push, never touch .env - run AI: Open My Agent Rules for Every Project to edit ~/.adcode/settings.json.",
+    ],
+    benefits: [
+      "Leave the AI working unattended without leaving it free to push, publish or delete: a denied step fails with the rule's name, and an ask nobody answers is refused.",
+      "Nothing changes until you write a rule. The default stays fast - edits apply with Undo - and only the steps you name slow down.",
+      "Chained commands are checked part by part, so npm test && git push does not slip past a deny on git push.",
+      "One file, committed with the project, binds the chat, every helper and every Team agent alike.",
+      "Hooks receive the same JSON fields Claude Code's do, so scripts you already wrote for it work here, and exit code 2 means the same thing.",
+      "A cloned repository cannot run anything on your machine through its hooks until you approve them, and cannot loosen what your own file asks.",
+    ],
+    betterThan:
+      "Claude Code introduced allow, ask and deny rules and lifecycle hooks, but they live in a terminal session and its own settings file. ADCode reads the same idea from .adcode/settings.json and applies it inside the editor, to the chat, its helpers and Team agents alike, with the question asked in the app's own dialog and every refused step marked in the chat's timeline. Editors that offer only 'approve every edit' or 'approve nothing' make you choose between speed and safety for the whole session; rules let you keep the speed and fence off only what matters.",
+  },
+
   "ai-subagents": {
     steps: [
       "Ask for something with several independent parts - \"add tests for the cart, the checkout and the account pages\", or \"find every place we call the payments API and list what each one sends\".",
@@ -1941,6 +1962,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Streaks follow local calendar days. Yesterday keeps a streak alive while today is still empty; the longest streak is measured within the displayed year.",
       "Look down the list of models: each shows its share of tokens, its requests from the chat and from agents, and its cost at the catalogue's price.",
       "A ≈ marks counts ADCode estimated because the provider did not report them. Clear usage removes this machine's history, activity and streaks.",
+      "Under Tokens, cached is the input the provider read back from its prompt cache instead of charging full price; hover a model for its own cached share.",
       "For free AI, read your credits above the history: the current 5-hour session and this week, each with the credits left and its refill time, including credits held by replies in progress. Clearing local history does not reset them.",
     ],
     benefits: [
@@ -1952,6 +1974,25 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
     ],
     betterThan:
       "Provider dashboards show one total a day late and cannot tell your chat from your agents. ADCode counts every request as it happens, split by model and by where it came from, right inside the editor.",
+  },
+
+  "ai-prompt-caching": {
+    steps: [
+      "Nothing to turn on: every chat and agent step asks for caching by itself.",
+      "Work as usual. Each step re-sends the instructions, the tool list and the conversation so far; the provider recognises the part it has already seen.",
+      "With Claude, ADCode marks the tool list, the instructions and the conversation for Anthropic's prompt cache. OpenAI, DeepSeek, Gemini and other compatible providers cache a repeated beginning on their own, and ADCode sends each step's history in exactly the same order and bytes so it matches.",
+      "Run AI: Show Prompt Cache Savings, or open AI usage. Under Tokens, cached says how much input came from the cache; a note gives the share, and hovering a model shows its own.",
+      "Keep a long task in one chat while you work on it. A cache lasts a few minutes, so a chat picked up much later starts a fresh one, and a new chat starts its own.",
+    ],
+    benefits: [
+      "Long agent runs stop paying full price for their beginning on every step: Anthropic bills cached input at a tenth, OpenAI at a half or less.",
+      "Replies to long conversations start sooner, because the provider does not re-read what it has cached.",
+      "The usage page shows the cached share per model, so you can see the saving instead of trusting it.",
+      "Moving the cursor or starting a dev server mid-task changes only the part after the instructions, so the tools and instructions stay cached even then.",
+      "One-off requests such as inline completions are left uncached, because writing a cache costs a little more than plain input and nothing would read it back.",
+    ],
+    betterThan:
+      "Many editors that let you bring your own key send every agent step as a brand-new prompt, so a thirty-step task pays for its opening context thirty times. ADCode places the cache markers where the next step will look for them and keeps the history byte-stable, then shows you the cached tokens on the usage page. Free AI credits still count every input token for now.",
   },
 
   "ai-design-taste": {

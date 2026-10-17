@@ -250,7 +250,7 @@ export function createGoogleProvider(deps: GoogleProviderDeps): Provider {
       let buffer = "";
       let sawToolCall = false;
       let finish: string | null = null;
-      let usage: { inputTokens: number; outputTokens: number } | null = null;
+      let usage: { inputTokens: number; outputTokens: number; cachedTokens?: number } | null = null;
 
       while (!signal.aborted) {
         const { done, value } = await reader.read();
@@ -277,11 +277,16 @@ export function createGoogleProvider(deps: GoogleProviderDeps): Provider {
           if (isRecord(parsed["error"])) throw new Error(`Google: ${googleError(JSON.stringify(parsed))}`);
 
           // Running totals, repeated on every chunk: the last one is the request's count.
-          // Thinking is billed as output, so it is counted as output.
+          // Thinking is billed as output, so it is counted as output; Gemini's implicit cache says
+          // how much of the prompt it served, as part of promptTokenCount.
           const metadata = parsed["usageMetadata"];
           if (isRecord(metadata)) {
             const count = (key: string): number => (typeof metadata[key] === "number" ? (metadata[key] as number) : 0);
-            usage = { inputTokens: count("promptTokenCount"), outputTokens: count("candidatesTokenCount") + count("thoughtsTokenCount") };
+            usage = {
+              inputTokens: count("promptTokenCount"),
+              outputTokens: count("candidatesTokenCount") + count("thoughtsTokenCount"),
+              ...(typeof metadata["cachedContentTokenCount"] === "number" ? { cachedTokens: count("cachedContentTokenCount") } : {}),
+            };
           }
 
           const candidate = (parsed["candidates"] as Array<Record<string, unknown>> | undefined)?.[0];

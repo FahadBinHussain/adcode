@@ -17,6 +17,7 @@ describe("the hero is a recording, not a picture", () => {
     expect(markup.match(/<video[^>]*muted[^>]*>/g)).toHaveLength(2);
     expect(markup.match(/<video[^>]*loop[^>]*>/g)).toHaveLength(2);
     expect(markup.match(/<video[^>]*playsinline[^>]*>/gi)).toHaveLength(2);
+    expect(markup.match(/<video[^>]*controls[^>]*>/g)).toHaveLength(2);
     expect(markup).toContain(`aria-label="${showcase.alt}"`);
   });
 

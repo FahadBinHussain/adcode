@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { HeroInstall } from "@/components/HeroInstall";
 import { StickyInstall } from "@/components/StickyInstall";
 import { LandingBidBuilder } from "@/components/LandingBidBuilder";
 import { LiveImpressionsCounter } from "@/components/LiveImpressionsCounter";
@@ -10,6 +9,8 @@ import { LiveRecording } from "@/components/LiveRecording";
 import { Partners } from "@/components/Partners";
 import { DocsShowcase } from "@/components/DocsShowcase";
 import { AboutUs } from "@/components/AboutUs";
+import { HomeMotion } from "@/components/HomeMotion";
+import { HeroAscii } from "@/components/HeroAscii";
 import Link from "@/components/IntentLink";
 import { HomeFaq } from "@/components/HomeFaq";
 import { FreePlan } from "@/components/FreePlan";
@@ -17,142 +18,100 @@ import { JsonLd } from "@/components/JsonLd";
 import { FAQ, faqPage } from "@/lib/schema";
 import { comparisons, landingPath } from "@/lib/landings";
 import { pageMetadata } from "@/lib/seo";
-import { SITE, TEAM, WEB_VERSION_URL } from "@/lib/site";
+import { SITE, SOURCE, WEB_VERSION_URL } from "@/lib/site";
 
-/*
- * The title leads with what the page is, not only with what it promises.
- *
- * "Earn while you code" is the brand line and it stays - it is on the hero, and it is what
- * makes this different. But a title is also the query it has to match, and nobody searches
- * for a slogan. "Free AI code editor" is what somebody types when they are looking for
- * exactly this and do not yet know it exists; the promise then earns the click.
- *
- * `absolute` because the layout template appends " - ADCode", which would push a
- * title that already names the product past the length a result will show.
- */
 export const metadata: Metadata = pageMetadata({
   path: "/",
-  title: { absolute: `${SITE.name} - a free AI code editor that pays you to use it` },
-  socialTitle: `${SITE.name} - ${SITE.tagline}`,
+  title: { absolute: SITE.name + " - a free AI code editor that pays you to use it" },
+  socialTitle: SITE.name + " - " + SITE.tagline,
   description:
     "A full IDE with AI agents, real terminals and git - free forever. An occasional sponsored card funds it, and half of that ad revenue is credited to you.",
 });
 
 export default function Home() {
   return (
-    <div className="marketplace-home">
-    {/*
-        The answers were already written and only a text file read them. Emitting the
-        schema beside the section that prints them is what lets a search engine quote
-        "ADCode is free" instead of guessing it from marketing copy.
-      */}
+    <div className="marketplace-home home-redesign">
       <JsonLd data={faqPage(FAQ)} />
+      <HomeMotion />
       <a className="skip-link" href="#marketplace-main">Skip to content</a>
       <section className="marketplace-hero studio-hero" id="earn">
-      <div className="marketplace-wrap" id="marketplace-main">
-      <div className="studio-hero-top"><div className="marketplace-hero-copy">
-      {/*
-        The one heading on the page that says what the product is. "A place to build your
-        next big idea" matched no query anybody types; "free AI code editor" is the query,
-        and the promise that follows is what earns the click.
-      */}
-      <h1>The free AI code editor<br />that pays you to build.</h1>
-      <p>Describe your idea and watch it get built - AI agents write the code, run it in a live preview and keep it in git. Free from the first line, and it pays you half of the ad revenue it earns.</p>
-      {/*
-        The three doubts that stop a first install, answered before the button: does it cost
-        anything, is the AI part a second bill, and can I see what it does on my machine.
-      */}
-      <ul className="hero-proof" aria-label="Before you install">
-        <li>No card, no trial - free</li>
-        <li>Free AI built in - no key</li>
-        <li>Open source, Apache-2.0</li>
-      </ul>
-      <HeroInstall source="hero" tour="#how-it-works" />
-      <p className="hero-team-note hero-web-note">On a Mac, a Chromebook or a work laptop? <a href={WEB_VERSION_URL}>Use ADCode in your browser <span aria-hidden="true">↗</span></a></p>
-      <p className="hero-team-note">Have a question before you start? <a href={TEAM.bookingUrl} target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a></p>
-      </div><LiveImpressionsCounter /></div>
-      <AppShowcase />
-      <Partners />
-      </div>
+        <div className="marketplace-wrap" id="marketplace-main">
+          <div className="studio-hero-top">
+            <HeroAscii />
+            <div className="marketplace-hero-copy">
+              <p className="home-hero-label">THE FREE AI CODE EDITOR</p>
+              <h1>Your next idea.<br /><span>Built with free AI.</span></h1>
+              <p>An AI code editor with agents, a terminal, and Git. Start in your browser. Sponsored cards fund the tools, and you receive half of eligible ad revenue.</p>
+              <WebFirstActions />
+              <ul className="hero-proof" aria-label="Start building online"><li>Free AI included</li><li>No download needed</li><li>No credit card</li></ul>
+            </div>
+          </div>
+          <AppShowcase />
+          <Partners />
+        </div>
       </section>
-
-      {/*
-        Median time on this page was under five seconds (30 days to 2026-10-07), and 57% of
-        desktop visits saw no second page. What a visitor needs in that time is how far away
-        a working app is: three steps, each one a thing they will actually do.
-      */}
-      <section className="first-build marketplace-wrap" id="how-it-works" aria-labelledby="first-build-heading">
-        <h2 id="first-build-heading">From download to a running app in three steps.</h2>
-        <ol>
-          <li>
-            <h3>Install</h3>
-            <p>One click from the Microsoft Store on Windows 10 and 11, or a .deb or AppImage on Linux. Updates arrive on their own.</p>
-          </li>
-          <li>
-            <h3>Sign in - the AI is ready</h3>
-            <p><strong>Free models from our partners are built in</strong>: a full balance of AI credits every 5 hours, and no key to find. Prefer your own? Run a model on your computer with Ollama, or paste any key you already have.</p>
-          </li>
-          <li>
-            <h3>Describe it</h3>
-            <p>Say what you want in a sentence. Agents plan it, write the code and open it running in the preview, with Undo on every turn.</p>
-          </li>
-        </ol>
-      </section>
-
-      <FreePlan />
-
-      <LiveAgentsShowcase />
-      <LiveRecording />
-
       <ModeShowcase />
-
-      <section className="product-story marketplace-wrap" aria-labelledby="product-story-heading">
-      <div className="product-story-heading"><p className="marketplace-eyebrow">THE SPACE TO BUILD</p><h2 id="product-story-heading">Everything you need.<br /><span>Nothing in your way.</span></h2><p>From the first idea to the final commit, make yourself at home in an editor built around your work.</p></div>
-      <div className="product-features">
-      <article><span className="feature-symbol" aria-hidden="true">✧</span><span className="feature-number">01 / INTELLIGENCE</span><h3>A second mind.<br />Right beside your code.</h3><p>Free models from our partners are built in - sign in and start, with no key and no bill. Or bring any key you already have - OpenAI, Anthropic, OpenRouter and more - or a model on your own computer, and pick the one that fits the task.</p><Link href="/docs">Explore the workspace <span aria-hidden="true">↗</span></Link></article>
-      <article><span className="feature-symbol" aria-hidden="true">⌘</span><span className="feature-number">02 / CRAFT</span><h3>Stay in flow.<br />Ship what matters.</h3><p>Monaco editing, real terminals, and integrated Git. The tools you reach for, together where you need them.</p><Link href="/free-ai-code-editor">Meet your new editor <span aria-hidden="true">↗</span></Link></article>
-      <article><span className="feature-symbol" aria-hidden="true">↗</span><span className="feature-number">03 / YOUR SHARE</span><h3>Your attention.<br />Something in return.</h3><p>An occasional sponsored card keeps the editor free. Half of the ad revenue is credited to you, with every event itemized.</p><Link href="/earn-while-you-code">How earnings work <span aria-hidden="true">↗</span></Link></article>
-      </div>
-      {/* The homepage is the most-linked page on the site; what it links to, a crawler visits first. */}
-      <p className="product-compare">
-        Switching from something else? See how ADCode compares with{" "}
-        {comparisons().map((page, index, all) => (
-          <span key={page.slug}>
-            <Link href={landingPath(page)}>{page.comparison?.subject.replace(/ \(formerly .*\)$/, "")}</Link>
-            {index < all.length - 2 ? ", " : index === all.length - 2 ? " and " : "."}
-          </span>
-        ))}
-      </p>
+      <FreePlan />
+      <section className="home-share marketplace-wrap" aria-labelledby="share-heading" data-home-reveal>
+        <div className="home-share-copy">
+          <p className="marketplace-eyebrow">A FAIRER EXCHANGE</p>
+          <h2 id="share-heading">Your attention.<br /><span>Your share.</span></h2>
+          <p>An occasional sponsored card keeps ADCode free. You receive half of eligible ad revenue, with a clear record of every credit.</p>
+          <Link className="home-text-link" href="/earn-while-you-code">How earnings work <span aria-hidden="true">↗</span></Link>
+        </div>
+        <div className="home-share-panel">
+          <span className="home-share-caption">BUILT AROUND A SIMPLE SPLIT</span>
+          <strong className="home-share-amount">50<span>%</span></strong>
+          <span className="home-share-label">of eligible ad revenue goes to you.</span>
+          <div className="home-share-bar" aria-hidden="true"><span /><span /></div>
+          <p>The other half keeps ADCode running. Earnings depend on eligible views and advertiser demand.</p>
+          <LiveImpressionsCounter />
+        </div>
       </section>
-
+      <details className="home-agent-details marketplace-wrap">
+        <summary><span><span className="marketplace-eyebrow">EXPLORE AT YOUR OWN PACE</span><strong>See the agents at work.</strong></span><span className="home-details-toggle" aria-hidden="true">+</span></summary>
+        <LiveAgentsShowcase /><LiveRecording />
+      </details>
       <AboutUs />
       <HomeFaq />
-      <section className="closing-cta marketplace-wrap"><p className="marketplace-eyebrow">YOUR NEXT CHAPTER</p><h2>Your first app is<br />one sentence away.</h2><HeroInstall source="closing" advertise={false} /><p>Free to build, no card, and half the ad revenue is yours.</p></section>
-
-      {/*
-        Advertisers are a second audience with their own nav button and their own page. The
-        builder used to sit between the product story and the FAQ, so a developer deciding
-        whether to install scrolled through a bid form to reach the answers; now the
-        developer story ends with its install, and the advertiser half starts here.
-      */}
+      <section className="closing-cta marketplace-wrap" data-home-reveal>
+        <p className="marketplace-eyebrow">YOUR NEXT CHAPTER</p>
+        <h2>Make something<br /><span>you&apos;ve been imagining.</span></h2>
+        <p>A full editor. Free AI. Space to see what you can do.</p>
+        <WebFirstActions />
+      </section>
       <section className="marketplace-bid" id="advertise">
-      <div className="marketplace-wrap marketplace-bid-grid">
-      <header className="marketplace-section-intro">
-      <p className="marketplace-eyebrow"><span /> Advertise on ADCode</p>
-      <h2>Reach developers<br />while they build.</h2>
-      <p>Bid from <strong>$1 per 500 verified impressions</strong>. Live demand sets the price, and a winning campaign can pay less than its maximum bid.</p>
-      <dl><div><dt>50%</dt><dd>paid to developers</dd></div><div><dt>$1</dt><dd>minimum block bid</dd></div><div><dt>0</dt><dd>personal code collected</dd></div></dl>
-      </header>
-      <LandingBidBuilder />
-      </div>
+        <div className="marketplace-wrap">
+          <div className="home-advertiser-intro" data-home-reveal>
+            <header><p className="marketplace-eyebrow">Advertise on ADCode</p><h2>Good tools meet<br />the right people.</h2><p>Reach developers as they build. Start from <strong>$1 per 500 verified impressions.</strong></p></header>
+            <Link className="home-link-button" href="/portal">Advertiser portal <span aria-hidden="true">↗</span></Link>
+          </div>
+          <details className="home-campaign-details">
+            <summary><span><strong>Create your first campaign</strong><span>Set your bid and preview your ad.</span></span><span className="home-details-toggle" aria-hidden="true">+</span></summary>
+            <LandingBidBuilder />
+            <section className="marketplace-principles" aria-label="How ADCode advertising works"><div className="marketplace-wrap"><p><span>01</span><strong>Verified attention</strong><small>Only a real, eligible view can bill.</small></p><p><span>02</span><strong>Second-price auction</strong><small>Win at your maximum; often pay less.</small></p><p><span>03</span><strong>Human review</strong><small>Every creative is checked before delivery.</small></p></div></section>
+          </details>
+        </div>
       </section>
+      <section className="home-resources marketplace-wrap" aria-labelledby="resources-heading">
+        <div className="home-resources-intro"><div><p className="marketplace-eyebrow">WHEN YOU NEED A HAND</p><h2 id="resources-heading">A guide for the next step.</h2></div><Link className="home-text-link" href="/docs">Open the docs <span aria-hidden="true">↗</span></Link></div>
+        <details className="home-resource-details"><summary>Explore guides, comparisons, and source code <span className="home-details-toggle" aria-hidden="true">+</span></summary>
+          <DocsShowcase />
+          <div className="home-comparisons"><p>Compare your editor</p><nav aria-label="Editor comparisons">{comparisons().map((page) => <Link className="home-text-link" key={page.slug} href={landingPath(page)}>{page.comparison?.subject.replace(/ \(formerly .*\)$/, "")} <span aria-hidden="true">↗</span></Link>)}</nav></div>
+          <div className="home-source-links"><Link className="home-text-link" href="/free-ai-code-editor">Explore the free editor <span aria-hidden="true">↗</span></Link><a className="home-text-link" href={SOURCE.repo} target="_blank" rel="noopener noreferrer">View on GitHub <span aria-hidden="true">↗</span></a></div>
+        </details>
+      </section>
+      <StickyInstall webFirst />
+    </div>
+  );
+}
 
-      <section className="marketplace-principles" aria-label="How ADCode works">
-      <div className="marketplace-wrap"><p><span>01</span><strong>Verified attention</strong><small>Only a real, eligible view can bill.</small></p><p><span>02</span><strong>Second-price auction</strong><small>Win at your maximum; often pay less.</small></p><p><span>03</span><strong>Human review</strong><small>Every creative is checked before delivery.</small></p></div>
-      </section>
-      {/* Last on the page: whoever read this far is checking it will hold up - the manual says so. */}
-      <DocsShowcase />
-      <StickyInstall />
-      </div>
-    );
-  }
+function WebFirstActions() {
+  return <div className="hero-install">
+    <div className="marketplace-hero-actions">
+      <a href={WEB_VERSION_URL} className="marketplace-primary">Open ADCode in browser <span aria-hidden="true">↗</span></a>
+      <Link href="/versions" className="marketplace-secondary">Get the desktop app <span aria-hidden="true">↓</span></Link>
+    </div>
+    <p className="hero-install-note">Build online, or use the desktop app for local projects.</p>
+  </div>;
+}

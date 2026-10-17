@@ -269,6 +269,14 @@ export function markSlashCommand(element: HTMLElement, text: string): void {
   first.parentNode.insertBefore(badge, first);
 }
 
+/** A composer button's word, in its own span so a phone-width composer can show the icon alone. */
+function toolLabel(text: string): HTMLSpanElement {
+  const label = document.createElement("span");
+  label.className = "composer-tool-label";
+  label.textContent = text;
+  return label;
+}
+
 export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   let open = false;
   let streamingBubble: HTMLElement | null = null;
@@ -1626,7 +1634,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const attachContext = document.createElement("button");
   attachContext.className = "chat-team-button";
   attachContext.type = "button";
-  attachContext.append(createIcon("M3.5 2.5h6l3 3v8h-9zM9.5 2.5v3h3"), "Files");
+  attachContext.append(createIcon("M3.5 2.5h6l3 3v8h-9zM9.5 2.5v3h3"), toolLabel("Files"));
   attachContext.title = "Add a project file to the conversation (or type @)";
   attachContext.setAttribute("aria-label", "Add a project file to the conversation");
   attachContext.addEventListener("click", () => {
@@ -1801,7 +1809,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const attachButton = document.createElement("button");
   attachButton.className = "chat-team-button";
   attachButton.type = "button";
-  attachButton.append(createIcon(ICON.plus), "Attach");
+  attachButton.append(createIcon(ICON.plus), toolLabel("Attach"));
   attachButton.title = "Attach images or documents (or drag them in, or paste)";
   attachButton.setAttribute("aria-label", "Attach images or documents");
 
@@ -1959,7 +1967,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   const composerTools = document.createElement("details");
   composerTools.className = "composer-tools";
   const toolsLabel = document.createElement("summary");
-  toolsLabel.append(createIcon("M3 4h10M3 8h10M3 12h10M6 2.5v3M10 6.5v3M6 10.5v3"), "Tools");
+  toolsLabel.append(createIcon("M3 4h10M3 8h10M3 12h10M6 2.5v3M10 6.5v3M6 10.5v3"), toolLabel("Tools"));
+  toolsLabel.setAttribute("aria-label", "Tools");
   const toolsMenu = document.createElement("div");
   toolsMenu.className = "composer-tools-menu";
   const livePreviewButton = document.createElement("button");

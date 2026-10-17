@@ -1,6 +1,9 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import Link from "next/link";
+import { AuthAscii } from "./AuthAscii";
+import { Mark } from "./Mark";
 import { trackWebsiteEvent } from "@/lib/websiteAnalytics";
 import {
   authMessage,
@@ -21,6 +24,8 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
   const panelId = useId();
   const signInTabId = `${panelId}-sign-in`;
   const createTabId = `${panelId}-create`;
+  const signInTab = useRef<HTMLButtonElement>(null);
+  const createTab = useRef<HTMLButtonElement>(null);
 
   const run = async (
     which: "google" | "github" | "email",
@@ -51,62 +56,78 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
   };
 
   const chooseMode = (next: "in" | "up") => {
+    if (busy !== null) return;
     setMode(next);
     setError(null);
   };
 
+  const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (busy !== null || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? "in" : event.key === "End" ? "up" : mode === "in" ? "up" : "in";
+    chooseMode(next);
+    (next === "in" ? signInTab : createTab).current?.focus();
+  };
+
   return (
-    <div className="ios-card auth-card auth-workspace">
-      <section className="auth-context" aria-labelledby={`${panelId}-heading`}>
+    <div className="ios-card auth-card auth-workspace auth-upgrade" data-mode={mode}>
+      <section className="auth-context" aria-label="Your ADCode account">
         <div className="auth-brand">
-          <span className="auth-brand-mark" aria-hidden="true">A/</span>
+          <span className="auth-brand-mark" aria-hidden="true"><Mark size={30} /></span>
           <span>ADCode</span>
+          <span className="auth-brand-caption">YOUR WORKSPACE</span>
         </div>
+        <AuthAscii />
         <div className="auth-context-copy">
-          <h1 id={`${panelId}-heading`}>{heading}</h1>
-          <p>
-            {mode === "in"
-              ? "Return to your earnings, campaigns, and desktop account."
-              : "Create one identity for ADCode on the web and desktop."}
-          </p>
+          <h2>One account.<br /><span>More possibilities.</span></h2>
+          <p>A place for your ideas, your earnings, and what comes next.</p>
         </div>
         <ul className="auth-context-list">
           <li><span aria-hidden="true">&#10003;</span>Earnings stay attached to you</li>
           <li><span aria-hidden="true">&#10003;</span>Campaigns continue across devices</li>
           <li><span aria-hidden="true">&#10003;</span>No payment card required</li>
         </ul>
-        <p className="auth-context-note">Authentication is handled by Firebase.</p>
+        <p className="auth-context-note">Built for the way you work. Web + desktop.</p>
       </section>
 
       <section
         className="auth-form-panel"
-        id={panelId}
-        role="tabpanel"
-        aria-labelledby={mode === "in" ? signInTabId : createTabId}
+        aria-labelledby={`${panelId}-heading`}
       >
-        <div className="auth-mode" data-mode={mode} role="tablist" aria-label="Account action">
+        <header className="auth-form-heading">
+          <p className="auth-eyebrow" key={mode}>{mode === "in" ? "WELCOME BACK" : "MAKE YOURSELF AT HOME"}</p>
+          <h1 id={`${panelId}-heading`}>{mode === "in" ? heading : "Create your account"}</h1>
+          <p>Choose how you&apos;d like to {mode === "in" ? "continue." : "get started."}</p>
+        </header>
+        <div className="auth-mode" data-mode={mode} role="tablist" aria-label="Account action" onKeyDown={onTabKey}>
           <button
+            ref={signInTab}
             id={signInTabId}
             type="button"
             role="tab"
             aria-controls={panelId}
             aria-selected={mode === "in"}
+            tabIndex={mode === "in" ? 0 : -1}
+            disabled={busy !== null}
             onClick={() => chooseMode("in")}
           >
             Sign in
           </button>
           <button
+            ref={createTab}
             id={createTabId}
             type="button"
             role="tab"
             aria-controls={panelId}
             aria-selected={mode === "up"}
+            tabIndex={mode === "up" ? 0 : -1}
+            disabled={busy !== null}
             onClick={() => chooseMode("up")}
           >
             Create account
           </button>
         </div>
-
+        <div id={panelId} role="tabpanel" aria-labelledby={mode === "in" ? signInTabId : createTabId} aria-busy={busy !== null}>
         {error !== null && (
           <div className="notice auth-error" data-tone="error" role="alert">{error}</div>
         )}
@@ -120,6 +141,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
           >
             <GithubMark />
             {busy === "github" ? "Opening GitHub..." : "Continue with GitHub"}
+            <span className={busy === "github" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "github" ? "" : "↗"}</span>
           </button>
           <button
             type="button"
@@ -129,6 +151,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
           >
             <GoogleMark />
             {busy === "google" ? "Opening Google..." : "Continue with Google"}
+            <span className={busy === "google" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "google" ? "" : "↗"}</span>
           </button>
         </div>
 
@@ -145,6 +168,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
               autoComplete="email"
               placeholder="you@example.com"
               required
+              disabled={busy !== null}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
@@ -160,6 +184,8 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
                 autoComplete={mode === "in" ? "current-password" : "new-password"}
                 minLength={mode === "up" ? 6 : undefined}
                 required
+                disabled={busy !== null}
+                aria-describedby={`${panelId}-password-hint`}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
@@ -173,15 +199,20 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
                 {showPassword ? "Hide" : "Show"}
               </button>
             </div>
+            <p className="auth-password-hint" id={`${panelId}-password-hint`}>{mode === "up" ? "Use at least 6 characters." : "Use the password linked to your account."}</p>
           </div>
 
           <button type="submit" className="btn btn-primary auth-submit" disabled={busy !== null}>
+            {busy === "email" && <span className="auth-spinner" aria-hidden="true" />}
             {busy === "email"
               ? mode === "in" ? "Signing in..." : "Creating account..."
               : mode === "in" ? "Sign in" : "Create account"}
+            {busy === null && <span className="auth-submit-arrow" aria-hidden="true">→</span>}
           </button>
         </form>
-        <p className="auth-privacy">Your password is sent directly to Firebase Authentication.</p>
+        <p className="sr-only" role="status">{busy === "email" ? mode === "in" ? "Signing in…" : "Creating account…" : busy ? `Opening ${busy === "github" ? "GitHub" : "Google"}…` : ""}</p>
+        </div>
+        <p className="auth-privacy">Your account. Your control.<br /><Link href="/privacy">Privacy policy</Link><span aria-hidden="true"> · </span><Link href="/terms">Terms of service</Link></p>
       </section>
     </div>
   );

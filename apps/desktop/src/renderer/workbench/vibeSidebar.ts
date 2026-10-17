@@ -21,6 +21,8 @@ import { attachContextMenuDismissal, createContextMenu, type ContextMenu, type C
 import { describeVibeProject, projectName, recentProjectsFor, summarizeVibeChanges, VIBE_PAGES, type VibePage } from "./vibeSidebarModel.ts";
 import { GIT_CHANGED_EVENT } from "./changesView.ts";
 import { isWebSurface } from "../surface.ts";
+import { brandMark } from "./brandMark.ts";
+import { createChatTabs, createWebRail, type WebRail } from "./webShell.ts";
 
 /** Below this width the rail would squeeze the conversation, so it becomes a drawer. */
 export const VIBE_DOCK_MIN_WIDTH = 1120;
@@ -42,6 +44,15 @@ const PATH = {
   // The activity bar's gear, scaled from its 24-unit grid to this 16-unit one.
   gear: "M6.89 3.53L7.11 1.87L8.89 1.87L9.11 3.53A4.6 4.6 0 0 1 10.8 4.35L12.25 3.48L13.35 4.87L12.18 6.08A4.6 4.6 0 0 1 12.6 7.92L14.18 8.5L13.79 10.23L12.11 10.07A4.6 4.6 0 0 1 10.93 11.55L11.46 13.15L9.86 13.91L8.94 12.5A4.6 4.6 0 0 1 7.06 12.5L6.14 13.91L4.54 13.15L5.07 11.55A4.6 4.6 0 0 1 3.89 10.07L2.21 10.23L1.82 8.5L3.4 7.92A4.6 4.6 0 0 1 3.82 6.08L2.65 4.87L3.75 3.48L5.2 4.35A4.6 4.6 0 0 1 6.89 3.53ZM8 5.93a2.07 2.07 0 1 0 0 4.14 2.07 2.07 0 0 0 0-4.14z",
   ide: "M5 4.5 1.5 8 5 11.5M11 4.5 14.5 8 11 11.5M9.5 2.5l-3 11",
+  // The web frame's rows (webShell.ts).
+  search: "M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM10.3 10.3l3.2 3.2",
+  spark: "M8 2l1.5 4.5L14 8l-4.5 1.5L8 14 6.5 9.5 2 8l4.5-1.5z",
+  gift: "M2.5 6h11v2.5h-11zM3.5 8.5V13.5h9V8.5M8 6v7.5M8 6C6.6 6 5 5.5 5 4.3 5 3 6.8 2.9 8 6zM8 6c1.4 0 3-.5 3-1.7C11 3 9.2 2.9 8 6z",
+  chevronRight: "M6.5 4.5 10 8l-3.5 3.5",
+  monitor: "M2 3h12v8H2zM6 14h4M8 11v3",
+  book: "M2.5 3h4a1.5 1.5 0 0 1 1.5 1.5V13a1 1 0 0 0-1-1H2.5zM13.5 3h-4A1.5 1.5 0 0 0 8 4.5V13a1 1 0 0 1 1-1h4.5z",
+  grid: "M2.5 2.5h4.5v4.5H2.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5H2.5zM9 9h4.5v4.5H9z",
+  sidebar: "M2.5 3h11v10h-11zM6.5 3v10",
 } as const;
 
 export interface VibeSidebarDeps {
@@ -90,6 +101,8 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   element.setAttribute("aria-label", "Vibe sidebar");
 
   let collapsed = false;
+  /** The web frame's rail, when this is the web version; built once the rows exist. */
+  let webRail: WebRail | null = null;
   try { collapsed = localStorage.getItem(COLLAPSED_KEY) === "true"; } catch { /* Optional preference. */ }
   let drawerOpen = false;
   let drawerTrigger: HTMLElement | null = null;
@@ -197,6 +210,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
       if (id === current) control.setAttribute("aria-current", "page");
       else control.removeAttribute("aria-current");
     }
+    webRail?.setCurrent(current);
   }
   markPage("chat");
   deps.onPageChange(markPage);
@@ -276,8 +290,117 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
 
   const main = document.createElement("div");
   main.className = "vibe-rail-main";
-  main.append(head, projectCard, pages, nav, conversations);
-  element.append(main, footer);
+  if (web) {
+    webRail = buildWebFrame();
+    webRail.setCurrent("chat");
+  } else {
+    main.append(head, projectCard, pages, nav, conversations);
+    element.append(main, footer);
+  }
+
+  /*
+   * The web version's frame (webShell.ts): an icon rail with the places and panels, a sidebar
+   * that reads like a plan - credits, earnings, the project, the chats - and tabs along the
+   * top. Every control here calls the same action as its desktop row above.
+   */
+  function buildWebFrame(): WebRail {
+    // One search icon, as Freebuff has, opening the same universal search the box did.
+    const searchButton = button("web-sidebar-search", "Search everything", PATH.search, () => { deps.run("search.universal"); closeDrawer(); });
+    const brand = document.createElement("div");
+    brand.className = "web-sidebar-brand";
+    const wordmark = document.createElement("span");
+    wordmark.className = "web-sidebar-wordmark";
+    wordmark.textContent = "ADCode";
+    brand.append(brandMark({ size: 24, plate: true, accent: true }), wordmark, searchButton);
+
+    const credits = navItem("Free AI credits", PATH.spark, "web-credits-row", () => { deps.run("ai.showCredits"); closeDrawer(); });
+    const earningsRow = navItem("Earnings", ICON.earnings, "web-earnings-row", () => { deps.run("view.earnings"); closeDrawer(); });
+    const invite = navItem("Invite friends, earn more", PATH.gift, "web-invite-row", () => { deps.run("invite.open"); closeDrawer(); });
+    const usage = document.createElement("div");
+    usage.className = "vibe-nav web-usage";
+    usage.append(credits.control, earningsRow.control, invite.control);
+    // The cloud-time chip is made before the renderer; it belongs with the other allowances.
+    const time = document.querySelector<HTMLElement>(".web-time");
+    if (time !== null) usage.append(time);
+    deps.onEarnings((label) => setBadge(earningsRow, "Earnings", label, false, label === "" ? "Your earnings" : `${label} available`));
+    void watchCredits(credits);
+
+    const projectLabel = document.createElement("h2");
+    projectLabel.className = "vibe-nav-label";
+    projectLabel.textContent = "Project";
+    conversationsLabel.textContent = "Chats";
+
+    const link = (label: string, icon: string, run: () => void): HTMLButtonElement => {
+      const row = button("vibe-nav-item web-link-row", label, icon, run);
+      const text = document.createElement("span");
+      text.className = "vibe-nav-text";
+      text.textContent = label;
+      row.append(text, createIcon(PATH.chevronRight));
+      return row;
+    };
+    const links = document.createElement("div");
+    links.className = "vibe-nav web-links";
+    links.append(
+      link("Desktop app", PATH.monitor, () => deps.run("workspace.openIde")),
+      link("Docs", PATH.book, () => window.open("https://adcode.bluethenics.com/docs", "_blank", "noopener")),
+      link("All features", PATH.grid, () => document.getElementById("open-features")?.click()),
+    );
+    const promo = document.createElement("div");
+    promo.className = "web-promo";
+    const promoText = document.createElement("p");
+    promoText.textContent = "For the full IDE, local models and no time limit, use ADCode on desktop.";
+    promo.append(promoText, ide);
+
+    const panel = document.createElement("div");
+    panel.className = "web-sidebar-panel";
+    main.append(brand, head, usage, projectLabel, projectCard, conversations);
+    const panelFooter = document.createElement("div");
+    panelFooter.className = "vibe-rail-footer web-sidebar-footer";
+    panelFooter.append(links, promo);
+    panel.append(main, panelFooter);
+
+    // Controls that lived in the desktop title bar and footer move to the rail.
+    const account = document.getElementById("account-toggle");
+    const feedback = document.getElementById("report-toggle");
+    const rail = createWebRail({
+      home: () => { deps.showPage("chat"); closeDrawer(); },
+      places: VIBE_PAGES.map((page) => ({ id: page.id, label: page.label, icon: PAGE_DETAIL[page.id].icon, run: () => { deps.showPage(page.id); closeDrawer(); } })),
+      panels: [
+        { id: "changes", label: "Changes", icon: PATH.changes, run: () => { deps.toggleContext("changes"); closeDrawer(); } },
+        { id: "preview", label: "Preview", icon: PATH.preview, run: () => { deps.togglePreview(); closeDrawer(); } },
+        { id: "automations", label: "Automations", icon: PATH.automations, run: () => { chat.openScheduleComposer(); closeDrawer(); } },
+      ],
+      footer: [notifications, settings, deps.more, ...(feedback === null ? [] : [feedback]), ...(account === null ? [] : [account])],
+    });
+    element.append(rail.element, panel);
+
+    const tabToggle = button("web-tabs-button", "Hide sidebar (Ctrl+B)", PATH.sidebar, () => toggle());
+    const tabChanges = button("web-tabs-button", "Changes", PATH.changes, () => deps.toggleContext("changes"));
+    const tabPreview = button("web-tabs-button web-tabs-preview", "Preview", PATH.preview, () => deps.togglePreview());
+    tabPreview.append(document.createTextNode("Preview"));
+    const tabs = createChatTabs({
+      historyHost,
+      newChat: () => { deps.showPage("chat"); deps.run("ai.newConversation"); },
+      leading: [tabToggle],
+      trailing: [tabChanges, tabPreview],
+    });
+    document.body.append(tabs.element);
+    return rail;
+  }
+
+  /** The session window's credits on the Credits row, as Freebuff shows its daily count. */
+  async function watchCredits(row: { control: HTMLButtonElement; badge: HTMLElement }): Promise<void> {
+    const paint = async (): Promise<void> => {
+      const view = await window.adcode.aiUsage.allowance().catch(() => null);
+      const session = view?.credits?.session;
+      if (session === undefined) { setBadge(row, "Free AI credits", "", false, "See your free AI usage"); return; }
+      const left = Math.max(0, Math.floor(session.remaining));
+      setBadge(row, "Free AI credits", left.toLocaleString(), left <= session.limit * 0.1, `${left.toLocaleString()} of ${session.limit.toLocaleString()} left in this session`);
+    };
+    window.adcode.aiUsage.onChanged(() => void paint());
+    window.setInterval(() => { if (!document.hidden) void paint(); }, 60_000);
+    await paint();
+  }
 
   /* ── Compact top bar ─────────────────────────────────────────────────── */
 
@@ -343,8 +466,11 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     if (root !== null) {
       nodes.push({ kind: "separator" });
       nodes.push({ label: "Project overview", run: () => { closeDrawer(); deps.showContext("project"); } });
-      nodes.push({ label: "Source control", run: () => { closeDrawer(); deps.run("view.scm"); } });
-      nodes.push({ label: "Browse files in the IDE", run: () => { closeDrawer(); deps.run("view.explorer"); } });
+      // The web has no IDE: Changes and Commit & Push are its source control.
+      if (!web) {
+        nodes.push({ label: "Source control", run: () => { closeDrawer(); deps.run("view.scm"); } });
+        nodes.push({ label: "Browse files in the IDE", run: () => { closeDrawer(); deps.run("view.explorer"); } });
+      }
       nodes.push({ kind: "separator" });
       nodes.push({ label: "Close project", run: () => { closeDrawer(); deps.run("workspace.close"); } });
     }
@@ -385,6 +511,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     paintProject(root, git);
     const changeSummary = summarizeVibeChanges(git, taskList);
     setBadge(changes, "Changes", changeSummary.badge, changeSummary.attention, changeSummary.description);
+    webRail?.setBadge("changes", changeSummary.badge);
   }
   let refreshTimer: number | undefined;
   const scheduleRefresh = (): void => {
@@ -464,10 +591,12 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     historyHost,
     setContextTab(tab): void {
       changes.control.setAttribute("aria-pressed", String(tab === "changes"));
+      webRail?.setPressed("changes", tab === "changes");
     },
     setPreviewOpen(open): void {
       preview.control.setAttribute("aria-pressed", String(open));
       topPreview.setAttribute("aria-pressed", String(open));
+      webRail?.setPressed("preview", open);
     },
     // Called once per project switch, so no debounce: the card must not show the old name.
     refresh: () => { void refresh(); },

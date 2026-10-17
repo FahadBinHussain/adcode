@@ -85,6 +85,7 @@ import {
 import { mcpConnection, memoryList, memoryRemove, memoryWrite } from "./memory.ts";
 import { parseMemoryName, parseMemoryWrite } from "./memoryIpcValidation.ts";
 import { assistantControls } from "./assistantControls.ts";
+import { openAgentSettings } from "./agentRules.ts";
 import { registerGitIpc } from "./gitIpc.ts";
 import { installApplicationMenu } from "./menu.ts";
 import { clearRecents, forgetRecent, recentFolders, rememberRecent } from "./recents.ts";
@@ -1058,6 +1059,7 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
     if (typeof id !== "string" || id.length > 2048) throw new Error("Invalid skill ID.");
     return assistantControls().previewSkill(id);
   });
+  ipcMain.handle(CHANNELS.aiAgentSettingsOpen, (_event, scope: unknown) => openAgentSettings(scope, currentWorkspace()?.root ?? null));
 
   ipcMain.handle(CHANNELS.aiSetKey, (_event, provider: unknown, key: unknown) => {
     if (!isString(provider) || !isString(key)) throw new Error("expected a provider and key");

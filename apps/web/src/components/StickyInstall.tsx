@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { detectPlatform } from "@/lib/platform";
 import { installLinkFor, sendInstallLink } from "@/lib/sendToDesktop";
-import { GITHUB_REPO, SITE } from "@/lib/site";
+import { GITHUB_REPO, SITE, WEB_VERSION_URL } from "@/lib/site";
 import { stickyInstallAction, type StickyInstallAction } from "@/lib/stickyInstall";
 import { trackWebsiteEvent } from "@/lib/websiteAnalytics";
 import "./stickyInstall.css";
@@ -20,7 +20,7 @@ const DISMISSED = "adcode.sticky-install.dismissed";
  * open (stickyInstall.css). × puts it away for the visit. Each click is recorded as the
  * "sticky" placement, so it is judged on its own (Admin > Analytics).
  */
-export function StickyInstall() {
+export function StickyInstall({ webFirst = false }: { webFirst?: boolean }) {
   const [action, setAction] = useState<StickyInstallAction | null>(null);
   const [heroGone, setHeroGone] = useState(false);
   const [closingReached, setClosingReached] = useState(false);
@@ -62,17 +62,18 @@ export function StickyInstall() {
   };
 
   return (
-    <aside className="sticky-install" data-shown={shown} aria-label="Install ADCode" aria-hidden={!shown}>
+    <aside className="sticky-install" data-shown={shown} aria-label={webFirst ? "Open ADCode in browser" : "Install ADCode"} aria-hidden={!shown}>
       <div className="sticky-install-copy">
         <strong>ADCode</strong>
         <span>The free AI code editor that pays you to build.</span>
       </div>
       <a
         className="sticky-install-cta"
-        href={action.href}
+        href={webFirst ? WEB_VERSION_URL : action.href}
         data-tracked
         tabIndex={shown ? 0 : -1}
         onClick={(event) => {
+          if (webFirst) return;
           if (action.kind === "download") trackWebsiteEvent("download_click", 0, undefined, "sticky");
           if (action.kind === "send") {
             event.preventDefault();
@@ -86,8 +87,8 @@ export function StickyInstall() {
           }
         }}
       >
-        <span>{copied ? "Link copied" : action.label}</span>
-        <small>{copied ? "Paste it on your computer" : action.detail}</small>
+        <span>{webFirst ? "Open in browser" : copied ? "Link copied" : action.label}</span>
+        <small>{webFirst ? "No download needed" : copied ? "Paste it on your computer" : action.detail}</small>
       </a>
       <button type="button" className="sticky-install-close" aria-label="Hide this bar" tabIndex={shown ? 0 : -1} onClick={dismiss}>×</button>
     </aside>

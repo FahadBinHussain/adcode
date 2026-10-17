@@ -424,13 +424,16 @@ export function createAgent(deps: AgentDeps): Agent {
       // What this request cost: the provider's count when it gives one, otherwise counted
       // here from what went out and what came back.
       let sent: ProviderRequest | null = null;
-      let reportedUsage: { inputTokens: number; outputTokens: number } | null = null;
+      let reportedUsage: { inputTokens: number; outputTokens: number; cachedTokens?: number } | null = null;
       let outputChars = 0;
       let streamed = false;
 
       try {
         const lean = shrunk || deps.lean?.() === true;
-        const system = [deps.system ?? (lean ? LEAN_SYSTEM : DEFAULT_SYSTEM), await deps.context?.(),
+        // The instructions come first and never change within a conversation; what follows
+        // them is read fresh each step, so the provider is told where the stable part ends.
+        const instructions = deps.system ?? (lean ? LEAN_SYSTEM : DEFAULT_SYSTEM);
+        const system = [instructions, await deps.context?.(),
           smallerEdits ? "The previous tool arguments were malformed or incomplete. Recover without repeating that call: send exactly one tool call per response, as a complete JSON object with escaped newlines and quotes. Keep each file write to at most 40 lines. Create a short complete new file with propose_edit, then extend it with small edit_file replacements. Read the current file before changing it. Finish and verify the original request." : "",
         ].filter(Boolean).join("\n\n");
         const tools = lean ? leanTools(deps.tools) : deps.tools;
@@ -466,6 +469,7 @@ export function createAgent(deps: AgentDeps): Agent {
         const request: ProviderRequest = {
           model: deps.model,
           system,
+          cache: { stableSystem: instructions.length },
           messages: lean ? leanHistory(messages) : messages,
           tools,
           maxTokens: budget,
@@ -518,7 +522,11 @@ export function createAgent(deps: AgentDeps): Agent {
               break;
 
             case "usage":
-              reportedUsage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens };
+              reportedUsage = {
+                inputTokens: event.inputTokens,
+                outputTokens: event.outputTokens,
+                ...(event.cachedTokens === undefined ? {} : { cachedTokens: Math.min(event.cachedTokens, event.inputTokens) }),
+              };
               break;
 
             case "tool-call":

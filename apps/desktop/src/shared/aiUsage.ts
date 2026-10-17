@@ -37,6 +37,8 @@ export interface UsageRow {
   readonly requests: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  /** Of `inputTokens`, how many the provider read from its prompt cache. Absent in older files. */
+  readonly cachedTokens?: number;
   /** Requests whose count was estimated here rather than reported by the provider. */
   readonly estimatedRequests: number;
   /** Requests with a known price; their cost is in `costMicros`. */
@@ -47,6 +49,8 @@ export interface UsageRow {
 export interface UsagePrice {
   readonly inputMicrosPerMillion: number;
   readonly outputMicrosPerMillion: number;
+  /** What cached input costs; absent when the catalogue does not say, and it is priced as input. */
+  readonly cacheReadMicrosPerMillion?: number;
 }
 
 export interface UsageEntry {
@@ -55,6 +59,8 @@ export interface UsageEntry {
   readonly source: UsageSource;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  /** Of `inputTokens`, how many came from the provider's prompt cache, when it said. */
+  readonly cachedTokens?: number;
   readonly estimated: boolean;
   readonly at: number;
   /** Null when the catalogue has no price for this model. */
@@ -67,6 +73,8 @@ export interface UsageModelView {
   readonly requests: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  /** Of `inputTokens`, how many were read from the provider's prompt cache. */
+  readonly cachedTokens: number;
   /** Null when no request to this model had a known price. */
   readonly costMicros: number | null;
   /** Some requests had no price, so the cost shown is less than the whole. */
@@ -92,6 +100,7 @@ export interface AiUsageView {
     readonly requests: number;
     readonly inputTokens: number;
     readonly outputTokens: number;
+    readonly cachedTokens: number;
     readonly costMicros: number | null;
     readonly costPartial: boolean;
     readonly estimated: boolean;
@@ -122,9 +131,14 @@ function finite(value: number): number {
   return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
 }
 
-/** What one request cost at a price, in millionths of a dollar. */
-export function costOf(price: UsagePrice, inputTokens: number, outputTokens: number): number {
-  return Math.round((inputTokens * price.inputMicrosPerMillion + outputTokens * price.outputMicrosPerMillion) / 1_000_000);
+/**
+ * What one request cost at a price, in millionths of a dollar. `cachedTokens` are part of
+ * `inputTokens`, charged at the cache-read price where the catalogue has one.
+ */
+export function costOf(price: UsagePrice, inputTokens: number, outputTokens: number, cachedTokens = 0): number {
+  const cached = Math.min(cachedTokens, inputTokens);
+  const cachedRate = price.cacheReadMicrosPerMillion ?? price.inputMicrosPerMillion;
+  return Math.round(((inputTokens - cached) * price.inputMicrosPerMillion + cached * cachedRate + outputTokens * price.outputMicrosPerMillion) / 1_000_000);
 }
 
 /** The rows with one request added to its day's row. */
@@ -132,17 +146,19 @@ export function addUsage(rows: readonly UsageRow[], entry: UsageEntry): UsageRow
   const day = dayKey(entry.at);
   const inputTokens = finite(entry.inputTokens);
   const outputTokens = finite(entry.outputTokens);
+  const cachedTokens = Math.min(finite(entry.cachedTokens ?? 0), inputTokens);
   const priced = entry.price !== null;
-  const cost = entry.price === null ? 0 : costOf(entry.price, inputTokens, outputTokens);
+  const cost = entry.price === null ? 0 : costOf(entry.price, inputTokens, outputTokens, cachedTokens);
   const index = rows.findIndex((row) => row.day === day && row.provider === entry.provider && row.model === entry.model && row.source === entry.source);
   const base: UsageRow = index === -1
-    ? { day, provider: entry.provider, model: entry.model, source: entry.source, requests: 0, inputTokens: 0, outputTokens: 0, estimatedRequests: 0, pricedRequests: 0, costMicros: 0 }
+    ? { day, provider: entry.provider, model: entry.model, source: entry.source, requests: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, estimatedRequests: 0, pricedRequests: 0, costMicros: 0 }
     : rows[index]!;
   const next: UsageRow = {
     ...base,
     requests: base.requests + 1,
     inputTokens: base.inputTokens + inputTokens,
     outputTokens: base.outputTokens + outputTokens,
+    cachedTokens: (base.cachedTokens ?? 0) + cachedTokens,
     estimatedRequests: base.estimatedRequests + (entry.estimated ? 1 : 0),
     pricedRequests: base.pricedRequests + (priced ? 1 : 0),
     costMicros: base.costMicros + cost,
@@ -180,7 +196,9 @@ export function parseUsageRows(raw: unknown): UsageRow[] {
     const numbers = ["requests", "inputTokens", "outputTokens", "estimatedRequests", "pricedRequests", "costMicros"].map((key) => count(row[key]));
     if (numbers.some((value) => value === null)) continue;
     const [requests, inputTokens, outputTokens, estimatedRequests, pricedRequests, costMicros] = numbers as number[];
-    rows.push({ day, provider, model, source, requests: requests!, inputTokens: inputTokens!, outputTokens: outputTokens!, estimatedRequests: estimatedRequests!, pricedRequests: pricedRequests!, costMicros: costMicros! });
+    // Files written before cached counts were kept have none; that reads as nothing cached.
+    const cachedTokens = Math.min(count(row["cachedTokens"]) ?? 0, inputTokens!);
+    rows.push({ day, provider, model, source, requests: requests!, inputTokens: inputTokens!, outputTokens: outputTokens!, cachedTokens, estimatedRequests: estimatedRequests!, pricedRequests: pricedRequests!, costMicros: costMicros! });
   }
   return rows;
 }
@@ -213,13 +231,14 @@ export function summarizeUsage(rows: readonly UsageRow[], range: UsageRange, now
   const inRange = rows.filter((row) => start === null || row.day >= start);
   const since = rows.reduce<string | null>((first, row) => (first === null || row.day < first ? row.day : first), null);
 
-  const byModel = new Map<string, { provider: string; model: string; requests: number; input: number; output: number; cost: number; priced: number; estimated: number; chat: number; agents: number }>();
+  const byModel = new Map<string, { provider: string; model: string; requests: number; input: number; output: number; cached: number; cost: number; priced: number; estimated: number; chat: number; agents: number }>();
   for (const row of inRange) {
     const key = `${row.provider}\u0000${row.model}`;
-    const entry = byModel.get(key) ?? { provider: row.provider, model: row.model, requests: 0, input: 0, output: 0, cost: 0, priced: 0, estimated: 0, chat: 0, agents: 0 };
+    const entry = byModel.get(key) ?? { provider: row.provider, model: row.model, requests: 0, input: 0, output: 0, cached: 0, cost: 0, priced: 0, estimated: 0, chat: 0, agents: 0 };
     entry.requests += row.requests;
     entry.input += row.inputTokens;
     entry.output += row.outputTokens;
+    entry.cached += row.cachedTokens ?? 0;
     entry.cost += row.costMicros;
     entry.priced += row.pricedRequests;
     entry.estimated += row.estimatedRequests;
@@ -236,6 +255,7 @@ export function summarizeUsage(rows: readonly UsageRow[], range: UsageRange, now
       requests: entry.requests,
       inputTokens: entry.input,
       outputTokens: entry.output,
+      cachedTokens: entry.cached,
       costMicros: entry.priced === 0 ? null : entry.cost,
       costPartial: entry.priced > 0 && entry.priced < entry.requests,
       estimated: entry.estimated > 0,
@@ -251,6 +271,7 @@ export function summarizeUsage(rows: readonly UsageRow[], range: UsageRange, now
     requests,
     inputTokens: models.reduce((sum, model) => sum + model.inputTokens, 0),
     outputTokens: models.reduce((sum, model) => sum + model.outputTokens, 0),
+    cachedTokens: models.reduce((sum, model) => sum + model.cachedTokens, 0),
     costMicros: priced.length === 0 ? null : priced.reduce((sum, model) => sum + (model.costMicros ?? 0), 0),
     costPartial: models.some((model) => model.costPartial) || (priced.length > 0 && priced.length < models.length),
     estimated: models.some((model) => model.estimated),

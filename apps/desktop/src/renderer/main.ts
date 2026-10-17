@@ -5830,8 +5830,20 @@ function registerCommands(): void {
   add("ai.compactConversation", "AI: Compact Conversation", () => chat.compactConversation());
   add("ai.showUsage", "AI: Show Usage", () => void openUsageDialog());
   add("ai.showCredits", "AI: Show Free AI Credits", () => void openUsageDialog());
+  add("ai.showCacheSavings", "AI: Show Prompt Cache Savings", () => void openUsageDialog());
   add("ai.delegate", "AI: Split a Task Across Helpers", () => { showChatSurface(); chat.draft("/helpers "); });
   add("ai.initInstructions", "AI: Write Project Instructions (AGENTS.md)", () => { showChatSurface(); chat.ask("/init"); });
+  // The agents' rules and hooks: opened in the editor, created with a commented starter if missing.
+  const openAgentSettings = async (scope: "project" | "user"): Promise<void> => {
+    const opened = await window.adcode.ai.openAgentSettings(scope).catch((error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : "Could not open the rules file." }));
+    if (!opened.ok) {
+      setStatus(opened.message, 5000);
+      return;
+    }
+    await openFile(opened.path);
+  };
+  add("ai.agentRules", "AI: Open Agent Rules and Hooks (.adcode/settings.json)", () => void openAgentSettings("project"));
+  add("ai.agentRulesUser", "AI: Open My Agent Rules for Every Project (~/.adcode/settings.json)", () => void openAgentSettings("user"));
   add("ai.customizeChat", "AI: Customise Chat", () => void openChatAppearanceDialog({ openAgents: () => openAgents() }));
   add("ai.viewConversationSummary", "AI: View Conversation Summary", () => chat.viewConversationSummary());
   add("ai.askSelection", "Ask AI about Selection or File", () => editorHost.runAction("adcode.askSelection"));

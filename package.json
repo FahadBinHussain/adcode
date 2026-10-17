@@ -34,6 +34,7 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:ads": "node scripts/smoke-ads.mjs",
     "smoke:agent": "node scripts/smoke-agent-tools.mjs",
+    "smoke:rules": "node scripts/smoke-agent-rules.mjs",
     "smoke:commands": "node scripts/smoke-chat-commands.mjs",
     "smoke:live": "node scripts/smoke-live-agents.mjs",
     "record:hero": "node scripts/record-hero.mjs",
@@ -96,6 +97,7 @@
     "node-pty": "^1.1.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-email": "6.11.2",
     "web-tree-sitter": "^0.20.8",
     "ws": "^8.21.3",
     "yjs": "^13.6.32"

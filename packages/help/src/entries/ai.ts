@@ -344,6 +344,16 @@ export const AI_ENTRIES: readonly HelpEntry[] = [
     related: ["ai.subagents", "adcode.ai.memoryCapture", "ai.composerCommands"],
   },
   {
+    id: "ai.agentRules",
+    title: "Agent rules and hooks",
+    plain: "A file in your project that says what the AI may do on its own, what it must ask about first, and what it may never do - plus your own commands that run before and after each step.",
+    why: "Before you leave the AI working unattended, or on a project where a wrong command is costly: block git push, keep it out of .env files, ask before any file is deleted, run your linter after every edit, and refuse to finish until the tests pass.",
+    how: "Run AI: Open Agent Rules and Hooks; ADCode creates .adcode/settings.json in your project with a commented starter and opens it. Under permissions, list rules in allow, ask or deny: a tool name, optionally with a pattern in brackets - run_command(git push*), edit_file(src/**), delete_file(*), fetch_url(domain:example.com). Deny always wins; between ask and allow the more specific rule decides, so ask: [\"run_command\"] with allow: [\"run_command(npm test*)\"] asks before every command except the tests. A path pattern without a slash matches at any depth, and a rule on a folder covers everything in it. A chained command such as npm test && git push is checked part by part. A denied call fails with the rule's name, so the AI tells you instead of trying another way; an ask opens a dialog with Allow once, and when nobody is there to answer, the call is refused. Under hooks, preToolUse, postToolUse, sessionStart and stop each take a list of { \"matcher\": \"run_command\", \"command\": \"node check.mjs\" } entries. The command gets the call as JSON on stdin, with the same field names Claude Code uses. Exit code 2 is the one that counts: from preToolUse it blocks the call, with what the command printed to stderr as the reason; from postToolUse that text is added to the step's result for the AI to fix; from stop it sends the AI back to work, up to three times. Any other failure is written to the debug log and the work goes on. sessionStart's output is given to the AI. A project's hooks run only after you approve them once, and you are asked again whenever they change. For rules in every project, run AI: Open My Agent Rules for Every Project, which opens ~/.adcode/settings.json; a project's allow rules never lift an ask from your own file. Rules apply to the chat, its helpers and Team agents alike. Changing the rules file itself always asks first. With no rules, nothing changes: the AI works exactly as before.",
+    group: "ai",
+    settingIds: [],
+    related: ["ai.subagents", "ai.projectInstructions", "ai.team"],
+  },
+  {
     id: "ai.subagents",
     title: "Helpers: agents that start agents",
     plain: "The AI can split a big task into parts and hand them to helper agents that work at the same time, each with a fresh memory.",
@@ -368,9 +378,22 @@ export const AI_ENTRIES: readonly HelpEntry[] = [
     title: "AI usage",
     plain: "Shows your AI activity, daily streaks, tokens and estimated cost, model by model.",
     why: "See where your own provider spending goes and how many free AI credits you have left.",
-    how: "Select Usage in the chat's header (or ••• when docked), choose Usage by model in the context meter's menu, or run AI: Show Usage. Pick Today, 7 days, 30 days or All time for this machine's history. Activity always shows the past year: current streak, longest streak and days with AI requests on this computer. Hover or select a square for its date, requests and tokens; arrow keys move between days, Home and End jump to the oldest and newest day. Streaks use local calendar days and include yesterday while today is still empty. Counts not reported by a provider are estimated and marked ≈; a model with no catalogue price says No price. Included AI has no charge to you. Your free AI credits sit at the top: the current 5-hour session and this week, each with a bar, the credits left, and when it refills, including credits held by replies in progress. Clear usage removes this computer's history, activity and streaks, not your credits. Your own provider's billing page has the exact bill.",
+    how: "Select Usage in the chat's header (or ••• when docked), choose Usage by model in the context meter's menu, or run AI: Show Usage. Pick Today, 7 days, 30 days or All time for this machine's history. Activity always shows the past year: current streak, longest streak and days with AI requests on this computer. Hover or select a square for its date, requests and tokens; arrow keys move between days, Home and End jump to the oldest and newest day. Streaks use local calendar days and include yesterday while today is still empty. Counts not reported by a provider are estimated and marked ≈; a model with no catalogue price says No price. Input the provider read back from its prompt cache shows as cached under Tokens, and hovering a model shows its cached share; the estimated cost prices it at the catalogue's cache rate. Included AI has no charge to you. Your free AI credits sit at the top: the current 5-hour session and this week, each with a bar, the credits left, and when it refills, including credits held by replies in progress. Clear usage removes this computer's history, activity and streaks, not your credits. Your own provider's billing page has the exact bill.",
     group: "ai",
     settingIds: [],
-    related: ["ai.autoCompact", "adcode.ai.model"],
+    related: ["ai.autoCompact", "adcode.ai.model", "ai.promptCaching"],
+  },
+  {
+    id: "ai.promptCaching",
+    title: "Prompt caching",
+    plain:
+      "Each step of a long chat re-sends the same instructions, tools and earlier messages. ADCode lets the AI provider keep those in a cache, so you are not charged full price to send them again.",
+    why:
+      "An agent that reads ten files makes ten requests, and every one carries the whole conversation so far. Without caching, a long session pays for its beginning over and over. With it, the repeated part costs a fraction - Anthropic bills cached input at a tenth, OpenAI at a half or less - and comes back faster, so the same budget on your own key goes further.",
+    how:
+      "Nothing to switch on: chats and agents ask for it on every step. With Claude, ADCode marks the tool list, the instructions and the conversation so far for Anthropic's cache. OpenAI, DeepSeek, Gemini and other compatible providers cache a repeated beginning by themselves, and ADCode sends each step's history in exactly the same order and bytes so their cache matches. To see it working, run AI: Show Prompt Cache Savings or open AI usage: Tokens says how much input was cached, and hovering a model shows its share. A cache lasts a few minutes, so a chat you come back to much later starts a fresh one. Free AI credits still count every input token, cached or not. One-off requests such as inline completions are not cached, because writing a cache costs a little more and nothing would read it.",
+    group: "ai",
+    settingIds: [],
+    related: ["ai.usage", "ai.autoCompact", "ai.credits"],
   },
 ];

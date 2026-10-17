@@ -90,3 +90,14 @@ apps/cloud/public/
 apps/cloud/container/host/
 apps/cloud/.dev.vars
 apps/cloud/.wrangler/
+
+# Pinned OpenSEO source cache and local audit scratch.
+/.tmp/open-seo/
+
+# Local scratch (build logs, harness scratch, throwaway checkouts). 375 MB of
+# it was showing as untracked, which made every agent snapshot crawl and broke
+# on an empty directory git refused to index.
+.tmp/
+
+# Other agents' worktrees, nested inside the repo so they share node_modules.
+.claude/worktrees/

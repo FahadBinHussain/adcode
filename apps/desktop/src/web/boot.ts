@@ -201,6 +201,9 @@ async function boot(): Promise<void> {
   }
 
   await import("../renderer/main.ts");
+  // After the renderer's own sheets, so the web shell's layout wins without fighting specificity.
+  await import("./shell.css");
+  document.body.dataset["shell"] = "ready";
   bar.rendererLoaded();
 }
 

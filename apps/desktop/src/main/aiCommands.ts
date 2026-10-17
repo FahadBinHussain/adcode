@@ -105,7 +105,7 @@ export function timeoutFrom(value: unknown): number | null {
  * -e "..."` - reached cmd with every quote backslash-escaped, which cmd does not understand,
  * so any command naming a path with a space in it failed.
  */
-function shellFor(command: string): { file: string; args: string[]; verbatim: boolean } {
+export function shellFor(command: string): { file: string; args: string[]; verbatim: boolean } {
   return process.platform === "win32"
     ? { file: `${process.env["SystemRoot"] ?? "C:\\Windows"}\\System32\\cmd.exe`, args: ["/d", "/s", "/c", `"${command}"`], verbatim: true }
     : { file: "/bin/sh", args: ["-c", command], verbatim: false };

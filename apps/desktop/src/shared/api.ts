@@ -581,6 +581,7 @@ export const CHANNELS = {
   aiControlsRead: "ai-controls:read",
   aiControlsAction: "ai-controls:action",
   aiControlsPreviewSkill: "ai-controls:preview-skill",
+  aiAgentSettingsOpen: "ai:agent-settings:open",
   aiControlsChanged: "ai-controls:changed",
   aiCompletion: "ai:completion",
   aiCancelCompletion: "ai:cancel-completion",
@@ -1856,6 +1857,8 @@ export interface AdcodeApi {
     controls(): Promise<AssistantControlsView>;
     control(action: AssistantControlAction): Promise<AssistantControlsView>;
     previewSkill(id: string): Promise<string>;
+    /** The agents' rules file - the project's .adcode/settings.json or your own - created with a commented starter if missing. */
+    openAgentSettings(scope: "project" | "user"): Promise<{ readonly ok: true; readonly path: string } | { readonly ok: false; readonly message: string }>;
     onControlsChanged(listener: () => void): () => void;
     status(): Promise<AiStatus>;
     onStatusChanged(listener: () => void): () => void;

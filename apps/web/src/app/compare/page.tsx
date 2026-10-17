@@ -48,12 +48,13 @@ export default function CompareIndex() {
         }}
       />
 
-      <section className="docs-page band">
+      <section className="docs-page band compare-page">
         <div className="wrap landing-wrap">
           <article className="landing">
             <Breadcrumbs items={[{ name: "Home", href: "/" }, { name: "Comparisons" }]} />
 
-            <header className="docs-header">
+            <header className="docs-header compare-header">
+              <p className="eyebrow">CHOOSE YOUR EDITOR</p>
               <h1>How {SITE.name} compares</h1>
               <p className="lede">
                 Comparisons against the editors and assistants people genuinely weigh{" "}
@@ -70,8 +71,8 @@ export default function CompareIndex() {
             */}
             <section className="landing-compare" aria-labelledby="compare-glance">
               <h2 id="compare-glance">At a glance</h2>
-              <div className="table-scroll">
-                <table className="landing-table">
+              <div className="table-scroll" role="region" aria-label="Editor comparison summary" tabIndex={0}>
+                <table className="landing-table landing-table--overview">
                   <thead>
                     <tr>
                       <th scope="col">Instead of {SITE.name}</th>

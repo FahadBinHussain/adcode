@@ -26,7 +26,6 @@ export function HeroVideo() {
     const sync = () => {
       for (const video of videos) {
         const shown = window.getComputedStyle(video).display !== "none";
-        video.controls = still.matches && shown;
         if (shown && visible && !still.matches) {
           video.preload = "auto";
           void video.play().catch(() => { video.controls = true; });
@@ -57,6 +56,7 @@ export function HeroVideo() {
     <video
       className={className}
       muted
+      controls
       loop
       playsInline
       preload="metadata"
