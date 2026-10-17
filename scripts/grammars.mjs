@@ -19,14 +19,33 @@
  * really a version pair. 0.20.8 is the runtime that matches this grammar pack.
  */
 import { cp, mkdir, readdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
 
-const SOURCE = join(REPO, "node_modules", "tree-sitter-wasms", "out");
-const RUNTIME = join(REPO, "node_modules", "web-tree-sitter", "tree-sitter.wasm");
+/**
+ * The nearest `node_modules/<relative>` at or above the repo.
+ *
+ * A nested worktree has no `node_modules` of its own - it shares the main checkout's by
+ * directory walk-up, exactly as Node resolves modules - so the packages may live one or
+ * more directories above `REPO`. Nothing anywhere found falls back to the repo-local path,
+ * where the existing "not found" handling reports it as before.
+ */
+function findUp(relative) {
+  for (let dir = REPO; ; ) {
+    const candidate = join(dir, "node_modules", relative);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return join(REPO, "node_modules", relative);
+    dir = parent;
+  }
+}
+
+const SOURCE = findUp(join("tree-sitter-wasms", "out"));
+const RUNTIME = findUp(join("web-tree-sitter", "tree-sitter.wasm"));
 const TARGET = join(REPO, "apps", "desktop", "src", "renderer", "public", "grammars");
 const STRICT = process.argv.includes("--strict");
 
