@@ -1612,7 +1612,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Wait a few seconds while your private cloud workspace wakes up - the first time each day takes the longest.",
       "Describe what you want to build in the box that appears and press Build it. ADCode makes the project, writes the code, runs it and opens it in Preview.",
       "Keep asking for changes in the chat. Changes shows every file the assistant touched; Commit & Push sends it to GitHub after you connect GitHub once.",
-      "Watch the time-left chip in the corner: you have an hour of cloud time in every 5-hour session, counted only while your workspace is running. It refills when the session ends.",
+      "Watch the time-left chip in the sidebar beside Free AI credits and Earnings (the menu at the top on a phone): you have an hour of cloud time in every 5-hour session, counted only while your workspace is running. It refills when the session ends.",
       "To take a project elsewhere, open Cloud workspace from the chip and choose Download, or push it to GitHub and clone it in the desktop app.",
     ],
     benefits: [
@@ -1628,7 +1628,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   "workbench-cloud-workspace": {
     steps: [
-      "On the web version, click the time-left chip in the bottom corner, or open the command palette and run Cloud Workspace.",
+      "On the web version, click the time-left chip in the sidebar beside Free AI credits and Earnings (the menu at the top on a phone), or open the command palette and run Cloud Workspace.",
       "Read the meter: minutes left in this session, and the time they refill.",
       "Under Projects, choose Download next to a project to save it as a .tar.gz (node_modules is left out; reinstall with npm install).",
       "Under GitHub, choose Connect GitHub and type the code it shows at github.com/login/device, so Commit & Push and private imports work.",
