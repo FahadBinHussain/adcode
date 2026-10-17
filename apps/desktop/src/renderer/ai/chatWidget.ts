@@ -4407,6 +4407,9 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         const text = String(event["text"] ?? "");
         if (/^(?:Free AI (?:allowance reached|is temporarily limited)|This (?:session|week)'s free AI credits are used up)\./.test(text)) waitingForIncludedLimit = true;
         else if (text === "Checking the limit and resuming this task automatically…") waitingForIncludedLimit = false;
+        // A helper's own line ("Helper 2 of 3 · Tests: editing src/a.ts") belongs to its
+        // row in the helpers step, not beside the heading.
+        if (timeline?.helperStatus(text) === true) break;
         workingText.textContent = text;
         ensureTimeline().setStatus(text);
         break;
@@ -4451,7 +4454,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         }
         workingText.textContent = toolHeaderLabel(call.name);
         const rowId = typeof call.id === "string" && call.id.length > 0 ? call.id : `${call.name}-${String(Date.now())}`;
-        ensureTimeline().toolCall({ id: rowId, name: call.name, detail: summarizeToolInput(call.input) });
+        ensureTimeline().toolCall({ id: rowId, name: call.name, detail: summarizeToolInput(call.input), input: call.input });
         // That bubble is finished: without this its streaming caret blinked forever.
         streamingBubble?.classList.remove("is-streaming");
         streamingBubble = null;
@@ -4483,7 +4486,10 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
           }
           viewCard.update({ image: `data:${picture.mediaType};base64,${picture.data}`, report: String(event["content"] ?? "") });
         }
-        ensureTimeline().toolResult(toolCallId, !isError);
+        ensureTimeline();
+        // A delegation's result is its helpers' endings and reports, not one row's outcome.
+        if (event["name"] === "delegate_task") timeline?.helperResult(toolCallId, typeof event["content"] === "string" ? event["content"] : "", !isError);
+        else timeline?.toolResult(toolCallId, !isError);
         scrollToEnd();
         break;
       }

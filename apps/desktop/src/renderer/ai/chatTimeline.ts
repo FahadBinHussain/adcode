@@ -22,6 +22,9 @@
  *   new row, because the timeline reads in order.
  * - **One face at work.** The mascot sits in the heading while the turn runs and leaves
  *   when it ends; live rows carry the small pixel spinner instead of a face of their own.
+ * - **Helpers are their own rows.** A `delegate_task` call opens one row per sub-agent -
+ *   title, mode, what it is doing right now - and each helper's report sits a click away
+ *   when it ends.
  */
 
 import { createIcon, ICON } from "../workbench/icons.ts";
@@ -72,6 +75,9 @@ export function thinkingSummary(text: string): string {
     .trim();
   return plain.length > SUMMARY_LIMIT ? `${plain.slice(0, SUMMARY_LIMIT - 1).trimEnd()}…` : plain;
 }
+
+/** The one call drawn as its helpers rather than as a row of its own. */
+const DELEGATE_TASK_NAME = "delegate_task";
 
 const STEP_LABELS: Readonly<Record<string, string>> = {
   read_file: "Read file",
@@ -141,6 +147,100 @@ export function joinsToolGroup(last: { readonly kind: string; readonly name?: st
   return last !== null && last.kind === "tools" && last.name === name;
 }
 
+/* ── Sub-agents (helpers) ─────────────────────────────────────────────── */
+
+/** One task a `delegate_task` call hands to a helper. */
+export interface HelperTask {
+  readonly title: string;
+  readonly mode: "explore" | "build";
+}
+
+/**
+ * The helpers a `delegate_task` call asks for, in the words its status lines will use - or
+ * none, when the input is not shaped like a call that runs. The rules are `parseDelegation`'s
+ * (`packages/ai/src/subagents.ts`): one to four tasks, each with a title, instructions and
+ * a known mode. A call the main process would refuse draws no rows of its own.
+ */
+export function helperTasksFrom(input: unknown): readonly HelperTask[] {
+  const raw = typeof input === "object" && input !== null ? (input as Record<string, unknown>)["tasks"] : undefined;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 4) return [];
+  const tasks: HelperTask[] = [];
+  for (const item of raw) {
+    const fields = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const title = typeof fields["title"] === "string" ? fields["title"].trim() : "";
+    const instructions = typeof fields["instructions"] === "string" ? fields["instructions"].trim() : "";
+    const mode = fields["mode"] === undefined ? "explore" : fields["mode"];
+    if (title === "" || instructions === "" || (mode !== "explore" && mode !== "build")) return [];
+    tasks.push({ title: title.slice(0, 80), mode });
+  }
+  return tasks;
+}
+
+/** Which helper a live status line is about, and what it says. */
+export interface HelperStatus {
+  /** 0-based, in the call's own order. */
+  readonly index: number;
+  readonly title: string;
+  /** "starting", "editing src/a.ts", "finished". */
+  readonly detail: string;
+  readonly state: "running" | "done" | "stopped" | "error";
+}
+
+/**
+ * Reads a helper's progress line - "Helper 2 of 3 · Tests: editing src/a.test.ts" - against
+ * the call's own tasks. The exact title is known here, so matching is by whole prefix rather
+ * than by splitting on punctuation a title might contain. Null for anything else.
+ */
+export function matchHelperStatus(text: string, tasks: readonly HelperTask[]): HelperStatus | null {
+  const clean = text.trim();
+  if (!clean.startsWith("Helper ")) return null;
+  for (const [index, task] of tasks.entries()) {
+    const prefix = tasks.length > 1
+      ? `Helper ${String(index + 1)} of ${String(tasks.length)} · ${task.title}: `
+      : `Helper · ${task.title}: `;
+    if (!clean.startsWith(prefix)) continue;
+    const detail = clean.slice(prefix.length).trim();
+    if (detail.length === 0) return null;
+    const state = detail === "finished" ? "done" : detail === "stopped" ? "stopped" : detail === "failed" ? "error" : "running";
+    return { index, title: task.title, detail, state };
+  }
+  return null;
+}
+
+/** How one helper ended, and what it said, from a `delegate_task` result. */
+export interface HelperOutcome {
+  readonly index: number;
+  readonly ended: "done" | "stopped" | "failed";
+  readonly calls: number;
+  readonly report: string;
+}
+
+/** "## 2. Tests (build) - done, 3 tool calls": the heading `runSubagents` writes per helper. */
+const HELPER_REPORT_HEADING = /^## (\d+)\. .+ \((?:explore|build)\) - (done|stopped|failed)(?:: .*)?, (\d+) tool calls?$/;
+
+/**
+ * The sections of a `delegate_task` result, in order. Only the exact heading shape starts a
+ * new section, so a report that itself contains markdown headings stays whole. "(no report)"
+ * comes back as empty text.
+ */
+export function parseHelperReports(content: string): readonly HelperOutcome[] {
+  interface Section { index: number; ended: "done" | "stopped" | "failed"; calls: number; lines: string[] }
+  const sections: Section[] = [];
+  let current: Section | null = null;
+  for (const line of content.split("\n")) {
+    const heading = HELPER_REPORT_HEADING.exec(line);
+    if (heading !== null) {
+      if (current !== null) sections.push(current);
+      current = { index: Number(heading[1]) - 1, ended: heading[2] as Section["ended"], calls: Number(heading[3]), lines: [] };
+    } else if (current !== null) current.lines.push(line);
+  }
+  if (current !== null) sections.push(current);
+  return sections.map((section) => {
+    const report = section.lines.join("\n").trim();
+    return { index: section.index, ended: section.ended, calls: section.calls, report: report === "(no report)" ? "" : report };
+  });
+}
+
 const ICON_PATHS: Readonly<Record<ToolStepIcon | "sparkle", string>> = {
   sparkle: ICON.sparkle,
   search: ICON.search,
@@ -171,6 +271,8 @@ export interface ToolCallInput {
   readonly name: string;
   /** The call's input in one line: a path, a query, a command. */
   readonly detail: string;
+  /** The raw input, for the calls whose input is their content (delegate_task's tasks). */
+  readonly input?: unknown;
 }
 
 export interface TurnTimeline {
@@ -183,6 +285,10 @@ export interface TurnTimeline {
   toolCall(call: ToolCallInput): void;
   /** A tool finished. Without an id, the newest running call is the one that finished. */
   toolResult(id: string | null, ok: boolean): void;
+  /** A helper's live line ("Helper 2 of 3 · Tests: editing src/a.ts"): true when it was one. */
+  helperStatus(text: string): boolean;
+  /** A finished delegate_task result: settle its rows and file each helper's report. */
+  helperResult(id: string | null, content: string, ok: boolean): void;
   /** Text written between steps. It stays in the timeline unless it turns out to be the answer. */
   appendText(node: HTMLElement): void;
   hasSteps(): boolean;
@@ -217,7 +323,28 @@ interface ThinkingStep {
   text: string;
 }
 
-type Last = GroupStep | ThinkingStep | { readonly kind: "text" } | null;
+interface HelperRow {
+  readonly element: HTMLElement;
+  readonly mark: HTMLElement;
+  readonly detail: HTMLElement;
+  readonly calls: HTMLElement;
+  readonly chevron: HTMLElement;
+  readonly report: HTMLElement;
+  state: "running" | "done" | "stopped" | "error";
+}
+
+interface HelperStep {
+  readonly kind: "helpers";
+  readonly element: HTMLElement;
+  readonly summary: HTMLElement;
+  readonly tasks: readonly HelperTask[];
+  readonly rows: readonly HelperRow[];
+  running: number;
+  /** The settled line ("all 3 finished"), once the call's result has arrived. */
+  settled: string | null;
+}
+
+type Last = GroupStep | ThinkingStep | HelperStep | { readonly kind: "text" } | null;
 
 function icon(name: ToolStepIcon | "sparkle"): HTMLElement {
   const holder = document.createElement("span");
@@ -227,7 +354,7 @@ function icon(name: ToolStepIcon | "sparkle"): HTMLElement {
 }
 
 /** A step: a row that opens to show its detail, with the grid-rows collapse the turn uses. */
-function stepShell(kind: "thinking" | "tools", iconName: ToolStepIcon | "sparkle", label: string): {
+function stepShell(kind: "thinking" | "tools" | "helpers", iconName: ToolStepIcon | "sparkle", label: string): {
   readonly element: HTMLElement;
   readonly row: HTMLButtonElement;
   readonly label: HTMLElement;
@@ -334,6 +461,8 @@ export function createTurnTimeline(options?: { readonly startedAt?: number }): T
   let stepsSeen = 0;
   const calls = new Map<string, CallRow>();
   const running: CallRow[] = [];
+  const helperSteps = new Map<string, HelperStep>();
+  const helperOrder: HelperStep[] = [];
 
   const settleThinking = (): void => {
     if (last?.kind !== "thinking") return;
@@ -368,6 +497,114 @@ export function createTurnTimeline(options?: { readonly startedAt?: number }): T
     const index = running.indexOf(row);
     if (index >= 0) running.splice(index, 1);
     paintGroup(row.group);
+  };
+
+  /* ── Helpers: one row per sub-agent ── */
+
+  /** One helper's row: its words, its state, and - once it ends - its report behind a click. */
+  const buildHelperRow = (task: HelperTask): HelperRow => {
+    const element = document.createElement("li");
+    element.className = "chat-helper";
+    element.dataset["state"] = "running";
+    element.dataset["open"] = "false";
+
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "chat-helper-row";
+    row.setAttribute("aria-expanded", "false");
+    const mark = document.createElement("span");
+    mark.className = "chat-helper-mark";
+    mark.append(createPixelSpinner());
+    const title = document.createElement("span");
+    title.className = "chat-helper-title";
+    title.textContent = task.title;
+    title.title = task.title;
+    const mode = document.createElement("span");
+    mode.className = "chat-helper-mode";
+    mode.textContent = task.mode;
+    const detail = document.createElement("span");
+    detail.className = "chat-helper-detail";
+    const count = document.createElement("span");
+    count.className = "chat-helper-calls";
+    count.hidden = true;
+    const reportChevron = document.createElement("span");
+    reportChevron.className = "chat-helper-chevron";
+    reportChevron.hidden = true;
+    reportChevron.append(createIcon(ICON.chevronRight));
+    row.append(mark, title, mode, detail, count, reportChevron);
+
+    const collapse = document.createElement("div");
+    collapse.className = "chat-helper-collapse";
+    const report = document.createElement("div");
+    report.className = "chat-helper-report";
+    collapse.append(report);
+
+    row.addEventListener("click", () => {
+      const open = element.dataset["open"] !== "true";
+      element.dataset["open"] = String(open);
+      row.setAttribute("aria-expanded", String(open));
+    });
+    element.append(row, collapse);
+    return { element, mark, detail, calls: count, chevron: reportChevron, report, state: "running" };
+  };
+
+  /** A helper settles once: its spinner gives way to how it ended. */
+  const settleHelper = (step: HelperStep, row: HelperRow, state: HelperRow["state"], detail?: string): void => {
+    if (row.state === "running" && state !== "running") step.running = Math.max(0, step.running - 1);
+    row.state = state;
+    row.element.dataset["state"] = state;
+    if (state !== "running") {
+      row.mark.replaceChildren(createIcon(state === "done" ? ICON.check : state === "error" ? ICON.severityError : ICON.severityWarning));
+    }
+    if (detail !== undefined) row.detail.textContent = detail;
+  };
+
+  const helperState = (ended: HelperOutcome["ended"]): HelperRow["state"] => ended === "done" ? "done" : ended === "stopped" ? "stopped" : "error";
+
+  /** The step's face: a spinner while any helper runs, the settled line once they have ended. */
+  const paintHelpers = (step: HelperStep): void => {
+    const spinner = step.element.querySelector(".chat-step-row > .chat-pixel-spinner");
+    if (step.running > 0 && spinner === null) step.element.querySelector(".chat-step-chevron")?.before(createPixelSpinner());
+    if (step.running === 0) spinner?.remove();
+    const failed = step.rows.some((row) => row.state === "error");
+    step.element.dataset["state"] = step.running > 0 ? "running" : failed ? "error" : "done";
+    if (step.settled !== null) step.summary.textContent = step.settled;
+  };
+
+  /** A `delegate_task` call: one step, its rows named by the tasks the call carries. */
+  const createHelperStep = (call: ToolCallInput, tasks: readonly HelperTask[]): void => {
+    const shell = stepShell("helpers", "checklist", toolStepLabel(call.name));
+    const count = document.createElement("span");
+    count.className = "chat-step-count";
+    count.textContent = `· ${String(tasks.length)} task${tasks.length === 1 ? "" : "s"}`;
+    const summary = document.createElement("span");
+    summary.className = "chat-step-summary";
+    summary.textContent = call.detail;
+    shell.row.append(count, summary, chevron());
+    const list = document.createElement("ol");
+    list.className = "chat-step-helpers";
+    const rows = tasks.map((task) => {
+      const row = buildHelperRow(task);
+      list.append(row.element);
+      return row;
+    });
+    shell.body.append(list);
+    shell.row.querySelector(".chat-step-chevron")?.before(createPixelSpinner());
+    append(shell.element);
+    stepsSeen += 1;
+    // Delegating is work: a turn of nothing but helpers reads "Worked", not "Thought".
+    toolsSeen += 1;
+    const step: HelperStep = { kind: "helpers", element: shell.element, summary, tasks, rows, running: rows.length, settled: null };
+    helperSteps.set(call.id, step);
+    helperOrder.push(step);
+    last = step;
+  };
+
+  /** The plain tool settling, shared by `toolResult` and `helperResult`'s fallback. */
+  const settleToolResult = (id: string | null, ok: boolean): void => {
+    const row = (id === null ? undefined : calls.get(id)) ?? running[running.length - 1];
+    if (row !== undefined) settleCall(row, ok);
+    if (!ok && element.dataset["state"] === "running") mascot.setMood("error");
   };
 
   const append = (node: HTMLElement): void => {
@@ -428,6 +665,12 @@ export function createTurnTimeline(options?: { readonly startedAt?: number }): T
       settleThinking();
       setStatus(null);
       mascot.setMood("working");
+      // A delegation is its helpers: one row each, not a run of "Helpers" calls.
+      const tasks = helperTasksFrom(call.input);
+      if (call.name === DELEGATE_TASK_NAME && tasks.length > 0) {
+        createHelperStep(call, tasks);
+        return;
+      }
       let group: GroupStep;
       if (last !== null && last.kind === "tools" && joinsToolGroup(last, call.name)) {
         group = last;
@@ -470,10 +713,65 @@ export function createTurnTimeline(options?: { readonly startedAt?: number }): T
       running.push(row);
       paintGroup(group);
     },
-    toolResult(id: string | null, ok: boolean): void {
-      const row = (id === null ? undefined : calls.get(id)) ?? running[running.length - 1];
-      if (row !== undefined) settleCall(row, ok);
-      if (!ok && element.dataset["state"] === "running") mascot.setMood("error");
+    toolResult: settleToolResult,
+    helperStatus(text: string): boolean {
+      for (let index = helperOrder.length - 1; index >= 0; index -= 1) {
+        const step = helperOrder[index];
+        if (step === undefined || step.running === 0) continue;
+        const update = matchHelperStatus(text, step.tasks);
+        if (update === null) continue;
+        const row = step.rows[update.index];
+        if (row === undefined || row.state !== "running") continue;
+        if (update.state === "running") row.detail.textContent = update.detail;
+        else settleHelper(step, row, update.state, update.detail);
+        step.summary.textContent = `${update.title}: ${update.detail}`;
+        paintHelpers(step);
+        return true;
+      }
+      return false;
+    },
+    helperResult(id: string | null, content: string, ok: boolean): void {
+      const step = (id === null ? undefined : helperSteps.get(id)) ?? helperOrder.filter((open) => open.running > 0).at(-1);
+      if (step === undefined) {
+        // Not a call this timeline drew as helpers: plain settling still applies.
+        settleToolResult(id, ok);
+        return;
+      }
+      const outcomes = parseHelperReports(content);
+      const seen = new Set<number>();
+      for (const outcome of outcomes) {
+        const row = step.rows[outcome.index];
+        if (row === undefined || seen.has(outcome.index)) continue;
+        seen.add(outcome.index);
+        // The live line ("finished") usually already said it; a row without one gets it now.
+        const detail = (row.detail.textContent ?? "").length === 0 ? (outcome.ended === "done" ? "finished" : outcome.ended) : undefined;
+        settleHelper(step, row, helperState(outcome.ended), detail);
+        row.calls.textContent = `${String(outcome.calls)} ${outcome.calls === 1 ? "call" : "calls"}`;
+        row.calls.hidden = false;
+        if (outcome.report.length > 0) {
+          row.report.innerHTML = renderChatMessageHtml(outcome.report);
+          row.report.classList.add("is-rendered");
+          row.element.dataset["hasReport"] = "true";
+          row.chevron.hidden = false;
+        }
+      }
+      // A helper the result never described still stops spinning.
+      for (const row of step.rows) if (row.state === "running") settleHelper(step, row, ok ? "done" : "error", ok ? "finished" : "failed");
+      const done = step.rows.filter((row) => row.state === "done").length;
+      const failed = step.rows.filter((row) => row.state === "error").length;
+      const stopped = step.rows.filter((row) => row.state === "stopped").length;
+      if (outcomes.length === 0 && !ok) {
+        step.settled = (content.split("\n").map((line) => line.trim()).find((line) => line.length > 0) ?? "The helpers could not run").slice(0, 200);
+      } else if (failed > 0 || stopped > 0) {
+        const parts: string[] = [];
+        if (done > 0) parts.push(`${String(done)} finished`);
+        if (failed > 0) parts.push(`${String(failed)} failed`);
+        if (stopped > 0) parts.push(`${String(stopped)} stopped`);
+        step.settled = parts.join(" · ");
+      } else {
+        step.settled = step.tasks.length === 1 ? "finished" : `all ${String(step.tasks.length)} finished`;
+      }
+      paintHelpers(step);
     },
     appendText(node: HTMLElement): void {
       settleThinking();
@@ -492,6 +790,13 @@ export function createTurnTimeline(options?: { readonly startedAt?: number }): T
       settleThinking();
       // Every live row settles: a finished turn with a spinner still spinning reads as hung.
       for (const row of [...running]) settleCall(row, outcome !== "failed");
+      for (const step of helperOrder) {
+        for (const row of step.rows) {
+          if (row.state === "running") settleHelper(step, row, outcome === "failed" ? "error" : "done");
+        }
+        if (step.settled === null && (outcome === "failed" || outcome === "stopped" || outcome === "declined")) step.settled = outcome;
+        paintHelpers(step);
+      }
       setStatus(null);
       mascot.destroy();
       releaseAnswer();
@@ -513,6 +818,8 @@ export function createTurnTimeline(options?: { readonly startedAt?: number }): T
       element.remove();
       calls.clear();
       running.length = 0;
+      helperSteps.clear();
+      helperOrder.length = 0;
     },
   };
 }

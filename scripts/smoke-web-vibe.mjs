@@ -38,6 +38,9 @@ const SLOW_PROMPT = "parallel-slow";
 const FAST_PROMPT = "parallel-fast";
 const LONG_PROMPT = "keep-going-smoke";
 const FAIL_PROMPT = "parallel-fail";
+const HELPERS_PROMPT = "helpers-smoke";
+/** The two sub-agents the fake parent delegates to, by the titles its call carries. */
+const HELPER_TITLES = ["Map the auth flow", "Write the tests"];
 /** When the fake model was sent the main process's own "Continue" - the page was frozen then. */
 let keptGoingAt = 0;
 const requests = [];
@@ -76,6 +79,27 @@ const fake = createServer(async (req, res) => {
     }
     const step = messages.filter((message) => message.role === "tool").length;
     return answer([{ tool_calls: [{ index: 0, id: `list-${String(step)}`, function: { name: "list_files", arguments: JSON.stringify({ path: "." }) } }] }]);
+  }
+  // A parent that delegates: each helper's own conversation comes back with its brief as the
+  // only user message, and returns a report at its own pace.
+  const helperTitle = HELPER_TITLES.find((title) => said(`Task: ${title}`));
+  if (helperTitle !== undefined) {
+    const alreadyRead = messages.some((message) => message.role === "tool");
+    if (helperTitle === "Write the tests" && !alreadyRead) {
+      await sleep(1_200);
+      return answer([{ tool_calls: [{ index: 0, id: "tests-1", function: { name: "read_file", arguments: JSON.stringify({ path: "index.html" }) } }] }]);
+    }
+    await sleep(2_000);
+    return answer([{ content: helperTitle === "Map the auth flow" ? "The login flow starts in src/auth.ts." : "Read index.html; the headline should be tested." }]);
+  }
+  if (said(HELPERS_PROMPT)) {
+    const delegated = messages.filter((message) => message.role === "tool").length;
+    if (delegated > 0) return answer([{ content: "Helpers checked the page." }]);
+    await sleep(600);
+    return answer([{ tool_calls: [{ index: 0, id: "delegate-1", function: { name: "delegate_task", arguments: JSON.stringify({ tasks: [
+      { title: HELPER_TITLES[0], instructions: "Find where the login flow starts in this project and report the file.", mode: "explore" },
+      { title: HELPER_TITLES[1], instructions: "Read index.html and report what should be tested.", mode: "build" },
+    ] }) } }] }]);
   }
   const start = messages.findLastIndex((message) => message.role === "user" && String(message.content).includes(PROMPT));
   const answered = start === -1 ? 0 : messages.slice(start + 1).filter((message) => message.role === "tool").length;
@@ -394,6 +418,79 @@ try {
   checks.accountChatPreserved = currentChat !== null && currentChat === await browser.evaluate("window.adcode.chat.current().then(session => session?.id ?? null)");
   checks.accountAnswerVisible = await browser.evaluate(bubbleSays("Kept going and finished."));
   checks.accountReturnsToChat = checks.accountDisposed && checks.accountChatPreserved && checks.accountAnswerVisible;
+  await browser.viewport(1440, 1000, false);
+
+  await phase("helpers");
+  // A turn that hands work to two sub-agents: a row each while they run - title, mode, live
+  // line - then their endings and reports.
+  await newChat();
+  await sleep(300);
+  await sendInChat(`${HELPERS_PROMPT}: check the page with helpers`);
+  const lastTurn = "[...document.querySelectorAll('.chat-turn')].at(-1)";
+  // The row is live once a status line has reached it (its detail is empty until then).
+  checks.helpersWhileWorking = await browser.waitFor(`${lastTurn}?.querySelector('.chat-step.is-helpers .chat-helper[data-state="running"] .chat-helper-detail:not(:empty)') != null`, { timeoutMs: 90_000 });
+  checks.helperRowsWhileWorking = await browser.evaluate(`(() => {
+    const step = ${lastTurn}?.querySelector('.chat-step.is-helpers');
+    if (step == null) return null;
+    return {
+      titles: [...step.querySelectorAll('.chat-helper-title')].map((title) => title.textContent),
+      modes: [...step.querySelectorAll('.chat-helper-mode')].map((mode) => mode.textContent),
+      spinning: step.querySelectorAll('.chat-helper[data-state="running"] .chat-pixel-spinner').length,
+      details: [...step.querySelectorAll('.chat-helper-detail')].map((detail) => detail.textContent),
+      liveSummary: step.querySelector('.chat-step-summary')?.textContent ?? "",
+    };
+  })()`);
+  await shot("chat-helpers-working");
+  checks.helpersAnswered = await browser.waitFor(bubbleSays("Helpers checked the page."), { timeoutMs: 90_000 });
+  // All helpers ended: checks and call counts, the report a click away. The collapses animate
+  // on the frame clock, and a headless browser can hold frames back, so each step waits for the
+  // open geometry itself rather than for a fixed time.
+  checks.helpersSettle = await browser.evaluate(`(async () => {
+    const turn = ${lastTurn};
+    const step = turn?.querySelector('.chat-step.is-helpers');
+    if (step == null) return null;
+    const rows = [...step.querySelectorAll('.chat-helper')];
+    const settle = async (condition) => {
+      const deadline = performance.now() + 15_000;
+      while (performance.now() < deadline) {
+        if (condition()) return true;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return condition();
+    };
+    // The turn ends folded; unfold it, open the helpers step, then the first report.
+    turn.querySelector('.chat-turn-toggle').click();
+    step.querySelector('.chat-step-row').click();
+    const collapse = step.querySelector('.chat-step-collapse');
+    const stepOpen = await settle(() => collapse.getBoundingClientRect().height > 0);
+    await settle(() => step.querySelector('.chat-step-detail').getBoundingClientRect().height > 0);
+    const report = rows[0].querySelector('.chat-helper-report');
+    rows[0].querySelector('.chat-helper-row').click();
+    const reportOpen = await settle(() => report.getBoundingClientRect().height > 0);
+    const box = report.getBoundingClientRect();
+    // How many frames this browser produced in half a second: if this is tiny, the collapses
+    // above opened on a starved frame clock, not promptly - useful when a check goes red.
+    const framesInHalfASecond = await new Promise((resolve) => {
+      let ticks = 0;
+      let live = true;
+      const tick = () => { if (!live) return; ticks += 1; requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      setTimeout(() => { live = false; resolve(ticks); }, 500);
+    });
+    return {
+      states: rows.map((row) => row.dataset.state),
+      spinners: step.querySelectorAll('.chat-pixel-spinner').length,
+      calls: rows.map((row) => row.querySelector('.chat-helper-calls')?.textContent ?? null),
+      summary: step.querySelector('.chat-step-summary')?.textContent ?? "",
+      unfolded: turn.dataset.collapsed === "false" && step.dataset.open === "true" && rows[0].dataset.open === "true",
+      stepOpen,
+      reportOpen,
+      framesInHalfASecond,
+      reportVisible: report.textContent.includes('src/auth.ts') && box.height > 0,
+    };
+  })()`);
+  await shot("chat-helpers");
+  checks.noChatLeftWorkingAfterHelpers = await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 0)", { timeoutMs: 10_000 });
 
   await phase("phone");
   await browser.viewport(390, 844, true);
@@ -471,6 +568,10 @@ const passed = checks.accountOpens && checks.accountLocalHonest && checks.accoun
   checks.timeline.thought === "Planning the bakery page" && checks.timeline.mascotsLeft === 0 && checks.unfolds &&
   checks.twoChatsAtOnce && checks.fastChatAnswered && checks.slowChatStillWorking && checks.slowChatMarkedWorking && checks.workingChatReplays &&
   checks.slowChatAnswered && checks.fastAnswerNotInSlowChat && checks.failedChatMarked && checks.leftChatSpinsThenDots && checks.dotClearsWhenOpened && checks.keptGoingWhilePageFrozen && checks.longJobFinished && checks.noChatLeftWorking &&
+  checks.helpersWhileWorking && checks.helperRowsWhileWorking?.titles?.join("|") === "Map the auth flow|Write the tests" && checks.helperRowsWhileWorking?.modes?.join("|") === "explore|build" &&
+  checks.helperRowsWhileWorking?.spinning >= 1 && checks.helperRowsWhileWorking?.details?.some((text) => text.length > 0) &&
+  checks.helpersAnswered && checks.helpersSettle?.states?.join("|") === "done|done" && checks.helpersSettle?.spinners === 0 && checks.helpersSettle?.calls?.join("|") === "0 calls|1 call" &&
+  checks.helpersSettle?.summary === "all 2 finished" && checks.helpersSettle?.unfolded === true && checks.helpersSettle?.stepOpen === true && checks.helpersSettle?.reportOpen === true && checks.helpersSettle?.reportVisible === true && checks.noChatLeftWorkingAfterHelpers &&
   checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.refusalExplained === true && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");

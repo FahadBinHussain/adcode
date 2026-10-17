@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   formatTurnDuration,
+  helperTasksFrom,
   joinsToolGroup,
+  matchHelperStatus,
+  parseHelperReports,
   thinkingSummary,
   toolGroupCount,
   toolStepIcon,
@@ -86,6 +89,74 @@ describe("tool rows", () => {
     // Thinking or text between two searches starts a new row: the timeline reads in order.
     expect(joinsToolGroup({ kind: "thinking" }, "search")).toBe(false);
     expect(joinsToolGroup(null, "search")).toBe(false);
+  });
+});
+
+describe("sub-agent rows", () => {
+  it("read the helpers out of a delegate_task call, exactly as the main process will run them", () => {
+    expect(helperTasksFrom({ tasks: [{ title: " Map auth ", instructions: "Find the login flow" }] })).toEqual([{ title: "Map auth", mode: "explore" }]);
+    expect(helperTasksFrom({ tasks: [{ title: "Tests", instructions: "Write them", mode: "build" }] })).toEqual([{ title: "Tests", mode: "build" }]);
+    // A long title is cut the same way parseDelegation cuts it, or status lines stop matching.
+    expect(helperTasksFrom({ tasks: [{ title: "x".repeat(120), instructions: "y" }] })[0]?.title.length).toBe(80);
+    // Calls the main process refuses draw no rows: this one would not run.
+    expect(helperTasksFrom({ tasks: [] })).toEqual([]);
+    expect(helperTasksFrom({ tasks: Array.from({ length: 5 }, () => ({ title: "x", instructions: "y" })) })).toEqual([]);
+    expect(helperTasksFrom({ tasks: [{ title: "", instructions: "y" }] })).toEqual([]);
+    expect(helperTasksFrom({ tasks: [{ title: "x", instructions: "" }] })).toEqual([]);
+    expect(helperTasksFrom({ tasks: [{ title: "x", instructions: "y", mode: "admin" }] })).toEqual([]);
+    expect(helperTasksFrom("everything")).toEqual([]);
+  });
+
+  it("attaches a live status line to the helper its title names", () => {
+    const tasks = [{ title: "Map auth", mode: "explore" }, { title: "Tests: cart", mode: "build" }] as const;
+    expect(matchHelperStatus("Helper 2 of 2 · Tests: cart: reading src/cart.ts", tasks)).toEqual({ index: 1, title: "Tests: cart", detail: "reading src/cart.ts", state: "running" });
+    expect(matchHelperStatus("Helper 1 of 2 · Map auth: starting", tasks)).toMatchObject({ index: 0, state: "running" });
+    expect(matchHelperStatus("Helper 2 of 2 · Tests: cart: finished", tasks)).toMatchObject({ index: 1, detail: "finished", state: "done" });
+    expect(matchHelperStatus("Helper 1 of 2 · Map auth: stopped", tasks)).toMatchObject({ state: "stopped" });
+    expect(matchHelperStatus("Helper 1 of 2 · Map auth: failed", tasks)).toMatchObject({ state: "error" });
+    // A lone helper has no count in its line.
+    expect(matchHelperStatus("Helper · Map auth: finished", [{ title: "Map auth", mode: "explore" }])).toEqual({ index: 0, title: "Map auth", detail: "finished", state: "done" });
+    // Anything that is not one of these helpers' own lines is not consumed.
+    expect(matchHelperStatus("Waiting 21s for Groq's rate limit", tasks)).toBeNull();
+    expect(matchHelperStatus("Helper 1 of 2 · Some other task: starting", tasks)).toBeNull();
+    expect(matchHelperStatus("Helper 3 of 2 · Map auth: starting", tasks)).toBeNull();
+  });
+
+  it("splits a delegate_task result into each helper's ending, calls and report", () => {
+    const content = [
+      "2 of 3 sub-agents finished.",
+      "",
+      "## 1. Map auth (explore) - done, 3 tool calls",
+      "The login flow starts in src/auth.ts.",
+      "",
+      "## Notes",
+      "Not a helper heading - a report's own words stay whole.",
+      "",
+      "## 2. Tests (build) - stopped, 1 tool call",
+      "(no report)",
+      "",
+      "## 3. Styles (build) - failed: the model declined, 0 tool calls",
+      "",
+    ].join("\n");
+    const outcomes = parseHelperReports(content);
+    expect(outcomes).toHaveLength(3);
+    expect(outcomes[0]).toEqual({ index: 0, ended: "done", calls: 3, report: "The login flow starts in src/auth.ts.\n\n## Notes\nNot a helper heading - a report's own words stay whole." });
+    expect(outcomes[1]).toEqual({ index: 1, ended: "stopped", calls: 1, report: "" });
+    expect(outcomes[2]).toMatchObject({ index: 2, ended: "failed", calls: 0, report: "" });
+    expect(parseHelperReports("At most 4 sub-agents per call.")).toEqual([]);
+  });
+
+  it("draws helpers as their own rows, fed by status lines and the closing result", () => {
+    expect(timelineSource).toContain("matchHelperStatus(");
+    expect(timelineSource).toContain("parseHelperReports(");
+    expect(timelineSource).toContain("chat-step-helpers");
+    expect(timelineSource).toContain("chat-helper-mode");
+    // The widget hands the call input through and routes helper statuses and results apart.
+    expect(widgetSource).toContain("input: call.input");
+    expect(widgetSource).toContain("timeline?.helperStatus(");
+    expect(widgetSource).toContain("helperResult(");
+    expect(styles).toContain(".chat-helper");
+    expect(styles).toContain(".chat-helper-collapse");
   });
 });
 
