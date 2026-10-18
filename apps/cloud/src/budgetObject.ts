@@ -5,7 +5,7 @@
  * it. The rules are the pure functions in `budget.ts`; this keeps their state.
  */
 import { DurableObject } from "cloudflare:workers";
-import { admit, charge, monthKey, release, type BudgetState } from "./budget.ts";
+import { admit, charge, currentBudget, monthKey, release, type BudgetState } from "./budget.ts";
 import { numberVar, type Env } from "./env.ts";
 
 const KEY = "state";
@@ -26,8 +26,10 @@ export class BudgetObject extends DurableObject<Env> {
     return { ok: true };
   }
 
-  async charge(uid: string, minutes: number): Promise<void> {
-    await this.ctx.storage.put(KEY, charge(await this.load(), uid, minutes, Date.now()));
+  async charge(uid: string, minutes: number): Promise<{ full: boolean }> {
+    const state = charge(await this.load(), uid, minutes, Date.now());
+    await this.ctx.storage.put(KEY, state);
+    return { full: state.spentUsd >= this.config().capUsd };
   }
 
   async release(uid: string): Promise<void> {
@@ -35,7 +37,7 @@ export class BudgetObject extends DurableObject<Env> {
   }
 
   async stats(): Promise<{ month: string; spentUsd: number; capUsd: number; running: number; maxInstances: number }> {
-    const state = await this.load();
+    const state = currentBudget(await this.load(), Date.now());
     const config = this.config();
     return { month: state.month, spentUsd: Math.round(state.spentUsd * 100) / 100, capUsd: config.capUsd, running: Object.keys(state.running).length, maxInstances: config.maxInstances };
   }

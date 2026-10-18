@@ -8,7 +8,8 @@
  */
 export interface BudgetRpc extends Rpc.DurableObjectBranded {
   admit(uid: string): Promise<{ ok: true } | { ok: false; reason: "full" | "busy" }>;
-  charge(uid: string, minutes: number): Promise<void>;
+  /** Accounts for elapsed runtime and tells an existing sandbox when the month is full. */
+  charge(uid: string, minutes: number): Promise<{ full: boolean }>;
   release(uid: string): Promise<void>;
   stats(): Promise<{ month: string; spentUsd: number; capUsd: number; running: number; maxInstances: number }>;
 }

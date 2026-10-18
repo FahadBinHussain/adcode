@@ -67,6 +67,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm --prefix apps/web ci --ignore-scripts
+      - run: npm --prefix apps/cloud ci --ignore-scripts
       - name: Prepare Electron sandbox for GUI tests
         run: |
           node node_modules/electron/install.js

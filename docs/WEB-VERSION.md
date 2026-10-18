@@ -6,7 +6,7 @@ talking to it over one WebSocket instead of Electron IPC.
 
 ```
 browser ── web.bluethenics.com (Worker: apps/cloud) ──► UserSession DO (one per Firebase uid) ──► Container
- Vibe UI     page + security headers                       allowance, archives, previews          adcode-host
+ Vibe UI     page + security headers                       usage, archives, previews              adcode-host
  boot.ts     Firebase token check (subprotocol)            Budget DO: monthly cap, slots          = src/main + electron shim
              p-<port>-<id>.web.bluethenics.com previews    PreviewRoute DO: preview id -> owner   + headless Chromium
 ```
@@ -45,12 +45,11 @@ curl localhost:7397/__adcode/health
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SESSION_ALLOWANCE_MIN` | 60 | Running minutes per person per session window (`DAILY_ALLOWANCE_MIN` is read if this is unset) |
-| `SESSION_HOURS` | 5 | A window opens with the first running minute and refills this many hours later, like the free AI credits |
+| `SESSION_HOURS` | 5 | Usage-accounting window; personal cloud runtime is unlimited in this release |
 | `IDLE_SLEEP_MIN` | 5 | Sleep this long after the last tab closes, if nothing is working |
 | `UNTOUCHED_TAB_MIN` | 15 | Sleep an open tab nobody has touched, if nothing is working |
 | `SNAPSHOT_EVERY_MIN` | 10 | Archive `/home/adcode` to R2 this often while running |
-| `MONTHLY_CAP_USD` | 20 | Stop admitting new sandboxes once the month's worst-case estimate reaches this |
+| `MONTHLY_CAP_USD` | 20 | Stop new admissions and pause running sandboxes once the shared monthly resource estimate reaches this |
 | `MAX_INSTANCES` | 20 | Sandboxes running at once |
 | `INSTANCE_TYPE` | standard-1 | ½ vCPU, 4 GiB, 8 GB disk |
 | `ADMIN_UIDS` | (empty) | Firebase uids that may read `/admin/stats` |
@@ -58,10 +57,30 @@ curl localhost:7397/__adcode/health
 
 Secret: `npx wrangler secret put PREVIEW_COOKIE_KEY` (any long random string; signs preview cookies).
 
-Cost: worst case $0.0012336 per running minute on standard-1 (memory 4 GiB + disk 8 GB + the full
-½ vCPU), about $0.074 an hour. A person using the whole 60-minute allowance in every 5-hour window costs at most about $0.36 a
-day ($10.66 a month), so `MONTHLY_CAP_USD` is what really bounds the bill: at $20 it covers about
-270 sandbox-hours a month across everyone.
+Cost estimate: $0.0012336 per running minute on standard-1 (memory 4 GiB + disk 8 GB + the full
+½ vCPU), about $0.074 an hour. There is no personal running-time allowance. At $20 the shared
+monthly resource budget covers about 270 sandbox-hours across everyone.
+
+Every running sandbox charges elapsed time and checks the global cap on its 60-second alarm.
+At the cap it saves its home, reports `full`, closes browser sockets with code `4402`, and stops
+the container even if an agent is working. Reconnecting also checks admission for already-running
+containers. Account reads remain available without starting a sandbox. A paused person's session
+status stays `full` until the next UTC calendar month; they may then choose Try again. Raising
+the configured cap can also admit them again before then. Personal runtime remains unlimited
+while the shared budget and capacity are available.
+
+This is an operational cutoff, not a hard Cloudflare billing limit. Under normal alarm timing,
+the estimate can overshoot by up to one polling interval per running sandbox, plus the time to
+finish shutdown snapshots. Startup/restoration, platform scheduling delays and stop failures can
+extend that; a failed container stop schedules another attempt in 60 seconds. The estimate covers the modeled container
+resources, not R2, Worker/Durable Object, network or other account charges.
+
+Shutdown saving makes at most two attempts. If both fail, the previous R2 archives are kept,
+the pause screen warns that recent changes may be missing, and the container still stops to end
+its resource use. Successful snapshots complete before sockets close and the container stops.
+On wake, a missing or failed archive restoration stops startup; an empty or partial home is never
+exposed or snapshotted over the saved copy. Cloud regression tests exercise these failure paths,
+active/busy-session cutoff, unlimited runtime below the cap, and UTC month rollover.
 
 ## One-time setup (Cloudflare and Firebase)
 
@@ -70,12 +89,15 @@ Done on 2026-10-15 unless marked otherwise.
 1. **R2 bucket** `adcode-cloud-homes`, with a lifecycle rule deleting objects older than 90 days.
 2. **The app's domain**: `web.bluethenics.com` is a Workers custom domain (`routes` in
    `wrangler.jsonc`); the first deploy created its DNS record and certificate itself.
-3. **Previews (still to do)**: a proxied `*.web` DNS record on bluethenics.com (AAAA `100::` is
+3. **Previews (launch blocker, DNS checked 2026-10-18)**: a proxied `*.web` DNS record on bluethenics.com (AAAA `100::` is
    enough; the Worker answers), and Advanced Certificate Manager for `*.web.bluethenics.com` -
    Universal SSL covers one wildcard level only. The `*.web.bluethenics.com/*` route is already
    in place. Without these the app works and previews do not load.
-4. **Firebase Auth → Settings → Authorized domains (still to do)**: add `web.bluethenics.com`.
-   Without it the Google and GitHub buttons fail; email sign-in still works.
+   A lookup of `p-5173-abcdefghij.web.bluethenics.com` returned NXDOMAIN on 2026-10-18.
+   Verify wildcard certificate coverage after creating the record.
+4. **Firebase authorized domain (verified 2026-10-18)**: the public Firebase project configuration
+   includes `web.bluethenics.com`. This meets the authorized-domain requirement for Google
+   and GitHub sign-in from this origin.
 5. **Secret** `PREVIEW_COOKIE_KEY` (above).
 6. Docker Desktop running: `wrangler deploy` builds the image locally.
 

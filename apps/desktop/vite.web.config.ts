@@ -118,7 +118,18 @@ export default defineConfig(({ mode }) => ({
     // entry's own imports (Firebase) would otherwise be found mid-load, and Vite's re-optimise
     // breaks the first visit's dynamic import of the renderer.
     entries: ["index.html", "main.ts", "../web/boot.ts"],
-    include: ["firebase/app", "firebase/auth", "react", "react-dom/client"],
+    // The renderer loads after sign-in. Prebundle its browser dependencies now so Vite
+    // cannot invalidate that first dynamic import by discovering them mid-startup.
+    include: [
+      "firebase/app", "firebase/auth", "react", "react-dom/client", "lucide",
+      "monaco-editor",
+      "monaco-editor/languages/features/typescript/register.js",
+      "monaco-editor/languages/features/json/register.js",
+      "monaco-editor/languages/features/css/register.js",
+      "monaco-editor/languages/features/html/register.js",
+      "yjs", "web-tree-sitter", "@xterm/xterm", "@xterm/addon-fit",
+      "@xterm/addon-search", "@xterm/addon-web-links", "@xterm/addon-webgl",
+    ],
   },
   resolve: {
     alias: [

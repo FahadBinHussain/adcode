@@ -165,6 +165,7 @@ try {
   await shot("gate");
   checks.gateDevMode = await browser.evaluate(`(() => { const button = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('dev mode')); button?.click(); return Boolean(button); })()`);
   checks.vibeVisible = await browser.waitFor("document.querySelector('.vibe-pages') && document.body.dataset.sessionReady === 'true'", { timeoutMs: 90_000 });
+  if (!checks.vibeVisible) throw new Error("The browser workspace did not finish starting after sign-in");
   checks.onboardingAsks = await browser.waitFor("document.querySelector('dialog.onboarding')?.open", { timeoutMs: 15_000 });
   checks.desktopButtonInsteadOfIde = await browser.evaluate("[...document.querySelectorAll('.vibe-ide-button')].map((b) => b.textContent.trim()).join('|')");
 

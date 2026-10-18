@@ -17,6 +17,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { addUsage, nextReset, shouldSleep, usedMs, type Usage } from "./allowance.ts";
 import { verifyIdToken } from "./auth.ts";
+import { monthKey } from "./budget.ts";
 import { numberVar, type Env } from "./env.ts";
 import { HOST_PORT as PREVIEW_RESERVED_PORT, newPreviewId, rewriteLoopbackUrl } from "./previewAuth.ts";
 import { putStream } from "./r2Archive.ts";
@@ -106,6 +107,11 @@ export class UserSession extends DurableObject<Env> {
     return (await this.ctx.storage.get<ArchiveRecord[]>("archives")) ?? [];
   }
 
+  private async homeRestored(): Promise<boolean> {
+    const secret = await this.ctx.storage.get<string>("hostSecret");
+    return secret !== undefined && (await this.ctx.storage.get<string>("restoredFor")) === secret;
+  }
+
   private async sealKey(): Promise<string> {
     let key = await this.ctx.storage.get<string>("sealKey");
     if (key === undefined) {
@@ -129,6 +135,7 @@ export class UserSession extends DurableObject<Env> {
     const now = Date.now();
     const usage = await this.usage();
     const archives = await this.archives();
+    const statusMessage = message ?? (state === "full" || state === "sleeping" ? await this.ctx.storage.get<string>("pauseMessage") : undefined);
     const running = (await this.ctx.storage.get<number>("runningSince")) ?? null;
     const unaccounted = running === null ? 0 : now - ((await this.ctx.storage.get<number>("lastTickAt")) ?? running);
     return JSON.stringify({
@@ -138,9 +145,9 @@ export class UserSession extends DurableObject<Env> {
         allowanceMs: 0,
         unlimited: true,
         usedMs: usedMs(usage, now, this.windowMs()) + unaccounted,
-        resetsAt: nextReset(usage, now, this.windowMs()),
+        resetsAt: state === "full" ? Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth() + 1, 1) : nextReset(usage, now, this.windowMs()),
         storageBytes: archives.at(-1)?.bytes ?? 0,
-        ...(message === undefined ? {} : { message }),
+        ...(statusMessage === undefined ? {} : { message: statusMessage }),
       },
     });
   }
@@ -164,8 +171,12 @@ export class UserSession extends DurableObject<Env> {
     switch (url.pathname) {
       case "/socket":
         return this.openTab();
-      case "/status":
-        return new Response(await this.status(this.ctx.container?.running === true ? "ready" : "sleeping"), { headers: { "content-type": "application/json" } });
+      case "/status": {
+        let state: CloudState = "sleeping";
+        if ((await this.ctx.storage.get<string>("budgetFullMonth")) === monthKey(Date.now())) state = "full";
+        else if (this.ctx.container?.running === true) state = await this.homeRestored() ? "ready" : "waking";
+        return new Response(await this.status(state), { headers: { "content-type": "application/json" } });
+      }
       case "/download":
         return this.download(url.searchParams.get("project") ?? "");
       case "/delete":
@@ -189,20 +200,19 @@ export class UserSession extends DurableObject<Env> {
     const uid = await this.uid();
 
     const running = this.ctx.container?.running === true;
-    if (!running) {
-      const admitted = await this.env.BUDGET.getByName("global").admit(uid);
-      if (!admitted.ok) {
-        return admitted.reason === "full"
-          ? this.refuse(4402, await this.status("full"))
-          : this.refuse(4503, await this.status("busy"));
-      }
+    const admitted = await this.env.BUDGET.getByName("global").admit(uid);
+    if (!admitted.ok) {
+      if (admitted.reason === "full") await this.ctx.storage.put("budgetFullMonth", monthKey(Date.now()));
+      return admitted.reason === "full"
+        ? this.refuse(4402, await this.status("full"))
+        : this.refuse(4503, await this.status("busy"));
     }
 
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
     server.accept();
     this.tabs.add(server);
     await this.ctx.storage.delete("idleSince");
-    safeSend(server, await this.status(running ? "ready" : "waking"));
+    safeSend(server, await this.status(running && await this.homeRestored() ? "ready" : "waking"));
     this.ctx.waitUntil(this.attach(server));
     return new Response(null, { status: 101, webSocket: client, headers: { "sec-websocket-protocol": "adcode.v1" } });
   }
@@ -337,7 +347,15 @@ export class UserSession extends DurableObject<Env> {
     }
     await container.setInactivityTimeout(this.idleMs() + 2 * MINUTE).catch(() => undefined);
     await this.waitForHost();
-    await this.restoreOnce();
+    try {
+      await this.restoreOnce();
+    } catch (error) {
+      // Never expose or later archive an empty/partly restored home. The saved copy stays
+      // authoritative, and a fresh container retries it when the person reconnects.
+      await container.destroy().catch(() => undefined);
+      throw error;
+    }
+    await this.ctx.storage.delete(["budgetFullMonth", "pauseMessage"]);
     await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }
 
@@ -391,20 +409,21 @@ export class UserSession extends DurableObject<Env> {
   /** The newest archive goes back into a freshly started container, once per start. */
   private async restoreOnce(): Promise<void> {
     const secret = await this.ctx.storage.get<string>("hostSecret");
-    if (secret === undefined || (await this.ctx.storage.get<string>("restoredFor")) === secret) return;
+    if (secret === undefined) throw new Error("The workspace has no active host");
+    if ((await this.ctx.storage.get<string>("restoredFor")) === secret) return;
     const newest = (await this.archives()).at(-1);
     if (newest !== undefined) {
       const object = await this.env.HOMES.get(newest.key);
-      if (object !== null) {
-        const response = await this.host("/__adcode/home-archive", { method: "PUT", body: object.body });
-        if (!response.ok) console.error("[adcode-cloud] restore failed", response.status, await response.text().catch(() => ""));
-      }
+      if (object === null) throw new Error("The saved workspace could not be found");
+      const response = await this.host("/__adcode/home-archive", { method: "PUT", body: object.body });
+      if (!response.ok) throw new Error(`Restoring the saved workspace failed (${response.status})`);
     }
     await this.ctx.storage.put("restoredFor", secret);
   }
 
   private async archive(): Promise<void> {
-    if (this.ctx.container?.running !== true) return;
+    if (this.ctx.container?.running !== true) throw new Error("The workspace stopped before it could be saved");
+    if (!(await this.homeRestored())) throw new Error("The workspace has not finished restoring; keeping the saved copy");
     const uid = await this.uid();
     const response = await this.host("/__adcode/home-archive");
     if (!response.ok || response.body === null) throw new Error(`Archive failed (${response.status})`);
@@ -417,31 +436,39 @@ export class UserSession extends DurableObject<Env> {
     if (bytes > STORAGE_LIMIT_BYTES) await this.broadcast("ready", "Your cloud workspace is over 2 GB. Delete a project or its node_modules to keep it fast.");
   }
 
-  private async archiveSafely(): Promise<void> {
+  private async archiveSafely(notifyFailure = true): Promise<boolean> {
     try {
       await this.archive();
+      return true;
     } catch (first) {
       console.error("[adcode-cloud] archive failed, retrying", first);
       try {
         await this.archive();
+        return true;
       } catch (second) {
         console.error("[adcode-cloud] archive failed twice", second);
-        await this.broadcast("ready", "Saving your workspace failed. Your last saved copy is kept; download your project to be safe.");
+        if (notifyFailure) await this.broadcast("ready", "Saving your workspace failed. Download your project to keep a copy.");
+        return false;
       }
     }
   }
 
-  private async accountTime(now: number): Promise<void> {
+  private async accountTime(now: number): Promise<boolean> {
     const lastTick = await this.ctx.storage.get<number>("lastTickAt");
-    if (lastTick === undefined) return;
+    if (lastTick === undefined) return false;
     const delta = Math.max(0, now - lastTick);
+    const full = (await this.env.BUDGET.getByName("global").charge(await this.uid(), delta / MINUTE)).full;
     await this.ctx.storage.put({ usage: addUsage(await this.usage(), now, delta, this.windowMs()), lastTickAt: now });
-    await this.env.BUDGET.getByName("global").charge(await this.uid(), delta / MINUTE);
+    return full;
   }
 
-  private async sleep(state: "sleeping" | "spent", code: number): Promise<void> {
-    await this.archiveSafely();
-    await this.broadcast(state);
+  private async sleep(state: "sleeping" | "spent" | "full", code: number): Promise<void> {
+    if (state === "full") await this.ctx.storage.put("budgetFullMonth", monthKey(Date.now()));
+    const saved = await this.archiveSafely(false);
+    const message = saved ? undefined : `Your workspace is paused. Saving your latest changes failed after two attempts. ${(await this.archives()).length > 0 ? "Your previous saved copy is kept; recent changes may be missing." : "No saved copy is available; recent changes may be lost."}`;
+    if (message === undefined) await this.ctx.storage.delete("pauseMessage");
+    else await this.ctx.storage.put("pauseMessage", message);
+    await this.broadcast(state, message);
     for (const tab of this.tabs) {
       try {
         tab.close(code, state);
@@ -450,7 +477,12 @@ export class UserSession extends DurableObject<Env> {
       }
     }
     this.tabs.clear();
-    await this.ctx.container?.destroy().catch(() => undefined);
+    try {
+      await this.ctx.container?.destroy();
+    } catch (error) {
+      console.error("[adcode-cloud] could not stop the workspace; retrying next minute", error);
+      await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+    }
   }
 
   async alarm(): Promise<void> {
@@ -460,7 +492,12 @@ export class UserSession extends DurableObject<Env> {
       return;
     }
     const now = Date.now();
-    await this.accountTime(now);
+    if (await this.accountTime(now)) {
+      // The global budget also applies to existing sessions, including a busy agent. Save
+      // before stopping; personal runtime remains unlimited while the shared budget lasts.
+      await this.sleep("full", 4402);
+      return;
+    }
 
     let hostState: HostState = { busy: false, lastInputAt: now, connections: this.tabs.size };
     try {
@@ -485,6 +522,7 @@ export class UserSession extends DurableObject<Env> {
 
   private async download(project: string): Promise<Response> {
     if (this.ctx.container?.running !== true) return new Response(JSON.stringify({ ok: false, error: "Open ADCode first to wake your workspace" }), { status: 409 });
+    if (!(await this.homeRestored())) return new Response(JSON.stringify({ ok: false, error: "Your saved workspace is still restoring. Try again shortly." }), { status: 503 });
     const response = await this.host(`/__adcode/download?project=${encodeURIComponent(project)}`);
     return new Response(response.body, { status: response.status, headers: response.headers });
   }
@@ -525,6 +563,7 @@ export class UserSession extends DurableObject<Env> {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex" },
       });
     }
+    if (!(await this.homeRestored())) return new Response("Your saved workspace is still restoring. Try again shortly.", { status: 503, headers: { "x-robots-tag": "noindex", "cache-control": "no-store" } });
     const url = new URL(request.url);
     const headers = new Headers(request.headers);
     headers.set("host", `localhost:${port}`);

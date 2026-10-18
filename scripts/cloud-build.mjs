@@ -10,7 +10,7 @@
  * Firebase's public web settings come from ADCODE_FIREBASE_* or apps/web/.env.production.
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, rmSync } from "node:fs";
+import { cpSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
@@ -24,9 +24,9 @@ function run(args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-if (!existsSync(join(REPO, "apps/desktop/src/renderer/public/grammars"))) {
-  console.warn("[cloud:build] apps/desktop/src/renderer/public/grammars is missing - run `npm --prefix apps/desktop run grammars` first, or syntax colours will be missing.");
-}
+// A clean checkout must ship syntax grammars too; stale local assets cannot hide omissions.
+const grammars = spawnSync(process.execPath, [join(REPO, "scripts/grammars.mjs"), "--strict"], { stdio: "inherit" });
+if (grammars.status !== 0) process.exit(grammars.status ?? 1);
 
 run(["build", "-c", "apps/desktop/vite.host.config.ts", "--logLevel", "warn"]);
 run(["build", "-c", "apps/desktop/vite.web.config.ts", "--logLevel", "warn", "--mode", dev ? "development" : "production"]);

@@ -105,7 +105,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
     if (status?.state === "full") {
       showBlocked(
         "The web version is full this month",
-        "So many people are building that this month's cloud budget is used up. Your projects are saved. The desktop app is free and has no limit.",
+        status.message ?? "So many people are building that this month's cloud budget is used up. Your projects are saved. The desktop app is free and has no limit.",
         [
           { label: "Your account", run: () => openWebAccount() },
           { label: "Get the desktop app", primary: true, run: openDesktop },
@@ -116,7 +116,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
     }
     showBlocked(
       "Your workspace is resting",
-      "Inactive workspaces sleep automatically. Everything is saved; resume whenever you are ready.",
+      status?.message ?? "Inactive workspaces sleep automatically. Everything is saved; resume whenever you are ready.",
       [{ label: "Resume", primary: true, run: () => { showWaking(); socket.resume(); } }, { label: "Your account", run: () => openWebAccount() }],
     );
   };

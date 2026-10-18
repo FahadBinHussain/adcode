@@ -30,7 +30,7 @@ export function monthKey(now: number): string {
   return new Date(now).toISOString().slice(0, 7);
 }
 
-function current(state: BudgetState, now: number): BudgetState {
+export function currentBudget(state: BudgetState, now: number): BudgetState {
   const month = monthKey(now);
   const running = Object.fromEntries(Object.entries(state.running).filter(([, at]) => now - at < STALE_SLOT_MS));
   return state.month === month ? { ...state, running } : { month, spentUsd: 0, running };
@@ -39,7 +39,7 @@ function current(state: BudgetState, now: number): BudgetState {
 export function admit(state: BudgetState, uid: string, now: number, config: BudgetConfig):
   | { readonly ok: true; readonly state: BudgetState }
   | { readonly ok: false; readonly reason: "full" | "busy" } {
-  const fresh = current(state, now);
+  const fresh = currentBudget(state, now);
   if (fresh.spentUsd >= config.capUsd) return { ok: false, reason: "full" };
   const already = Object.hasOwn(fresh.running, uid);
   if (!already && Object.keys(fresh.running).length >= config.maxInstances) return { ok: false, reason: "busy" };
@@ -47,7 +47,7 @@ export function admit(state: BudgetState, uid: string, now: number, config: Budg
 }
 
 export function charge(state: BudgetState, uid: string, minutes: number, now: number): BudgetState {
-  const fresh = current(state, now);
+  const fresh = currentBudget(state, now);
   return {
     ...fresh,
     spentUsd: fresh.spentUsd + Math.max(0, minutes) * COST_PER_MINUTE_USD,
