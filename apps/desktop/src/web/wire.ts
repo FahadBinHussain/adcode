@@ -25,6 +25,7 @@ export interface HostHello {
 export interface CloudStatus {
   readonly state: "waking" | "ready" | "sleeping" | "spent" | "full" | "busy" | "restarted";
   readonly allowanceMs: number;
+  readonly unlimited?: boolean;
   readonly usedMs: number;
   /** When the session's time refills, epoch milliseconds. */
   readonly resetsAt: number;

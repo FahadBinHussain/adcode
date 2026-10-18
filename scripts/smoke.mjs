@@ -453,7 +453,7 @@ const vibePages = await evaluate(`(async () => {
   result.toolsShown = !!tools && !tools.hidden;
   result.toolsTabs = tools?.querySelectorAll('[role=tab]').length === 4;
   // One card per row of BUILT_IN_TOOLS_INFO (renderer/tools/builtInTools.ts).
-  result.builtInCards = tools?.querySelectorAll('#tools-panel-built-in .tool-card').length === 22;
+  result.builtInCards = tools?.querySelectorAll('#tools-panel-built-in .tool-card').length === 23;
   document.querySelector('.vibe-page-item.vibe-page-chat')?.click();
   await wait(() => document.getElementById('vibe-page-chat')?.hidden === false);
   result.backToChat = document.getElementById('vibe-page-chat')?.hidden === false && !!document.querySelector('#vibe-page-chat .chat-card');

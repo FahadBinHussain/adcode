@@ -1,3 +1,5 @@
+import { viewPage, readAgentBrowser, setAgentBrowserSink } from "./agentBrowser.ts";
+import { parseViewPageInput } from "./agentBrowserModel.ts";
 /**
  * The only place the renderer can reach the main process.
  *
@@ -806,6 +808,22 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
     return status;
   });
 
+  setAgentBrowserSink((view) => broadcast(CHANNELS.browserChanged, view));
+  ipcMain.handle(CHANNELS.browserRead, () => readAgentBrowser());
+  ipcMain.handle(CHANNELS.browserView, async (_event, input: unknown) => {
+    if (input === null || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid browser request");
+    const request = parseViewPageInput(input as Record<string, unknown>);
+    if (typeof request === "string") throw new Error(request);
+    const result = await viewPage(request, { previewUrl: async () => {
+      const status = await startPreview(currentWorkspace()?.root ?? null, undefined, previewEvents);
+      broadcastPreview(status);
+      if (status.url === null) throw new Error(status.error ?? "The project preview is not ready");
+      return status.url;
+    } }, new AbortController().signal, typeof (input as Record<string, unknown>)["expectedUpdatedAt"] === "number" ? (input as Record<string, number>)["expectedUpdatedAt"] : undefined);
+    const view = readAgentBrowser();
+    if (view === null || result.isError) throw new Error(result.content);
+    return view;
+  });
   ipcMain.handle(CHANNELS.previewStatus, () => previewStatus());
   ipcMain.handle(CHANNELS.previewLog, () => previewLog());
 

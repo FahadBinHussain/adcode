@@ -371,7 +371,7 @@ describe("view_page", () => {
   it("explains bad input without opening anything", async () => {
     const viewPage = vi.fn();
     const { runner } = direct({ viewPage });
-    expect((await runner.run(call("view_page", { url: "https://example.com" }), signal())).content).toContain("local addresses only");
+    expect((await runner.run(call("view_page", { url: "http://192.168.1.1" }), signal())).content).toContain("public HTTP");
     expect((await runner.run(call("view_page", { actions: [{ type: "click" }] }), signal())).content).toContain("needs a selector");
     expect(viewPage).not.toHaveBeenCalled();
   });

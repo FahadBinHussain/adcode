@@ -22,6 +22,7 @@
  * and only its `position: fixed` geometry changes. Maximising costs nothing and the page
  * keeps running.
  */
+import { registerWorkspacePanel } from "../workbench/workspacePanels.ts";
 import type { PreviewMode, PreviewStatus } from "../../shared/api.ts";
 import { createDeviceToolbar, type DeviceToolbar } from "./deviceToolbar.ts";
 import { createElementInspector, type ElementInspector, type InspectedBox } from "./elementInspector.ts";
@@ -140,6 +141,7 @@ function viewport(): { width: number; height: number } {
 export function createPreviewPane(deps: PreviewPaneDeps): PreviewPane {
   const pane = document.createElement("div");
   pane.className = "preview-pane";
+  pane.id = "workspace-preview";
   pane.hidden = true;
 
   const bar = document.createElement("header");
@@ -490,7 +492,7 @@ export function createPreviewPane(deps: PreviewPaneDeps): PreviewPane {
   /* ── Dragging, resizing and maximising ─────────────────────────────────── */
 
   bar.addEventListener("pointerdown", (event) => {
-    if (maximised || event.button !== 0) return;
+    if (maximised || event.button !== 0 || pane.classList.contains("workspace-panel-docked")) return;
     // The bar is also the toolbar. Dragging from a button would mean the pointer never
     // reaches the click, so the buttons would stop working the moment the card floated -
     // and from the address field, its text could never be selected.
@@ -518,7 +520,7 @@ export function createPreviewPane(deps: PreviewPaneDeps): PreviewPane {
   // Every edge resizes; west and north edges move the origin too (see `resizeGeometry`).
   for (const handle of edges) {
     handle.addEventListener("pointerdown", (event) => {
-      if (maximised || event.button !== 0) return;
+      if (maximised || event.button !== 0 || pane.classList.contains("workspace-panel-docked")) return;
       event.preventDefault();
       const start = { position, size };
       const startX = event.clientX;
@@ -568,16 +570,37 @@ export function createPreviewPane(deps: PreviewPaneDeps): PreviewPane {
   engine.addEventListener("click", () => void api.switchMode());
 
   async function start(requested?: PreviewMode): Promise<boolean> {
-    const status = await window.adcode.preview.start(requested);
-    apply(status);
-    return status.running;
+    try {
+      const status = await window.adcode.preview.start(requested);
+      apply(status);
+      if (!status.running) {
+        deps.notify(status.error
+          ? `Preview couldn't start: ${status.error}`
+          : status.starting
+            ? "Preview is still starting. Please try again in a moment."
+            : "Nothing to preview yet. Ask ADCode to build a website or app, then try Preview again.");
+      }
+      return status.running;
+    } catch (error) {
+      deps.notify(`Preview couldn't start: ${error instanceof Error ? error.message : "Check your connection and try again."}`);
+      return false;
+    }
   }
 
   const api: PreviewPane = {
     async open(): Promise<void> {
+      if (workspace === null) {
+        deps.notify("Nothing to preview yet. Ask ADCode to build a website or app, or open an existing web project, then try Preview again.");
+        return;
+      }
       // Asked before starting, so the bar can offer the switch even when the automatic
       // choice was the static server.
-      projectLabel = (await window.adcode.preview.detect())?.label ?? null;
+      try {
+        projectLabel = (await window.adcode.preview.detect())?.label ?? null;
+      } catch (error) {
+        deps.notify(`Preview couldn't start: ${error instanceof Error ? error.message : "Check your connection and try again."}`);
+        return;
+      }
 
       output.textContent = "";
       showLog(false);
@@ -586,6 +609,7 @@ export function createPreviewPane(deps: PreviewPaneDeps): PreviewPane {
 
       open = true;
       pane.hidden = false;
+      dock.activate();
       applyPlacement();
     },
 
@@ -637,6 +661,7 @@ export function createPreviewPane(deps: PreviewPaneDeps): PreviewPane {
 
       open = true;
       pane.hidden = false;
+      dock.activate();
       applyPlacement();
     },
 
@@ -699,6 +724,7 @@ export function createPreviewPane(deps: PreviewPaneDeps): PreviewPane {
     },
   };
 
+  const dock = registerWorkspacePanel(pane, bar, () => "Preview", () => void api.close());
   applyPlacementChrome();
 
   return api;

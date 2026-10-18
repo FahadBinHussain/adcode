@@ -50,6 +50,7 @@ import { startHostServer } from "./server.ts";
 
 /** Calls that run for as long as the work they start: while one is open, the sandbox is busy. */
 const LONG_CHANNELS: ReadonlySet<string> = new Set([
+  CHANNELS.browserView,
   CHANNELS.aiSend,
   CHANNELS.aiCompact,
   CHANNELS.aiInlineEdit,

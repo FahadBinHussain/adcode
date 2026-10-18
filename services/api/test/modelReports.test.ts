@@ -135,7 +135,7 @@ describe("provider report and feedback endpoints",() => {
     expect(await send("web")).toMatchObject({ platform:"web" });
     expect(await send("android")).toMatchObject({ platform:"unknown" });
   });
-  it("separates upstream rate limits and quota rejection from successful usage",async () => {
+  it("records upstream rate limits even when historical personal credit caps are exhausted",async () => {
     const { store,call,chat } = await setup(async () => new Response("test-key raw private error",{ status:429 }));
     const response = await chat(); expect(response.status).toBe(429);
     const row = await store.getModelRequest(response.headers.get("x-adcode-request-id")!);
@@ -143,9 +143,9 @@ describe("provider report and feedback endpoints",() => {
     expect(JSON.stringify(row)).not.toContain("test-key");
     await store.putTagflowPolicy("user",{ blocked:false,limits:null,credits:{ sessionCredits:0,weeklyCredits:100,sessionHours:5 },updatedAt:from,updatedBy:"admin" });
     const denied = await chat(); expect(denied.status).toBe(429);
-    expect(await store.getModelRequest(denied.headers.get("x-adcode-request-id")!)).toMatchObject({ outcome:"rejected",errorCode:"session-limit",providerStartedAt:null });
+    expect(await store.getModelRequest(denied.headers.get("x-adcode-request-id")!)).toMatchObject({ outcome:"provider_error",errorCode:"upstream-rate-limit",upstreamStatus:429 });
     const report = await (await call("/admin/tagflow/reports?from=2026-10-11&to=2026-10-11","admin")).json() as ModelReportResponse;
-    expect(report.models[0]!.current).toMatchObject({ attempts:2,providerCalls:1,providerErrors:1,rejected:1 });
+    expect(report.models[0]!.current).toMatchObject({ attempts:2,providerCalls:2,providerErrors:2,rejected:0 });
   });
   it("excludes admin tests and refuses client attempts to label themselves as an admin test",async () => {
     const { store,chat } = await setup(); const response = await chat("admin-test"); await response.text();

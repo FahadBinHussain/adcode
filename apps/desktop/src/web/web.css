@@ -80,7 +80,6 @@
     background: linear-gradient(160deg, color-mix(in srgb, var(--bg-elevated, #1c1b19) 70%, transparent), transparent 60%);
     isolation: isolate;
   }
-  .web-gate-card-brand { display: none !important; }
 }
 
 .web-gate-grid {
@@ -112,12 +111,21 @@
   align-items: center;
   gap: 11px;
 }
-.web-gate-card-brand { justify-content: center; }
 .web-gate-wordmark {
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+/* The mark, drawn in ASCII: the login illustration itself, sweeping while the card waits. */
+.web-gate-mark {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: 124px;
+  margin: 0 auto;
+  color: var(--text-primary, #ebe8e1);
 }
 
 .web-gate-pitch { display: grid; gap: 14px; max-width: 560px; }
@@ -423,27 +431,7 @@
 }
 .web-gate-fine a:hover { color: var(--text-secondary); }
 
-/* Waking: two rings turning against each other, and a bar that never pretends to know how far. */
-.web-gate-spinner {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  margin: 4px auto 2px;
-}
-.web-gate-spinner i {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  border-top-color: var(--text-primary);
-  animation: web-spin 900ms cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
-}
-.web-gate-spinner i + i {
-  inset: 8px;
-  border-top-color: var(--web-money);
-  animation-duration: 1300ms;
-  animation-direction: reverse;
-}
+/* Waking: the mark above, and a bar that never pretends to know how far. */
 .web-gate-progress {
   width: 160px;
   height: 2px;
@@ -461,7 +449,6 @@
   animation: web-scan 1.1s var(--web-ease-in-out) infinite;
 }
 
-@keyframes web-spin { to { transform: rotate(360deg); } }
 @keyframes web-scan { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 @keyframes web-rise {
   from { opacity: 0; transform: translateY(10px); }
@@ -471,7 +458,6 @@
 @media (prefers-reduced-motion: reduce) {
   .web-gate, .web-gate-card, .web-gate-line, .web-gate-error { animation: none; transition: none; }
   .web-gate-grid, .web-gate-glow, .web-gate-terminal-bar span::before, .web-gate-line.is-done .web-gate-tick, .web-gate-progress::after { animation: none; }
-  .web-gate-spinner i { animation-duration: 2400ms; }
   .web-gate-primary::after { display: none; }
 }
 
@@ -803,3 +789,8 @@
     display: none;
   }
 }
+
+/* Account controls stay in the workspace; the shared portal styles are shadow-scoped. */
+.web-account-dialog { width:min(1120px,calc(100vw - 48px)); max-width:none; max-height:calc(100dvh - 48px); padding:0; border:1px solid var(--border-hairline); border-radius:18px; background:var(--bg-app); color:var(--text-primary); box-shadow:0 24px 100px rgb(0 0 0 / .35); overflow:hidden; }
+.web-account-dialog::backdrop { background:rgb(0 0 0 / .5); }
+@media (max-width:700px) { .web-account-dialog { width:100vw; height:100dvh; max-height:100dvh; margin:0; border:0; border-radius:0; } }

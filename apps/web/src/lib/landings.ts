@@ -20,7 +20,6 @@
  * and the internal links between them. Adding an entry here adds it to all five.
  */
 import type { Metadata } from "next";
-import { DEFAULT_CREDIT_PLAN } from "@adcode/api/src/credits.ts";
 import { pageMetadata } from "./seo";
 import { ECONOMICS, SITE, formatMicros, perImpressionMicros } from "./site";
 
@@ -74,10 +73,7 @@ export interface Landing {
  */
 const perImpression = formatMicros(perImpressionMicros, 3);
 const floorBlock = formatMicros(ECONOMICS.floorBlockMicros, 2);
-const includedCredits = DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US");
-const weeklyCredits = DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US");
-const creditHours = DEFAULT_CREDIT_PLAN.sessionHours;
-const includedAiSummary = `${includedCredits} included AI credits every ${creditHours} hours, up to ${weeklyCredits} a week. No API key required for partner models; your own key or a local desktop model is optional.`;
+const includedAiSummary = `Unlimited included AI requests. No API key required for partner models; your own key or a local desktop model is optional.`;
 
 /**
  * The comparison pages live under `/compare/`, the rest at the root.
@@ -102,7 +98,7 @@ export const LANDINGS: readonly Landing[] = [
     description:
       "Use ADCode in your browser or on Windows and Linux. Included AI credits, agents and Git, with no subscription. See the limits and how ads fund it.",
     heading: "A free AI code editor, funded without charging you",
-    lede: `ADCode is a free AI code editor in your browser and on Windows and Linux. Partner models include ${includedCredits} AI credits every ${creditHours} hours, up to ${weeklyCredits} a week, without an API key or credit card. Advertisers fund the editor, and you receive half of eligible ad revenue. This page explains what is included and where the limits apply.`,
+    lede: `ADCode is a free AI code editor in your browser and on Windows and Linux. Partner models include unlimited included AI, without an API key or credit card. Advertisers fund the editor, and you receive half of eligible ad revenue. This page explains what is included and where the limits apply.`,
     updated: "2026-10-17",
     sections: [
       {
@@ -113,8 +109,8 @@ export const LANDINGS: readonly Landing[] = [
         ],
         points: [
           "No subscription, no trial period, no seat count, no card on file.",
-          `${includedCredits} included AI credits every ${creditHours} hours, up to ${weeklyCredits} a week; tasks wait for a refill when the allowance runs out.`,
-          `One hour of browser cloud time every ${creditHours} hours. Desktop projects have no cloud time limit.`,
+          `Unlimited included AI requests; provider availability and model context limits still apply.`,
+          `Browser workspaces have no personal time quota and sleep when idle. Desktop projects run on your computer.`,
           "No feature reserved for a paid edition, because there is no paid edition.",
           "Ads can be reduced or switched off entirely in settings; the earnings stop with them.",
         ],
@@ -163,7 +159,7 @@ export const LANDINGS: readonly Landing[] = [
       },
       {
         q: "Do I need to pay for the AI features in ADCode?",
-        a: `ADCode includes ${includedCredits} AI credits every ${creditHours} hours, up to ${weeklyCredits} a week, using partner models without an API key. At the limit, tasks wait for a refill. Your own provider key is billed by that provider, and local desktop models use your computer.`,
+        a: `ADCode includes unlimited included AI, using partner models without an API key. There is no ADCode usage allowance. Your own provider key is billed by that provider, and local desktop models use your computer.`,
       },
       {
         q: "What is the catch with a free AI code editor?",
@@ -196,8 +192,8 @@ export const LANDINGS: readonly Landing[] = [
       {
         heading: "The included AI and cloud time",
         body: [
-          `The default free plan includes ${includedCredits} AI credits every ${creditHours} hours, up to ${weeklyCredits} credits a week. Partner models draw from that balance, and a task that reaches its AI limit waits for the next refill. A verified account is required to use included AI.`,
-          `Browser workspaces include one hour of cloud time every ${creditHours} hours. Cloud time and AI credits are separate allowances: available AI credits do not extend a workspace's running time. Workspaces sleep when idle, and service capacity can also affect availability.`,
+          `The default free plan includes unlimited included AI. There are no daily or weekly usage quotas. A verified account is required to use included AI.`,
+          `Browser workspaces have no personal time quota. Workspaces sleep when idle, and shared service capacity can affect availability.`,
           "An occasional sponsored card helps fund the tools. Half of eligible ad revenue is credited to your account; earnings depend on eligible views and advertiser demand.",
         ],
       },
@@ -223,11 +219,11 @@ export const LANDINGS: readonly Landing[] = [
       },
       {
         q: "Do I need an API key for the online AI code editor?",
-        a: `No API key is needed for included partner models. A verified account receives ${includedCredits} AI credits every ${creditHours} hours, up to ${weeklyCredits} a week. You can also connect your own provider key, which follows that provider's billing.`,
+        a: `No API key is needed for included partner models. A verified account receives unlimited included AI. You can also connect your own provider key, which follows that provider's billing.`,
       },
       {
         q: "How long can I use the free browser workspace?",
-        a: `The default allowance is one hour of cloud time every ${creditHours} hours, separate from AI credits. Workspaces sleep when idle. The Windows and Linux desktop app runs projects on your computer without a cloud time limit.`,
+        a: `There is no personal cloud time quota. Workspaces sleep when idle and depend on shared service capacity. The Windows and Linux desktop app runs projects on your computer.`,
       },
       {
         q: "Can I move a browser project to the desktop app?",
@@ -587,7 +583,7 @@ export const LANDINGS: readonly Landing[] = [
         {
           aspect: "Price",
           them: "A free plan with a light quota, and paid plans with a larger usage allowance.",
-          us: "Free, with included AI credit limits and a browser cloud time allowance. No subscription or paid tier.",
+          us: "Free, with unlimited included AI and no personal cloud time allowance. No subscription or paid tier.",
         },
         {
           aspect: "AI billing",

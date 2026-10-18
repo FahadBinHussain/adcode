@@ -64,6 +64,11 @@ export function openCloudPanel(deps: CloudPanelDeps): void {
   const time = el("section", "web-cloud-section");
   if (status === null) {
     time.append(el("p", "web-gate-lead", "Running locally: no time limit applies here."));
+  } else if (status.unlimited || status.allowanceMs <= 0) {
+    time.append(
+      el("h3", "web-cloud-heading", "No personal time limit"),
+      el("p", "web-action-status", `Your workspace sleeps when idle and resumes when you return. Shared service capacity still applies. Saved copy: ${megabytes(status.storageBytes ?? 0)} of 2 GB.`),
+    );
   } else {
     const left = Math.max(0, status.allowanceMs - status.usedMs);
     const meter = el("div", "web-cloud-meter");

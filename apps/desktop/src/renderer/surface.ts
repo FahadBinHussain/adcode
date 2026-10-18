@@ -9,5 +9,10 @@ export function isWebSurface(): boolean {
   return typeof document !== "undefined" && document.documentElement.dataset["surface"] === "web";
 }
 
+export const OPEN_WEB_ACCOUNT_EVENT = "adcode:open-account";
+export function openWebAccount(section = "overview"): void {
+  document.dispatchEvent(new CustomEvent(OPEN_WEB_ACCOUNT_EVENT, { detail: section }));
+}
+
 /** Where "Get the desktop app" goes from the web version. */
 export const DESKTOP_DOWNLOAD_URL = "https://adcode.bluethenics.com/#download";

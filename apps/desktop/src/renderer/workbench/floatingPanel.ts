@@ -30,6 +30,7 @@ import {
   type ResizeEdge,
   type Size,
 } from "./floatingLayout.ts";
+import { registerWorkspacePanel } from "./workspacePanels.ts";
 import { ICON, createIcon, iconButton } from "./icons.ts";
 
 export interface FloatingPanelOptions {
@@ -207,7 +208,7 @@ export function createFloatingPanel(options: FloatingPanelOptions): FloatingPane
   }
 
   function startResize(event: PointerEvent, edge: ResizeEdge, handle: HTMLElement): void {
-    if (event.button !== 0 || element.dataset["sheet"] === "true") return;
+    if (event.button !== 0 || element.dataset["sheet"] === "true" || element.classList.contains("workspace-panel-docked")) return;
     event.preventDefault();
     if (maximised) { geometry = maximisedIn(viewport()); maximised = false; }
     const start = geometry ?? initial();
@@ -230,7 +231,7 @@ export function createFloatingPanel(options: FloatingPanelOptions): FloatingPane
   }
 
   header.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || element.dataset["sheet"] === "true") return;
+    if (event.button !== 0 || element.dataset["sheet"] === "true" || element.classList.contains("workspace-panel-docked")) return;
     // The header also holds buttons; dragging from one would swallow its click.
     if ((event.target as HTMLElement).closest("button, a, input, select, textarea") !== null) return;
     if (maximised) return;
@@ -278,7 +279,7 @@ export function createFloatingPanel(options: FloatingPanelOptions): FloatingPane
   const api: FloatingPanel = {
     element,
     open(): void {
-      if (open) { raise(); return; }
+      if (open) { dock?.activate(); raise(); return; }
       const active = document.activeElement;
       returnFocus = active instanceof HTMLElement && active !== document.body && !element.contains(active) ? active : null;
       open = true;
@@ -315,6 +316,7 @@ export function createFloatingPanel(options: FloatingPanelOptions): FloatingPane
     raise,
     setTitle(text: string): void {
       title.textContent = text;
+      dock?.refresh();
       close.title = `Close ${text}`;
       close.setAttribute("aria-label", close.title);
     },
@@ -329,6 +331,8 @@ export function createFloatingPanel(options: FloatingPanelOptions): FloatingPane
       if (open) apply(true);
     },
   };
+  const dock = ["context", "activity", "browser"].includes(options.id)
+    ? registerWorkspacePanel(element, header, () => title.textContent ?? options.title, () => api.close()) : null;
   panels.push(api);
   return api;
 }

@@ -1,3 +1,5 @@
+import { createElement as createLucideElement, type IconNode } from "lucide";
+
 /**
  * One definition of what an icon is.
  *
@@ -27,7 +29,7 @@
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** The 16×16 grid every icon is drawn on. Sizing is CSS's job, never the path's. */
+/** Legacy workbench paths use 16×16; Lucide nodes retain their native 24×24 grid. */
 const VIEW_BOX = "0 0 16 16";
 
 /**
@@ -164,21 +166,27 @@ export const ICON = {
 } as const;
 
 export type IconName = keyof typeof ICON;
+export type IconSource = string | readonly string[] | IconNode;
 
 /**
- * Build an icon element.
+ * Build an icon element from legacy paths or an official Lucide icon node.
  *
  * `aria-hidden` throughout: every caller labels the *control* instead, so a screen reader
  * announces "Close tab" rather than the decoration inside the button.
  */
-export function createIcon(paths: string | readonly string[]): SVGSVGElement {
+export function createIcon(paths: IconSource): SVGSVGElement {
+  if (typeof paths !== "string" && paths.length > 0 && Array.isArray(paths[0])) {
+    return createLucideElement(paths as IconNode, {
+      class: "lucide", "aria-hidden": "true", focusable: "false", "stroke-width": 2,
+    }) as SVGSVGElement;
+  }
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", VIEW_BOX);
   svg.setAttribute("aria-hidden", "true");
 
   for (const data of typeof paths === "string" ? [paths] : paths) {
     const shape = document.createElementNS(SVG_NS, "path");
-    shape.setAttribute("d", data);
+    shape.setAttribute("d", data as string);
     svg.append(shape);
   }
 
@@ -194,7 +202,7 @@ export function createIcon(paths: string | readonly string[]): SVGSVGElement {
  */
 export function iconButton(
   label: string,
-  paths: string | readonly string[],
+  paths: IconSource,
   className = "icon-button",
 ): HTMLButtonElement {
   const button = document.createElement("button");

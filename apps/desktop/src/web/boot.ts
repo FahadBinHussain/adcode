@@ -10,7 +10,7 @@ import "../renderer/styles/tokens.css";
 import "./web.css";
 import { CHANNELS, type PreviewStatus } from "../shared/api.ts";
 import { createPreviewResolver, primePreviewCookie, rewriteStatus } from "./previewUrl.ts";
-import { DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
+import { OPEN_WEB_ACCOUNT_EVENT, DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
 import { createAskHandler } from "./asks.ts";
 import { gate, showWaking } from "./gate.ts";
 import { connectGitHub, needsGitHub } from "./githubConnect.ts";
@@ -136,6 +136,13 @@ async function boot(): Promise<void> {
 
   const session = await gate();
   showWaking();
+  const showAccount = (section: unknown = "overview"): void => {
+    void import("./accountPanel.tsx").then(({ openAccountPanel }) => openAccountPanel(session, section))
+      .catch(() => window.alert("Couldn't load your account. Please reload and try again."));
+  };
+  document.addEventListener(OPEN_WEB_ACCOUNT_EVENT, (event) => showAccount((event as CustomEvent<unknown>).detail));
+  const requestedAccount = new URL(location.href).searchParams.get("account");
+  if (requestedAccount !== null) showAccount(requestedAccount);
 
   let token = session.token;
   const socket = createHostSocket(() => {

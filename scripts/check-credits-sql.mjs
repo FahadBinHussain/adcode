@@ -43,13 +43,13 @@ const plan = { sessionLimit: 5_000, weeklyLimit: 12_000, sessionMs: 5 * HOUR };
 let n = 0;
 const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`;
 
-async function reserve(uid, now, millicredits, tokens = 100) {
+async function reserve(uid, now, millicredits, tokens = 100, unlimited = false) {
   const id = uuid();
   const day = new Date(now).toISOString().slice(0, 10);
-  const request = { id, uid, day, minute: Math.floor(now / 60_000), tokens, costMicros: 0, limits, credits: { millicredits, ...plan, now } };
+  const request = { unlimited, id, uid, day, minute: Math.floor(now / 60_000), tokens, costMicros: 0, limits, credits: { millicredits, ...plan, now } };
   const fromMemory = await memory.reserveTagflow(request);
   const { rows } = await db.query(
-    "select public.reserve_included_ai($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) as r",
+    `select public.${unlimited ? "reserve_unlimited_ai" : "reserve_included_ai"}($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) as r`,
     [id, uid, day, request.minute, tokens, 0, limits.dailyRequests, String(limits.dailyTokens), limits.dailyCostMicros, limits.requestsPerMinute, now, millicredits, plan.sessionLimit, plan.weeklyLimit, plan.sessionMs, true],
   );
   assert.equal(rows[0].r, fromMemory, `reserve ${id} at ${new Date(now).toISOString()}: SQL ${rows[0].r}, TypeScript ${fromMemory}`);
@@ -72,6 +72,14 @@ async function same(uid, label) {
   assert.deepEqual({ session: row("session"), week: row("week") }, mine, `${label}: windows differ`);
   console.log(`ok  ${label}`, JSON.stringify(mine));
 }
+
+// Unlimited access ignores all old ceilings while retaining both stores' accounting.
+for (let i = 0; i < 3; i++) {
+  const open = await reserve("unlimited", T0, 100_000, 100, true);
+  assert.equal(open.result, "ok");
+  await settle(open.id, 100_000);
+}
+await same("unlimited", "unlimited requests settle past old session and weekly ceilings");
 
 // A session fills up: the request that reaches the limit still runs; the next one is refused.
 const a = await reserve("sam", T0, 3_000);

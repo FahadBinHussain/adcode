@@ -1,6 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_CREDIT_PLAN } from "../../../services/api/src/credits";
 import OnlineAiCodeEditorPage, { metadata } from "../src/app/online-ai-code-editor/page";
 import { GET as llmsIndex } from "../src/app/llms.txt/route";
 import { GET as llmsFull } from "../src/app/llms-full.txt/route";
@@ -22,7 +21,7 @@ describe("browser app search discovery", () => {
     const markup = renderToStaticMarkup(<OnlineAiCodeEditorPage />);
     expect(markup).toContain('"@type":"WebApplication"');
     expect(markup).toContain('"@type":"FAQPage"');
-    expect(markup).toContain("one hour of cloud time every");
+    expect(markup).toContain("no personal time quota");
     const app = webApplication();
     expect(app["@id"]).toBe(new URL("/#app", WEB_VERSION_URL).toString());
     expect(app["url"]).toBe(new URL("/", WEB_VERSION_URL).toString());
@@ -38,8 +37,7 @@ describe("browser app search discovery", () => {
       const text = await response.text();
       expect(text).toContain(url("/online-ai-code-editor"));
       expect(text).toContain(WEB_VERSION_URL);
-      expect(text).toContain(DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US"));
-      expect(text).toContain(DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US"));
+      expect(text.toLowerCase()).toContain("unlimited");
     }
   });
 });

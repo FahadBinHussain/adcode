@@ -28,6 +28,9 @@ type Methods<T> = { [K in keyof T & string]: T[K] extends (...args: never[]) => 
 export type ApiPath = { [N in keyof AdcodeApi & string]: `${N}.${Methods<AdcodeApi[N]>}` }[keyof AdcodeApi & string];
 
 export const BRIDGE = [
+  { path: "browser.view", kind: "invoke", channel: CHANNELS.browserView },
+  { path: "browser.read", kind: "invoke", channel: CHANNELS.browserRead },
+  { path: "browser.onChanged", kind: "subscribe", channel: CHANNELS.browserChanged },
   // workspace
   { path: "workspace.open", kind: "invoke", channel: CHANNELS.workspaceOpen },
   { path: "workspace.openPath", kind: "invoke", channel: CHANNELS.workspaceOpenPath },
@@ -175,6 +178,9 @@ export const BRIDGE = [
   { path: "ai.onCheckpoint", kind: "subscribe", channel: CHANNELS.aiCheckpoint },
   { path: "ai.checkpoints", kind: "invoke", channel: CHANNELS.aiCheckpoints },
   { path: "ai.undoCheckpoint", kind: "invoke", channel: CHANNELS.aiCheckpointUndo },
+  { path: "ai.onQuestion", kind: "subscribe", channel: CHANNELS.aiQuestion },
+  { path: "ai.onQuestionDone", kind: "subscribe", channel: CHANNELS.aiQuestionDone },
+  { path: "ai.answerQuestion", kind: "send", channel: CHANNELS.aiQuestionAnswer },
 
   // aiWorkspace
   { path: "aiWorkspace.list", kind: "invoke", channel: CHANNELS.aiWorkspaceList },

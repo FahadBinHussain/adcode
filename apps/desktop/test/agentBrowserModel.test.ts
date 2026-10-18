@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatPageReport,
   isLoopbackUrl,
+  isBrowserUrl,
   keyEvent,
   parseViewPageInput,
   resolvePreviewPage,
@@ -55,7 +56,8 @@ describe("view_page input", () => {
     expect(parseViewPageInput({ path: "about.html" })).toMatchObject({ target: { kind: "preview", path: "about.html" } });
     expect(parseViewPageInput({ url: "http://localhost:5173/x" })).toMatchObject({ target: { kind: "url", url: "http://localhost:5173/x" } });
     expect(parseViewPageInput({ path: "a", url: "http://localhost:1/" })).toContain("not both");
-    expect(parseViewPageInput({ url: "https://example.com" })).toContain("fetch_url");
+    expect(parseViewPageInput({ url: "https://example.com" })).toMatchObject({ target: { kind: "url", url: "https://example.com/" } });
+    for (const url of ["http://10.0.0.1", "http://169.254.169.254", "http://192.168.1.2", "file:///etc/passwd", "https://user:secret@example.com", "http://printer.local"]) expect(isBrowserUrl(url)).toBe(false);
   });
 
   it("checks the screen size and every action before anything runs", () => {

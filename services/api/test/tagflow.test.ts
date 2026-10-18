@@ -66,42 +66,19 @@ describe("included Tagflow AI", () => {
     expect(upstream).toHaveBeenCalledTimes(1);
   });
 
-  it("gives each account credits per 5-hour window, refuses once they are spent and refills when the window ends", async () => {
-    expect(DEFAULT_CREDIT_PLAN).toEqual({ sessionCredits: 2000, weeklyCredits: 20000, sessionHours: 5 });
-    await save({ ...config, credits: { sessionCredits: 1, weeklyCredits: 100, sessionHours: 5 } });
-    const started = now;
-    const first = await chat(); expect(first.status).toBe(200); await first.text();
-    // 12 + 3 tokens at the standard rate: 15 millicredits, well past a day's token count.
-    const view = await (await call("/ai/tagflow/usage", "user")).json();
-    expect(view).toMatchObject({ credits: { plan: { sessionCredits: 1 }, session: { limit: 1, used: 0.015, held: 0, startedAt: started, resetsAt: started + 5 * 3_600_000 }, weekly: { used: 0.015 } } });
-    // Released desktops read the token fields: they now describe the session window.
-    expect(view).toMatchObject({ limits: { dailyTokens: 1000 }, usage: { inputTokens: 15, outputTokens: 0 }, resetsAt: started + 5 * 3_600_000, today: { inputTokens: 12, outputTokens: 3 } });
-    const id = "fill-window";
-    expect(await store.reserveTagflow({ id, uid: "user", day: new Date(now).toISOString().slice(0, 10), minute: 0, tokens: 1, costMicros: 0, limits: config.limits, credits: { millicredits: 1000, sessionLimit: 1000, weeklyLimit: 100_000, sessionMs: 5 * 3_600_000, now } })).toBe("ok");
-    await store.settleTagflow(id, { inputTokens: 1, outputTokens: 0, costMicros: 0, estimated: false, failed: false, millicredits: 1000 });
-    now += 60 * 60_000;
-    const limited = await chat();
-    expect(limited.status).toBe(429);
-    expect(limited.headers.get("retry-after")).toBe(String(4 * 3600));
-    const refused = await limited.json() as { error: { message: string } };
-    expect(refused).toMatchObject({ error: { code: "daily-limit", limit: "session", retryable: true, resetsAt: started + 5 * 3_600_000 } });
-    expect(refused.error.message).toContain("refill in 4 hr");
-    expect(upstream).toHaveBeenCalledTimes(1);
-    await (await chat("other")).text();
-    now = started + 5 * 3_600_000;
-    await (await chat()).text();
-    expect(upstream).toHaveBeenCalledTimes(3);
-    expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ credits: { session: { startedAt: now, used: 0.015 }, weekly: { startedAt: started } } });
+  it("continues past historical session allowances while accounting for every request", async () => {
+    await save({ ...config, credits: { sessionCredits: 0, weeklyCredits: 0, sessionHours: 5 } });
+    for (let i = 0; i < 3; i++) { const response = await chat(); expect(response.status).toBe(200); await response.text(); }
+    expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ unlimited: true, today: { requests: 3, inputTokens: 36, outputTokens: 9 }, credits: { session: { used: 0.045, held: 0 } } });
   });
-  it("stops at the weekly credits even with a fresh session window", async () => {
+
+  it("continues after a previous weekly allowance was exhausted", async () => {
     await save({ ...config, credits: { sessionCredits: 100, weeklyCredits: 1, sessionHours: 5 } });
     expect(await store.reserveTagflow({ id: "week", uid: "user", day: "2026-10-10", minute: 0, tokens: 1, costMicros: 0, limits: config.limits, credits: { millicredits: 1000, sessionLimit: 100_000, weeklyLimit: 1000, sessionMs: 5 * 3_600_000, now } })).toBe("ok");
     await store.settleTagflow("week", { inputTokens: 1, outputTokens: 0, costMicros: 0, estimated: false, failed: false, millicredits: 1000 });
     now += 6 * 3_600_000;
-    const limited = await chat(); expect(limited.status).toBe(429);
-    expect(await limited.json()).toMatchObject({ error: { code: "daily-limit", limit: "weekly", resetsAt: Date.parse("2026-10-17T12:00:00Z") } });
-    now = Date.parse("2026-10-17T12:00:00Z");
-    expect((await chat()).status).toBe(200);
+    const response = await chat(); expect(response.status).toBe(200); await response.text();
+    expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ unlimited: true, credits: { weekly: { used: 1.015 } } });
   });
 
   it("identifies an upstream rate limit without charging daily usage or exposing its response", async () => {
@@ -256,7 +233,7 @@ describe("included Tagflow AI", () => {
     expect(parseTagflowConfig({ ...valid, providers: many(20) })?.providers).toHaveLength(20);
     expect(parseTagflowConfig({ ...valid, providers: many(21) })).toBeNull();
   });
-  it("hides disconnected and disabled models, refuses them before charging, and shares quotas across providers", async () => {
+  it("hides disconnected and disabled models, refuses them before charging, and allows usage across providers", async () => {
     vi.stubEnv("INCLUDED_AI_OPENAI_API_KEY", "openai-private-key");
     vi.stubEnv("INCLUDED_AI_GROQ_API_KEY", undefined);
     const openai = { ...config.models[0]!, id: "other-coder", provider: "openai" as const };
@@ -266,8 +243,8 @@ describe("included Tagflow AI", () => {
     expect((await chat("user", { ...body, model: "hidden" })).status).toBe(400);
     expect(await usage()).toBeNull(); expect(upstream).not.toHaveBeenCalled();
     await (await chat()).text();
-    expect((await chat("user", { ...body, model: "other-coder" })).status).toBe(429);
-    expect(upstream).toHaveBeenCalledTimes(1);
+    expect((await chat("user", { ...body, model: "other-coder" })).status).toBe(200);
+    expect(upstream).toHaveBeenCalledTimes(2);
   });
   it("requires the selected default's secret and never accepts arbitrary connections or secret names", async () => {
     vi.stubEnv("INCLUDED_AI_OPENAI_API_KEY", undefined);
@@ -351,47 +328,43 @@ describe("included Tagflow AI", () => {
     finish!(); while (!(await reader.read()).done) { /* Drain the stream. */ }
     expect(await usage()).toMatchObject({ inputTokens: 10, outputTokens: 1, reservedTokens: 0 });
   });
-  it("reserves atomically so concurrent requests cannot exceed one allowance", async () => {
+  it("accounts for concurrent requests without a per-user request ceiling", async () => {
     await save({ ...config, limits: { ...config.limits, dailyRequests: 1 } });
     const responses = await Promise.all(Array.from({ length: 10 }, () => chat()));
-    expect(responses.filter((response) => response.status === 200)).toHaveLength(1);
-    expect(responses.filter((response) => response.status === 429)).toHaveLength(9);
-    expect(upstream).toHaveBeenCalledTimes(1);
-    await responses.find((response) => response.ok)!.text();
-    expect((await chat("other")).status).toBe(200);
+    expect(responses.every(response => response.status === 200)).toBe(true);
+    await Promise.all(responses.map(response => response.text()));
+    expect(upstream).toHaveBeenCalledTimes(10);
+    expect(await usage()).toMatchObject({ requests: 10, inputTokens: 120, outputTokens: 30, reservedTokens: 0, reservedCostMicros: 0 });
   });
-  it("enforces credit, cost and minute caps before any upstream request, and tokens are no longer a cap", async () => {
-    await save({ ...config, limits: { ...config.limits, dailyTokens: 1 } }); await (await chat()).text(); expect(upstream).toHaveBeenCalledTimes(1); upstream.mockClear();
-    await save({ ...config, credits: { sessionCredits: 0, weeklyCredits: 10, sessionHours: 5 } }); const impossible=await chat();expect(impossible.status).toBe(429);
-    expect(await impossible.json()).toMatchObject({error:{code:"daily-limit",limit:"session",retryable:false}});
-    await save({ ...config, limits: { ...config.limits, dailyCostMicros: 0 } }); expect((await chat()).status).toBe(429);
-    expect(upstream).not.toHaveBeenCalled();
-    await save({ ...config, limits: { ...config.limits, requestsPerMinute: 1 } }); await (await chat()).text();
-    const limited = await chat(); expect(limited.status).toBe(429); expect(limited.headers.get("retry-after")).toBe("60");
-    now += 60_000; expect((await chat()).status).toBe(200);
+
+  it("ignores legacy token, credit, spending, and request quotas for included AI", async () => {
+    await save({ ...config, credits: { sessionCredits: 0, weeklyCredits: 0, sessionHours: 5 }, limits: { dailyTokens: 0, dailyRequests: 0, dailyCostMicros: 0, requestsPerMinute: 0 } });
+    for (let i = 0; i < 3; i++) { const response = await chat(); expect(response.status).toBe(200); await response.text(); }
+    expect(upstream).toHaveBeenCalledTimes(3);
+    expect(await usage()).toMatchObject({ requests: 3, reservedTokens: 0 });
   });
+
   it("applies individual overrides and blocking, with null restoring current defaults", async () => {
     await call("/ai/tagflow/usage", "user");
     const path = "/admin/tagflow/users/user";
     expect((await call(path, "admin", { blocked: true, limits: null })).status).toBe(200);
     expect((await chat()).status).toBe(403);
-    await call(path, "admin", { blocked: false, limits: { ...config.limits, dailyRequests: 0 } }); expect((await chat()).status).toBe(429);
+    await call(path, "admin", { blocked: false, limits: { ...config.limits, dailyRequests: 0 } }); expect((await chat()).status).toBe(200);
     await call(path, "admin", { blocked: false, limits: null }); expect((await chat()).status).toBe(200);
     expect((await call("/admin/tagflow/users/unknown", "admin", { blocked: false, limits: null })).status).toBe(404);
   });
-  it("holds estimated credits atomically across concurrent unlimited requests",async()=>{
-    // Each request holds more than the whole window, so only the first one can start.
-    await save({ ...config,credits:{ sessionCredits:1,weeklyCredits:100,sessionHours:5 },models:[{ ...config.models[0]!,creditRate:10 }] });
-    const responses=await Promise.all(Array.from({length:10},()=>chat()));
-    expect(responses.filter(response=>response.ok)).toHaveLength(1);
-    expect(responses.filter(response=>response.status===429)).toHaveLength(9);
-    expect(upstream).toHaveBeenCalledTimes(1);
-    await responses.find(response=>response.ok)!.text();
-    expect(await usage()).toMatchObject({inputTokens:12,outputTokens:3,reservedTokens:0});
-    expect((await chat()).status).toBe(200);
+  it("settles concurrent reservations past old credit limits exactly once", async () => {
+    await save({ ...config, credits: { sessionCredits: 1, weeklyCredits: 1, sessionHours: 5 }, models: [{ ...config.models[0]!, creditRate: 10 }] });
+    const responses = await Promise.all(Array.from({ length: 10 }, () => chat()));
+    expect(responses.every(response => response.ok)).toBe(true);
+    await Promise.all(responses.map(response => response.text()));
+    expect(upstream).toHaveBeenCalledTimes(10);
+    expect(await usage()).toMatchObject({ inputTokens: 120, outputTokens: 30, reservedTokens: 0 });
+    expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ unlimited: true, credits: { session: { used: 1.5, held: 0 } } });
   });
-  it("resets allowance at midnight UTC and never trusts a caller-provided uid", async () => {
-    await save({ ...config, limits: { ...config.limits, dailyRequests: 1 } }); await (await chat()).text(); expect((await chat()).status).toBe(429);
+
+  it("keeps daily accounting separate and never trusts a caller-provided uid", async () => {
+    await save({ ...config, limits: { ...config.limits, dailyRequests: 1 } }); await (await chat()).text(); expect((await chat()).status).toBe(200);
     now = Date.parse("2026-10-11T00:00:00Z"); expect((await chat()).status).toBe(200);
     expect((await chat("user", { ...body, uid: "other" })).status).toBe(400);
     const view = await (await call("/ai/tagflow/usage?uid=other", "user")).json() as { usage: { uid: string }; resetsAt: number };

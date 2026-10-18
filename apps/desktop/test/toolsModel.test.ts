@@ -23,9 +23,9 @@ describe("built-in tools in plain words", () => {
     expect(AGENT_PICKABLE_TOOLS.map((tool) => tool.name).sort()).toEqual(AGENT_RUN_TOOLS.map((tool) => tool.name).sort());
   });
 
-  it("keeps the preview, background commands, deletes, moves and the plan to the chat", () => {
+  it("keeps the preview, background commands, deletes, moves, the plan and its questions to the chat", () => {
     const agents = [agent("Builder")];
-    for (const name of ["view_page", "audit_page", "open_preview", "command_output", "stop_command", "delete_file", "move_file", "update_plan"]) {
+    for (const name of ["view_page", "audit_page", "open_preview", "command_output", "stop_command", "delete_file", "move_file", "update_plan", "ask_user"]) {
       expect(toolUsers(name, agents), name).toEqual(["Chat"]);
     }
     expect(toolUsers("run_command", agents)).toEqual(["Chat", "Builder"]);

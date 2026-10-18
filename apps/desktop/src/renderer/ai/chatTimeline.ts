@@ -91,6 +91,7 @@ const STEP_LABELS: Readonly<Record<string, string>> = {
   audit_page: "Check page",
   open_preview: "Open preview",
   update_plan: "Update plan",
+  ask_user: "Ask the user",
   delegate_task: "Helpers",
   project_context: "Read project notes",
   inspect_project: "Inspect project",

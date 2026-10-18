@@ -57,6 +57,7 @@
     "seo-audit": "node scripts/seo-audit.mjs",
     "smoke:vibe": "node scripts/smoke-vibe.mjs",
     "smoke:web-vibe": "node scripts/smoke-web-vibe.mjs",
+    "smoke:account": "node scripts/smoke-account.mjs",
     "models:check": "node scripts/models-check.mjs"
   },
   "devDependencies": {
@@ -93,6 +94,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "electron-updater": "^6.8.9",
     "firebase": "^12.18.0",
+    "lucide": "1.59.0",
     "next": "~16.3.8",
     "node-pty": "^1.1.0",
     "react": "^19.2.8",

@@ -37,7 +37,7 @@ describe("sub-agents", () => {
     expect(parseDelegation({ tasks: [{ title: "x", instructions: "y", mode: "admin" }] })).toMatch(/explore or build/);
   });
 
-  it("gives explore helpers reads only, build helpers everything but delegation", () => {
+  it("gives explore helpers reads only, build helpers everything but delegation and questions", () => {
     const all = [...BUILT_IN_TOOLS, DELEGATE_TASK];
     const explore = subagentTools(all, "explore");
     expect(explore.some((tool) => tool.mutating)).toBe(false);
@@ -45,6 +45,9 @@ describe("sub-agents", () => {
     const build = subagentTools(all, "build");
     expect(build).toContain(EDIT_FILE);
     expect(build.some((tool) => tool.name === "delegate_task")).toBe(false);
+    // Nobody is watching a helper's run, so a question would hang: only the parent asks.
+    expect(build.some((tool) => tool.name === "ask_user")).toBe(false);
+    expect(explore.some((tool) => tool.name === "ask_user")).toBe(false);
     expect(subagentBrief({ title: "Tests", instructions: "Write tests for cart.ts", mode: "build" })).toContain("You can change files");
   });
 

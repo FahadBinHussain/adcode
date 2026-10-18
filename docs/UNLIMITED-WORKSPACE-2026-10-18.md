@@ -1,0 +1,19 @@
+# Unlimited included AI and workspace panels
+
+Personal request, token, cost, request-per-minute, session-credit, weekly-credit and cloud running-time quotas are removed from the new API/cloud paths. Account verification, account blocks, provider context/output limits, upstream availability, global cloud capacity/budget controls, idle sleep and storage limits remain. Usage and settlement accounting continue for operations.
+
+Deploy `supabase/migrations/20261018080000_unlimited_included_ai.sql` before releasing the API. It creates a service-role-only `reserve_unlimited_ai` RPC; the older RPC remains available for rollback and older releases. No live database migration or deployment has been performed by this local change. Older APIs continue to report their actual allowance rather than falsely promising unlimited access.
+
+The chat composer no longer displays token or quota rings. The Conversation control retains summary and compaction actions. The workspace menu shows repository state and real tool connections. Preview, Changes, activity and Browser share a rounded tab strip alongside the conversation on wide Vibe windows. Narrow windows retain accessible floating sheets. Existing preview iframes remain in place when switching tabs.
+
+Browser uses the same isolated Chromium session as the agent's `view_page` tool. It supports local project addresses and public HTTP(S) pages, snapshot interaction, keyboard input, back/forward history, recent pages and following agent updates. Browser tabs remember addresses/history and revisit pages in this shared session; they are not independent continuously running Chromium tabs. Screenshots update after actions or agent inspections, not as a live video stream. Stale screenshots cannot issue clicks after another agent updates the page. Browser data remains isolated from the user's regular browser profile.
+
+Verification: repository checks, `scripts/check-credits-sql.mjs` against PGlite, and `scripts/smoke-web-vibe.mjs`. The smoke checks the shared browser, click/type actions, stale-click rejection, mobile fit, workspace menu, and account/chat preservation. SQL test dependencies are isolated under `.tmp/sql-runtime`; the application dependency files are unchanged.
+
+Final local checks: typecheck and web/host builds passed. The full suite passed 5,016 checks on its initial run; the 13 failing files were corrected for the new contract or rerun individually for timing contention, and all 148 targeted checks passed. The full web smoke then passed, including browser click/type, no enclosing workspace border, mobile fit, chat continuation and account preservation, with zero browser console errors. The standalone layout check confirmed equal panel top/bottom edges and an 8px gap.
+
+Tab polish follow-up: workspace and browser tabs now use consistent rounded surfaces, SVG icons, clearer active states and individual close controls. Chat, workspace and browser tab nodes survive ordinary updates to preserve focus. Pointer-created tabs enter over 200ms; remaining tabs reposition over 160ms when a tab closes. Keyboard actions stay instant, and both OS and application reduced-motion settings suppress motion. Docked panels no longer zoom on tab switches. The browser new-tab control stays visible when its strip overflows on narrow screens.
+
+Follow-up verification: final TypeScript checks and web build passed. `.tmp/check-tab-polish.mjs` verified pointer entrance, close/reposition, stable DOM nodes, address focus, keyboard creation/navigation/deletion, OS/app reduced motion, panel switching/closing, mobile fit and zero browser console errors. Screenshots are in `.tmp/tab-polish-shots/`.
+
+The full isolated web smoke also passed after tab polish, covering parallel chats, preview, Changes, browser actions, account navigation and mobile layout.

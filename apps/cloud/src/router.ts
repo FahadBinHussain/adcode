@@ -14,6 +14,7 @@
  * - Everything else is the web app's static files, with strict security headers.
  */
 import { tokenFromProtocols, verifyIdToken, type Verified } from "./auth.ts";
+import { forwardAccountApi } from "./accountApi.ts";
 import type { Env } from "./env.ts";
 import { parsePreviewHost } from "./previewAuth.ts";
 import { INDEXABLE_LAUNCH_ROBOTS, LAUNCH_ROBOTS, publicAppHost, robots, sitemap, WEB_APP_SCHEMA_CSP } from "./seo.ts";
@@ -136,6 +137,12 @@ export async function route(request: Request, env: Env, deps: RouterDeps = defau
     const publicHost = publicAppHost(url.hostname, env.APP_HOST, env.ALLOW_DEV_TOKEN);
     const body = url.pathname === "/robots.txt" ? robots(publicHost) : sitemap(publicHost);
     return new Response(request.method === "HEAD" ? null : body, { headers });
+  }
+
+  if (url.pathname.startsWith("/v1/")) {
+    const token = bearer(request);
+    if (token === null || token === "dev" || await deps.verify(token) === null) return json({ error: "unauthenticated" }, 401);
+    return forwardAccountApi(request, env);
   }
 
   if (url.pathname === "/socket") {

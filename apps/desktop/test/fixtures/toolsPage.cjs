@@ -88,7 +88,7 @@ app.whenReady().then(async () => {
       const results = {};
       try {
         page.shown(); await settle();
-        results.counts = tab('built-in').textContent.includes('22') && tab('servers').textContent.includes('2') && tab('skills').textContent.includes('2') && tab('memory').textContent.includes('1');
+        results.counts = tab('built-in').textContent.includes('23') && tab('servers').textContent.includes('2') && tab('skills').textContent.includes('2') && tab('memory').textContent.includes('1');
         results.qualityTools = ['inspect_project', 'run_project_checks', 'audit_page'].every(name => [...panel('built-in').querySelectorAll('.tool-card')].some(card => card.textContent.includes(name))) && panel('built-in').textContent.includes('Quality');
         const readFile = [...panel('built-in').querySelectorAll('.tool-card')].find((card) => card.textContent.includes('read_file'));
         const editFile = [...panel('built-in').querySelectorAll('.tool-card')].find((card) => card.textContent.includes('edit_file'));

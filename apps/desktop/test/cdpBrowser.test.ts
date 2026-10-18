@@ -61,12 +61,14 @@ describe("cdp page transport", () => {
     expect(transport.closed()).toBe(true);
   });
 
-  it("refuses a top-level load off this machine and lets local ones through", async () => {
+  it("refuses private-network documents and permits public sites and local projects", async () => {
     const page = await fakePage();
     const transport = await connectCdpPage(page.url);
-    page.push({ method: "Fetch.requestPaused", params: { requestId: "away", resourceType: "Document", request: { url: "https://evil.example/" } } });
+    page.push({ method: "Fetch.requestPaused", params: { requestId: "away", resourceType: "Document", request: { url: "http://192.168.1.1/" } } });
     page.push({ method: "Fetch.requestPaused", params: { requestId: "home", resourceType: "Document", request: { url: "http://localhost:5173/" } } });
+    page.push({ method: "Fetch.requestPaused", params: { requestId: "public", resourceType: "Document", request: { url: "https://example.com/" } } });
     await tick();
+    expect(page.received.filter(message => message.method === "Fetch.continueRequest").map(message => message.params)).toContainEqual({ requestId: "public" });
     expect(page.received.find((message) => message.method === "Fetch.failRequest")?.params).toEqual({ requestId: "away", errorReason: "BlockedByClient" });
     expect(page.received.find((message) => message.method === "Fetch.continueRequest")?.params).toEqual({ requestId: "home" });
     expect(page.received.some((message) => message.method === "Fetch.enable")).toBe(true);

@@ -172,17 +172,43 @@ async function audit(origin, config, e) {
   const isAllowed = robotsPolicy(robotText), sitemapUrls = new Set(), sitemapDocs = new Set();
   const xml = new e.XMLParser();
   async function sitemap(url, depth = 0) {
-    if (depth > 2 || sitemapDocs.size >= 10 || sitemapDocs.has(url) || !isSameOrigin(url, origin) || !isAllowed(url)) return;
+    if (sitemapDocs.has(url)) return;
+    if (!isSameOrigin(url, origin)) {
+      skipped.push({ url, reason: 'sitemap outside crawl origin' });
+      return;
+    }
+    if (!isAllowed(url)) {
+      skipped.push({ url, reason: 'sitemap excluded by robots.txt' });
+      return;
+    }
+    if (depth > 2 || sitemapDocs.size >= 10) {
+      discovery.push({ url, error: depth > 2 ? 'Sitemap depth limit (2) reached; URL discovery is incomplete.' : 'Sitemap document limit (10) reached; URL discovery is incomplete.' });
+      return;
+    }
     sitemapDocs.add(url);
     const got = await get(url, config).catch(error => { discovery.push({ url, error: error.message }); return null; });
+    if (!got) return;
     if (got?.bodyTruncated) {
       truncatedResponses.push({ url, stage: 'sitemap', limitBytes: RESPONSE_BODY_LIMIT });
       discovery.push({ url, error: 'Sitemap exceeded the response limit; URL discovery is incomplete.' });
       return;
     }
-    if (!got?.response.ok || !/^\s*(<\?xml|<urlset|<sitemapindex)/i.test(got.text)) return;
+    // A missing optional sitemap is normal; a failed or HTML fallback is not a complete discovery.
+    if (got.response.status === 404) return;
+    if (!got.response.ok) {
+      discovery.push({ url, error: 'Sitemap returned HTTP ' + got.response.status + '; URL discovery is incomplete.' });
+      return;
+    }
+    if (!/^\s*(<\?xml|<urlset|<sitemapindex)/i.test(got.text)) {
+      discovery.push({ url, error: 'Sitemap response is not XML; URL discovery is incomplete.' });
+      return;
+    }
     let parsed;
     try { parsed = xml.parse(got.text); } catch (error) { discovery.push({ url, error: error.message }); return; }
+    if (!Object.hasOwn(parsed, 'urlset') && !Object.hasOwn(parsed, 'sitemapindex')) {
+      discovery.push({ url, error: 'XML response has no urlset or sitemapindex; URL discovery is incomplete.' });
+      return;
+    }
     for (const row of [parsed.urlset?.url ?? []].flat()) {
       const normalized = typeof row.loc === 'string' ? normalizeUrl(row.loc) : null;
       if (normalized && isSameOrigin(normalized, origin)) sitemapUrls.add(normalized);

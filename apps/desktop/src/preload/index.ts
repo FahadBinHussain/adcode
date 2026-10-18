@@ -103,6 +103,11 @@ const api: AdcodeApi = {
     info: () => ipcRenderer.invoke(CHANNELS.platformInfo),
     onFocusChange: (listener) => subscribe(CHANNELS.windowFocus, listener),
   },
+  browser: {
+    view: (input) => ipcRenderer.invoke(CHANNELS.browserView, input),
+    read: () => ipcRenderer.invoke(CHANNELS.browserRead),
+    onChanged: (listener) => subscribe(CHANNELS.browserChanged, listener),
+  },
   preview: {
     start: (mode) => ipcRenderer.invoke(CHANNELS.previewStart, mode),
     stop: () => ipcRenderer.invoke(CHANNELS.previewStop),
@@ -179,6 +184,9 @@ const api: AdcodeApi = {
     onCheckpoint: (listener) => subscribe(CHANNELS.aiCheckpoint, listener),
     checkpoints: (sessionId) => ipcRenderer.invoke(CHANNELS.aiCheckpoints, sessionId),
     undoCheckpoint: (id, force) => ipcRenderer.invoke(CHANNELS.aiCheckpointUndo, id, force),
+    onQuestion: (listener) => subscribe(CHANNELS.aiQuestion, listener),
+    onQuestionDone: (listener) => subscribe(CHANNELS.aiQuestionDone, listener),
+    answerQuestion: (id, answers) => ipcRenderer.send(CHANNELS.aiQuestionAnswer, id, answers),
   },
   aiWorkspace: {
     list: () => ipcRenderer.invoke(CHANNELS.aiWorkspaceList),

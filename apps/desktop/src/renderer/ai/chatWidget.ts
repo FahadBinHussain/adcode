@@ -32,6 +32,8 @@ import type {
   AiTeamSuggestionView,
   AiTeamView,
   AiCheckpointView,
+  AiQuestionDoneView,
+  AiQuestionView,
   AiRunView,
   AiWorkspaceChangeView,
   AiWorkspaceTaskView,
@@ -60,7 +62,6 @@ import { runChatWidgetIntent } from "./chatWidgetIntents.ts";
 import { createIcon, ICON } from "../workbench/icons.ts";
 import { createContextMenu, attachContextMenuDismissal, type ContextMenuNode } from "../workbench/contextMenu.ts";
 import { contextMeterModel, createContextMeter } from "./contextMeter.ts";
-import { createComposerUsage } from "./composerUsage.ts";
 import { openModelFeedback } from "./modelFeedback.ts";
 import { markFor } from "../motionFlip.ts";
 import { button as dialogButton, el as dialogEl, openFormModal } from "../dialogs/formDialog.ts";
@@ -103,6 +104,7 @@ import { createQuickConnect, type QuickConnect } from "./quickConnect.ts";
 import { createAgentMascot, type AgentMascot } from "../agents/agentMascot.ts";
 import { chatAppearanceFrom, watchChatAppearance, type ChatAppearance } from "./chatAppearance.ts";
 import { openChatAppearanceDialog } from "./chatAppearanceDialog.ts";
+import { createQuestionCard } from "./chatQuestionCard.ts";
 import { openUsageDialog } from "./usageDialog.ts";
 import { firstBuildPrompt, looksLikeBuildRequest } from "../../shared/firstBuild.ts";
 
@@ -516,7 +518,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         modelName.textContent = label;
         refreshContextMeter();
       }
-      usageMeters.setIncluded(status.activeProvider === "tagflow", status.activeModel || null);
       connectButton.textContent = status.ready || saved ? "Models" : "Connect";
       modelLabel.dataset["ready"] = String(status.ready);
       modelLabel.title = status.ready
@@ -876,6 +877,13 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
    */
   let planCard: PlanCard | null = null;
   let viewCard: AgentViewCard | null = null;
+  /*
+   * The assistant's questions, waiting to be answered. Kept per question and not per card
+   * slot: a chat that is not on screen keeps its card until it is opened, and every window
+   * is told when an answer lands so the other copies turn into the same record.
+   */
+  const questionCards = new Map<string, { readonly view: AiQuestionView; readonly card: ReturnType<typeof createQuestionCard> }>();
+  const questionWaiting = new Set<string>();
   function openPageInChat(url: string): void {
     void window.adcode.preview.status().then((status) => chatPreview.show(status, url), () => undefined);
     deps.showPreviewPage?.(url);
@@ -1281,6 +1289,14 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     applyDisclosures();
     scrollToEnd(true);
     if (runningChats.has(session.id)) await replayRunningTurn(session.id, generation);
+    // A question this chat is still waiting on: its card belongs at the end of what has
+    // happened so far, and the replay above is everything before it.
+    const pendingQuestion = [...questionCards.values()].find((entry) => entry.view.sessionId === session.id);
+    if (pendingQuestion !== undefined && activeSessionId === session.id) {
+      transcript.append(pendingQuestion.card.element);
+      questionWaiting.delete(session.id);
+      scrollToEnd(true);
+    }
   }
 
   /**
@@ -2043,14 +2059,12 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       contextMeter.update(usage);
     }, () => undefined);
   }
-  const usageMeters = createComposerUsage(window.adcode.aiUsage, () => void openUsageDialog());
   const meters = document.createElement("div");
   meters.className = "composer-meters";
   meters.setAttribute("role", "group");
   meters.setAttribute("aria-label", "Context and AI usage");
-  meters.append(contextMeter.element, ...usageMeters.elements);
+  meters.append(contextMeter.element);
   composerFooter.append(composerHints, meters);
-  window.adcode.account.onChanged(() => { if (open) void usageMeters.refresh(); });
   refreshContextMeter();
   window.adcode.chat.onChanged((session) => {
     // Whichever conversation is current now - possibly a new one started in the other window.
@@ -2914,7 +2928,12 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       if (!icon) continue;
       const id = row.dataset["sessionId"] ?? "";
       const isActive = id === activeSessionId;
-      if (runningChats.has(id) || (isActive && working)) {
+      if (questionWaiting.has(id)) {
+        // A question is the one thing a chat cannot finish without, so it reads louder than
+        // "working" - and quieter than a failure, because nothing is wrong.
+        icon.dataset["status"] = "attention";
+        icon.title = "The assistant is waiting for your answer";
+      } else if (runningChats.has(id) || (isActive && working)) {
         icon.dataset["status"] = "working";
         icon.title = "Working";
       } else if (finishedUnseen.has(id)) {
@@ -4582,6 +4601,38 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       undo: (id, force) => window.adcode.ai.undoCheckpoint(id, force),
     }));
   }
+
+  /*
+   * The assistant asking the user something.
+   *
+   * `ask_user` blocks its turn until the card comes back, so the card is drawn in the chat
+   * the question belongs to; a chat that is not on screen keeps its card - and its History
+   * mark - until it is opened. The first answer from any window settles it everywhere.
+   */
+  window.adcode.ai.onQuestion((view) => {
+    if (typeof view?.id !== "string" || !Array.isArray(view.questions) || view.questions.length === 0) return;
+    if (questionCards.has(view.id)) return;
+    const card = createQuestionCard(view, (answers) => {
+      window.adcode.ai.answerQuestion(view.id, answers ?? []);
+    });
+    questionCards.set(view.id, { view, card });
+    if (view.sessionId === activeSessionId) {
+      transcript.append(card.element);
+      scrollToEnd();
+      deps.requestOpen();
+    } else {
+      questionWaiting.add(view.sessionId);
+      paintWorkingStatus();
+    }
+  });
+  window.adcode.ai.onQuestionDone((done: AiQuestionDoneView) => {
+    const entry = typeof done?.id === "string" ? questionCards.get(done.id) : undefined;
+    if (entry === undefined) return;
+    questionCards.delete(done.id);
+    questionWaiting.delete(entry.view.sessionId);
+    entry.card.finish(Array.isArray(done.answers) ? done.answers : null);
+    paintWorkingStatus();
+  });
   /* ── Sending ──────────────────────────────────────────────────────────── */
 
   /**
@@ -5024,7 +5075,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
       void refreshModelStatus();
       refreshContextMeter();
-      usageMeters.setVisible(true);
       statusTimer = window.setInterval(() => { if (!document.hidden) void refreshModelStatus(); }, 5_000);
       void refreshWorkspaceTask();
       void paintFolderBanner();
@@ -5036,7 +5086,6 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     hidden(): void {
       if (!open) return;
       open = false;
-      usageMeters.setVisible(false);
       if (statusTimer !== null) window.clearInterval(statusTimer);
       statusTimer = null;
       announce();

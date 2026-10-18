@@ -67,6 +67,8 @@ export interface TagflowUsage {
 }
 
 export interface TagflowReservation {
+  /** Bypass per-user quotas while preserving atomic usage accounting. */
+  unlimited?: boolean;
   id: string;
   uid: string;
   day: string;

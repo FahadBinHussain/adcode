@@ -38,6 +38,7 @@ export interface CreditsAllowance {
 
 /** Included AI's account-wide allowance, separate from this machine's usage history. */
 export interface TagflowAllowanceView {
+  unlimited?: boolean;
   available: boolean;
   blocked: boolean;
   limits: { dailyRequests: number; dailyTokens: number; dailyCostMicros: number; requestsPerMinute: number };

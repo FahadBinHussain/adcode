@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AuthContext as Ctx, type AuthState } from "./AuthContext";
+export { useAuth } from "./AuthContext";
 import { apiFetch } from "@/lib/api";
 import { watchUser, firebaseConfigured, type User } from "@/lib/firebase";
 import { excludeBrowserByDefault } from "@/lib/websiteAnalytics";
@@ -15,28 +17,6 @@ import { excludeBrowserByDefault } from "@/lib/websiteAnalytics";
  * Tokens are deliberately never written to localStorage or a cookie by this app. Firebase
  * manages its own refresh-token storage; a second copy would be a second thing to leak.
  */
-interface AuthState {
-  user: User | null;
-  loading: boolean;
-  configured: boolean;
-  token: () => Promise<string | null>;
-  isAdmin: boolean;
-  /**
-   * True while the server is still being asked whether this account is an admin. Signing in
-   * finishes first, so without this an administrator was told "Not an admin account" for the
-   * moment between the two.
-   */
-  adminLoading: boolean;
-}
-
-const Ctx = createContext<AuthState>({
-  user: null,
-  loading: true,
-  configured: false,
-  token: async () => null,
-  isAdmin: false,
-  adminLoading: false,
-});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -106,5 +86,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
-
-export const useAuth = (): AuthState => useContext(Ctx);

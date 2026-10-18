@@ -7,7 +7,6 @@
  * tested; the element at the bottom is the DOM.
  */
 import type { AiContextUsageView } from "../../shared/api.ts";
-import { createComposerMeter } from "./composerMeter.ts";
 
 export interface ContextMeterModel {
   readonly percent: number;
@@ -50,27 +49,15 @@ export interface ContextMeter {
   update(usage: AiContextUsageView): void;
 }
 
-/** The meter itself: a ring and a label. Clicking it calls `onOpen` with the button. */
+/** Conversation maintenance stays available without persistent usage meters. */
 export function createContextMeter(onOpen: (button: HTMLButtonElement) => void): ContextMeter {
-  const meter = createComposerMeter("Context", onOpen);
-  const element = meter.element;
-  element.classList.add("chat-context-meter");
-  element.dataset["meter"] = "context";
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = "chat-conversation-controls";
+  element.textContent = "Conversation";
+  element.title = "Manage conversation context";
   element.setAttribute("aria-haspopup", "menu");
   element.setAttribute("aria-expanded", "false");
-
-  return {
-    element,
-    update(usage) {
-      const model = contextMeterModel(usage);
-      const known = usage.contextWindow > 0 && Number.isFinite(usage.contextWindow) && Number.isFinite(usage.tokens);
-      meter.update({
-        percent: known ? model.percent : null,
-        value: known ? `${model.percent}%` : "—",
-        detail: known ? `${formatTokens(Math.max(0, usage.tokens))} / ${formatTokens(usage.contextWindow)}` : "Unknown limit",
-        tooltip: known ? `${model.tooltip} Click to manage context.` : "The model's context limit is unavailable. Click to manage context.",
-        tone: known ? model.tone : "unknown",
-      });
-    },
-  };
+  element.addEventListener("click", () => onOpen(element));
+  return { element, update() {} };
 }

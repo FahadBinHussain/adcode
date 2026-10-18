@@ -8,7 +8,7 @@ import { createMemoryStore } from "../../../services/api/src/memoryStore.ts";
 import { DEFAULT_TAGFLOW_CONFIG } from "../../../services/api/src/tagflowConfig.ts";
 import { recoverIncludedLimits } from "../../../packages/ai/src/includedLimitRecovery.ts";
 
-it("resumes the pending tool step when the real relay's credit window refills, without repeating the completed tool",async()=>{
+it("continues the tool loop past historical credit caps without waiting or repeating completed tools",async()=>{
   vi.useFakeTimers();vi.setSystemTime(Date.parse("2026-10-11T12:00:00Z"));const started=Date.now();const window=5*3_600_000;
   const store=createMemoryStore();let toolRuns=0;const statuses:number[]=[];
   const config={...DEFAULT_TAGFLOW_CONFIG,enabled:true,baseUrl:"https://api.tagflow-ai.com/v1",defaultModel:"coder",credits:{sessionCredits:1,weeklyCredits:100,sessionHours:5},models:[{id:"coder",name:"Coder",contextWindow:32768,maxOutput:4096,inputPrice:0,outputPrice:0}]};
@@ -27,13 +27,12 @@ it("resumes the pending tool step when the real relay's credit window refills, w
   }}});
   try{
     const events:unknown[]=[];const run=(async()=>{for await(const event of agent.send("Fix the button"))events.push(event);})();
-    await vi.advanceTimersByTimeAsync(window-1);expect(statuses).toEqual([200,429]);expect(toolRuns).toBe(1);
-    expect(events).toContainEqual(expect.objectContaining({kind:"status",text:expect.stringContaining("This session's free AI credits are used up")}));
-    await vi.advanceTimersByTimeAsync(1);await run;expect(statuses).toEqual([200,429,200]);expect(toolRuns).toBe(1);
+    await run;expect(statuses).toEqual([200,200]);expect(toolRuns).toBe(1);
+    expect(Date.now()).toBe(started);
     expect(events).toContainEqual({kind:"text",text:"Finished the task."});expect(events.some(event=>(event as {kind:string}).kind==="error")).toBe(false);
     expect(JSON.stringify(upstream.mock.calls[1]?.[1]?.body)).toContain("Edited app.ts successfully");
-    // The new window opened with the resumed request and holds only what it used.
-    expect((await store.getCreditWindows("user")).session).toEqual({startedAt:started+window,endsAt:started+2*window,usedMillicredits:16,reservedMillicredits:0});
+    // Accounting continues in the same window, beyond the historical ceiling.
+    expect((await store.getCreditWindows("user")).session).toEqual({startedAt:started,endsAt:started+window,usedMillicredits:1031,reservedMillicredits:0});
   }finally{agent.cancel();vi.useRealTimers();}
 });
 

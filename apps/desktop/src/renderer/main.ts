@@ -1,3 +1,4 @@
+import { createAgentBrowserPane } from "./preview/agentBrowserPane.ts";
 /**
  * Workbench bootstrap: layout, file tree, tabs, editor, terminal, status bar.
  *
@@ -43,6 +44,7 @@ import "./styles/chatControls.css";
 import "./styles/composer.css";
 // Last: its reduced-motion-guarded rules refine the entrances the sheets above declare.
 import "./styles/motion.css";
+import "./styles/workspacePolish.css";
 import { createFrameTask } from "./frameTask.ts";
 import {
   MOTION_SETTING,
@@ -4305,7 +4307,7 @@ const previewPane = createPreviewPane({
     runButton.refresh();
     assistantDock?.accommodatePreview();
   },
-  notify: (text) => setStatus(text, 5000),
+  notify: (text) => notifications.show({ title: "Live preview", body: text, autoDismissMs: 10_000 }),
   // Point-and-fix: the element picked in Preview becomes the subject of an agent task.
   onFixElement: (box, pageUrl) => {
     openAgents();
@@ -4719,6 +4721,7 @@ const chat = createChatWidget({
  * Team setup, schedules and live agent activity: a floating panel over the work. It used to
  * be a drawer on the right of the chat, and nothing docks on the right any more.
  */
+const agentBrowserPane = createAgentBrowserPane();
 const activityPanel = createFloatingPanel({
   id: "activity",
   title: "Team, schedules and activity",
@@ -5898,9 +5901,12 @@ function registerCommands(): void {
   });
   add("agents.race", "Agents: Race Several Agents on One Task", () => { openAgents(); agentsPage.newRace(); });
   add("tools.open", "Open Tools", () => openTools());
+  add("tools.servers", "Tools: MCP Servers", () => openTools("servers"));
+  add("tools.skills", "Tools: Skills", () => openTools("skills"));
   add("tools.addServer", "Tools: Add an MCP Server", () => { openTools("servers"); toolsPage.addServer(); });
   add("tools.memory", "Tools: Project Memory", () => openTools("memory"));
   add("tools.builtIn", "Tools: The Assistant's Built-in Tools", () => openTools("built-in"));
+  add("workspace.browser", "Open Browser", () => agentBrowserPane.open());
   add("workspace.preview", "Open Project Preview", () => { if (!previewPane.isOpen()) void previewPane.toggle(); });
   add("ai.terminalTeam", "Start an AI Team in the Terminal", () => void openTerminalTeamSetup());
   /*

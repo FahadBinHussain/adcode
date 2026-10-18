@@ -27,6 +27,8 @@ export interface Env {
   readonly PREVIEW: DurableObjectNamespace<PreviewRouteRpc>;
   readonly HOMES: R2Bucket;
   readonly ASSETS: Fetcher;
+  /** Existing account API, reached without starting a coding sandbox. */
+  readonly ACCOUNT_API: Fetcher;
 
   readonly APP_HOST: string;
   readonly PREVIEW_SUFFIX: string;

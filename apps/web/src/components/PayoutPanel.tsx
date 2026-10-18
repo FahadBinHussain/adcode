@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "./AuthProvider";
+import { useAuth } from "./AuthContext";
+import { SITE_ORIGIN } from "@/lib/site";
 import { money, moneyExact, when } from "./money";
 import { Segmented } from "./ios/Segmented";
 import { CURRENCIES, countryName, dollarsToPayoutMicros, microsToDollarsInput } from "@/lib/payoutOptions";
@@ -332,7 +333,7 @@ function DetailsCard({ view, onSaved, onError }: {
         />
         <span>I am 18 years of age or older.</span>
       </label>
-      <p className="field-hint">Required by the <a href="/terms">terms</a>. We cannot pay a minor.</p>
+      <p className="field-hint">Required by the <a href={`${SITE_ORIGIN}/terms`} target="_blank" rel="noopener noreferrer">terms</a>. We cannot pay a minor.</p>
     </div>
 
     <p className="field-hint">An administrator reviews and approves the request, sends it manually, then records the transfer reference.</p>

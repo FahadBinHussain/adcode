@@ -36,11 +36,13 @@ describe("ActivityBlock model (pure, no DOM)", () => {
     expect(toolHeaderLabel("view_page")).toBe("Looking at the page");
     expect(toolHeaderLabel("open_preview")).toBe("Opening the preview");
     expect(toolHeaderLabel("update_plan")).toBe("Updating the plan");
+    expect(toolHeaderLabel("ask_user")).toBe("Asking you a question");
     expect(toolHeaderLabel("move_file")).toBe("Moving files");
     expect(toolHeaderLabel("delete_file")).toBe("Deleting a file");
     expect(toolHeaderLabel("command_output")).toBe("Checking a command");
     expect(toolHeaderLabel("stop_command")).toBe("Stopping a command");
     expect(summarizeToolInput({ from: "logo.png", to: "assets/logo.png" })).toBe("logo.png → assets/logo.png");
+    expect(summarizeToolInput({ questions: [{ question: "Which layout?" }, { question: "And the title?" }] })).toBe("Which layout? (+1 more)");
     expect(toolHeaderLabel("")).toBe("Working");
   });
 

@@ -4,8 +4,8 @@
  * On the desktop `view_page` drives an offscreen Electron window through `webContents.debugger`.
  * The sandbox has no Electron, so this starts the image's Chromium headless and speaks the same
  * protocol to it over a WebSocket; `main/agentBrowser.ts` cannot tell the difference. The
- * desktop's rule carries over: the agent's page loads nothing but this machine, enforced here
- * by pausing every top-level document request and refusing any that leaves loopback.
+ * desktop's address policy carries over: local projects and public HTTP(S) pages, enforced
+ * by checking document requests before navigation.
  */
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
 import type { PageTransport, PageTransportFactory } from "../main/agentBrowser.ts";
-import { isLoopbackUrl } from "../main/agentBrowserModel.ts";
+import { isBrowserUrl } from "../main/agentBrowserModel.ts";
 
 const COMMAND_TIMEOUT_MS = 30_000;
 const LAUNCH_TIMEOUT_MS = 20_000;
@@ -67,9 +67,9 @@ export async function connectCdpPage(wsUrl: string, onClose?: () => void): Promi
     const method = message.method ?? "";
     const params = message.params ?? {};
     if (method === "Fetch.requestPaused") {
-      // Only top-level documents are paused; anything off this machine is refused before it leaves.
+      // Document requests use the same URL policy as the desktop browser.
       const url = String(params["request"]?.url ?? "");
-      void (url === "about:blank" || isLoopbackUrl(url)
+      void (url === "about:blank" || isBrowserUrl(url)
         ? raw("Fetch.continueRequest", { requestId: params["requestId"] })
         : raw("Fetch.failRequest", { requestId: params["requestId"], errorReason: "BlockedByClient" })).catch(() => undefined);
       return;

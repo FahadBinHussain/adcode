@@ -23,7 +23,7 @@ import { clipOutput, createCommandRunner, looksLikeServer, timeoutFrom, MAX_TIME
 import { parseAuditPageInput, parseViewPageInput, type ViewPageRequest } from "./agentBrowserModel.ts";
 import { inspectProject, runProjectChecks } from "./projectChecks.ts";
 import { htmlToText, looksLikeHtml } from "./htmlText.ts";
-import type { PreviewStatus } from "../shared/api.ts";
+import type { AiQuestionAnswerView, AiQuestionItemView, AiQuestionOptionView, PreviewStatus } from "../shared/api.ts";
 
 /** Read in full by default; larger files page 2,000 lines at a time. */
 const MAX_READ_BYTES = 400_000;
@@ -75,6 +75,119 @@ export function parsePlan(input: Record<string, unknown>): PlanStep[] | string {
   }
   if (parsed.filter((step) => step.status === "in_progress").length > 1) return "Only one step can be in_progress at a time.";
   return parsed;
+}
+
+/* ── ask_user: the questions, and the answers that come back ────────────── */
+
+/** The most questions one call may ask, and the most options one may offer. */
+export const MAX_QUESTIONS = 4;
+export const MAX_QUESTION_OPTIONS = 4;
+const MAX_ANSWER_CHARS = 2_000;
+
+/**
+ * `ask_user` input as the card's questions, or what is wrong with it.
+ *
+ * Ids are positional (`q2o1`), so the renderer and this side name the same option without
+ * passing anything back and forth, and the answer that returns is checked against the
+ * options that were really offered.
+ */
+export function parseQuestions(input: Record<string, unknown>): AiQuestionItemView[] | string {
+  const raw = input["questions"];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return 'ask_user needs questions: [{"question": "Which layout?", "options": [{"label": "Three cards"}, {"label": "One wide table"}]}].';
+  }
+  if (raw.length > MAX_QUESTIONS) return `At most ${MAX_QUESTIONS} questions per call; ask the rest after these are answered.`;
+  const questions: AiQuestionItemView[] = [];
+  for (const [index, item] of raw.entries()) {
+    const record = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const question = typeof record["question"] === "string" ? record["question"].trim() : "";
+    if (question.length === 0 || question.length > 300) {
+      return `Question ${index + 1} needs text of 1-300 characters, e.g. "Which layout should the pricing page use?".`;
+    }
+    const rawOptions = record["options"];
+    if (!Array.isArray(rawOptions) || rawOptions.length === 0) return `Question ${index + 1} needs options: at least one {label} to pick from.`;
+    if (rawOptions.length > MAX_QUESTION_OPTIONS) {
+      return `Question ${index + 1} offers ${rawOptions.length} options; ${MAX_QUESTION_OPTIONS} is the most. Combine them, or ask the rest in a second question.`;
+    }
+    const options: AiQuestionOptionView[] = [];
+    for (const [optionIndex, rawOption] of rawOptions.entries()) {
+      const option = typeof rawOption === "object" && rawOption !== null ? (rawOption as Record<string, unknown>) : {};
+      const label = typeof option["label"] === "string" ? option["label"].trim() : "";
+      if (label.length === 0 || label.length > 120) return `Question ${index + 1}, option ${optionIndex + 1} needs a short label of 1-120 characters.`;
+      const description = typeof option["description"] === "string" ? option["description"].trim().slice(0, 240) : "";
+      options.push({ id: `q${index + 1}o${optionIndex + 1}`, label, ...(description === "" ? {} : { description }) });
+    }
+    const header = typeof record["header"] === "string" ? record["header"].trim().slice(0, 60) : "";
+    questions.push({
+      id: `q${index + 1}`,
+      question,
+      ...(header === "" ? {} : { header }),
+      options,
+      multiSelect: record["multi_select"] === true,
+    });
+  }
+  return questions;
+}
+
+/**
+ * An answer from a window, checked against the questions it belongs to.
+ *
+ * Null means the card was dismissed: an empty answer, no answer to a question, or nothing
+ * that matches the ids that were offered. A renderer is never trusted to have sent a choice
+ * the card did not show - and a single-select question that somehow carries both a pick and
+ * words keeps only the pick.
+ */
+export function normalizeQuestionAnswers(
+  questions: readonly AiQuestionItemView[],
+  raw: unknown,
+): readonly AiQuestionAnswerView[] | null {
+  const sent = new Map<string, { optionIds: string[]; text: string }>();
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const record = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const question = questions.find((candidate) => candidate.id === record["questionId"]);
+    if (question === undefined || sent.has(question.id)) continue;
+    const optionIds: string[] = [];
+    for (const optionId of Array.isArray(record["optionIds"]) ? record["optionIds"] : []) {
+      if (typeof optionId !== "string" || optionIds.includes(optionId)) continue;
+      if (!question.options.some((option) => option.id === optionId)) continue;
+      if (!question.multiSelect && optionIds.length > 0) break;
+      optionIds.push(optionId);
+    }
+    const rawText = typeof record["text"] === "string" ? record["text"].trim().slice(0, MAX_ANSWER_CHARS) : "";
+    // One choice means one thing: a single-select question takes the pick or the words,
+    // never both, whatever a window sent.
+    const text = !question.multiSelect && optionIds.length > 0 ? "" : rawText;
+    sent.set(question.id, { optionIds, text });
+  }
+  const blank = (answer: { optionIds: readonly string[]; text: string }): boolean => answer.optionIds.length === 0 && answer.text === "";
+  if (sent.size === 0 || [...sent.values()].every(blank)) return null;
+  return questions.map((question) => {
+    const answer = sent.get(question.id) ?? { optionIds: [], text: "" };
+    return { questionId: question.id, optionIds: answer.optionIds, text: answer.text };
+  });
+}
+
+/** What the model is told when the card came back, or was dismissed without an answer. */
+export function formatQuestionAnswers(
+  questions: readonly AiQuestionItemView[],
+  answers: readonly AiQuestionAnswerView[] | null,
+): string {
+  if (answers === null) {
+    return "The user dismissed the question card without answering. Do not ask again: continue with your best judgement, and say what you assumed.";
+  }
+  const byQuestion = new Map(answers.map((answer) => [answer.questionId, answer]));
+  const lines = questions.map((question) => {
+    const answer = byQuestion.get(question.id);
+    const chosen = (answer?.optionIds ?? [])
+      .map((optionId) => question.options.find((option) => option.id === optionId)?.label)
+      .filter((label): label is string => label !== undefined)
+      .map((label) => `"${label}"`);
+    if (answer !== undefined && answer.text.length > 0) chosen.push(`their own words: "${answer.text}"`);
+    // The header names the topic the model asked about; without one, the question itself does.
+    const about = question.header ?? question.question;
+    return `- ${about} -> ${chosen.length === 0 ? "no answer" : chosen.join("; ")}`;
+  });
+  return `The user answered in the question card:\n${lines.join("\n")}\n\nUse these answers; do not ask again.`;
 }
 
 /** Commands that are never worth the risk, whatever the workspace. */
@@ -143,6 +256,11 @@ export interface AiToolDeps {
   readonly writeSandboxFile: (path: string, contents: string) => Promise<AiFileChange>;
   /** Called when the agent proposes an edit, so the renderer can show the diff. */
   readonly onProposedEdit: (edit: ProposedEdit) => void;
+  /**
+   * Show the questions in the conversation's card and wait for the user. Null is a dismissed
+   * card - nobody answered - and the model is told so rather than left hanging.
+   */
+  readonly askUser?: (questions: readonly AiQuestionItemView[], signal: AbortSignal) => Promise<readonly AiQuestionAnswerView[] | null>;
 }
 
 const ok = (content: string): ToolRunResult => ({ content, isError: false });
@@ -636,6 +754,15 @@ export function createAiToolRunner(deps: AiToolDeps): ToolRunner {
           const done = steps.filter((step) => step.status === "done").length;
           const current = steps.find((step) => step.status === "in_progress");
           return ok(`Plan shown to the user: ${done} of ${steps.length} done${current === undefined ? "" : `, now: ${current.step}`}.`);
+        }
+
+        case "ask_user": {
+          // A background agent or a Team role has nobody to ask; its prompt says so.
+          if (!deps.askUser) return fail("This agent cannot show the user a question card. Ask in your reply instead.");
+          const questions = parseQuestions(input);
+          if (typeof questions === "string") return fail(questions);
+          const answers = await deps.askUser(questions, signal);
+          return ok(formatQuestionAnswers(questions, answers));
         }
 
         case "read_file": {

@@ -296,7 +296,7 @@ export const FAQ: readonly { q: string; a: string }[] = [
   },
   {
     q: "Is the AI in ADCode free?",
-    a: "Yes. ADCode includes free AI models from its partners, Tagflow AI and Heabsy. Sign in with a verified account and start building - no API key and no bill. Free AI is measured in credits that refill every 5 hours from your first message, with a weekly ceiling, and a task that reaches the limit waits and carries on by itself. You can also use your own provider key or a model running on your computer.",
+    a: "Yes. ADCode includes free AI models from its partners, Tagflow AI and Heabsy. Sign in with a verified account and start building - no API key and no bill. Included AI has no personal request, token or credit quota. Provider availability and model context limits still apply. You can also use your own provider key or a model running on your computer.",
   },
   {
     q: "How much can you earn using ADCode?",

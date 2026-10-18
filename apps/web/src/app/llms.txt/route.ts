@@ -1,5 +1,4 @@
 import { FAQ } from "@/lib/schema";
-import { DEFAULT_CREDIT_PLAN } from "@adcode/api/src/credits.ts";
 import { allPosts } from "@/lib/posts";
 import { docsBySection } from "@/lib/docs";
 import { landingIndex } from "@/lib/landings";
@@ -77,11 +76,9 @@ revenue to the developer using it.
   compiler errors, live collaboration.
 - AI: agents that edit across files, run tests, and keep going until done; several agents at
   once on an Agents board; Race mode to compare models on one task; Undo for every turn.
-  Included partner models need no API key: ${DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US")} credits every ${DEFAULT_CREDIT_PLAN.sessionHours} hours,
-  up to ${DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US")} a week. At the limit, tasks wait for a refill.
+  Included partner models need no API key: unlimited requests. Provider availability and model context limits apply.
   Your own provider key follows that provider's billing; local models run in the desktop app.
-- Browser version: ${WEB_VERSION_URL}. Vibe mode in a private cloud workspace, with one hour
-  of cloud time every ${DEFAULT_CREDIT_PLAN.sessionHours} hours, separate from AI credits. Sign in to start.
+- Browser version: ${WEB_VERSION_URL}. Vibe mode in a private cloud workspace, with no personal cloud time limit. Sign in to start.
 - Ad format: one small sponsored card in the corner of the window.
 - Ad targeting: a fixed vocabulary of 45 generic tags for language, framework, tool, and
   platform. Source code, paths and project names are not used for ad targeting.

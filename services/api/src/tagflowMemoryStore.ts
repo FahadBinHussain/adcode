@@ -43,10 +43,10 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
       if (reservations.has(request.id)) throw new Error("Duplicate reservation");
       const row = days.get(key(request.uid, request.day)) ?? { uid: request.uid, day: request.day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
       const minuteKey = key(request.uid, String(request.minute));
-      if ((request.limits.dailyRequests !== UNLIMITED_DAILY_REQUESTS && row.requests + 1 > request.limits.dailyRequests) || row.inputTokens + row.outputTokens + row.reservedTokens + request.tokens > request.limits.dailyTokens || row.costMicros + row.reservedCostMicros + request.costMicros > request.limits.dailyCostMicros) return "daily-limit";
-      const admitted = request.credits === undefined ? null : admitCredits(windows.get(request.uid) ?? { session: null, week: null }, request.credits);
+      if (!request.unlimited && ((request.limits.dailyRequests !== UNLIMITED_DAILY_REQUESTS && row.requests + 1 > request.limits.dailyRequests) || row.inputTokens + row.outputTokens + row.reservedTokens + request.tokens > request.limits.dailyTokens || row.costMicros + row.reservedCostMicros + request.costMicros > request.limits.dailyCostMicros)) return "daily-limit";
+      const admitted = request.credits === undefined ? null : admitCredits(windows.get(request.uid) ?? { session: null, week: null }, request.credits, request.unlimited);
       if (admitted !== null && !admitted.ok) return admitted.limit;
-      if (request.limits.requestsPerMinute !== UNLIMITED_REQUESTS_PER_MINUTE && (minutes.get(minuteKey) ?? 0) >= request.limits.requestsPerMinute) return "rate-limit";
+      if (!request.unlimited && request.limits.requestsPerMinute !== UNLIMITED_REQUESTS_PER_MINUTE && (minutes.get(minuteKey) ?? 0) >= request.limits.requestsPerMinute) return "rate-limit";
       if (admitted !== null) windows.set(request.uid, admitted.windows);
       days.set(key(request.uid, request.day), { ...row, requests: row.requests + 1, reservedTokens: row.reservedTokens + request.tokens, reservedCostMicros: row.reservedCostMicros + request.costMicros });
       minutes.set(minuteKey, (minutes.get(minuteKey) ?? 0) + 1);

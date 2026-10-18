@@ -108,6 +108,7 @@ import { recordAgentEdit } from "./activity.ts";
 import { recordMilestone } from "./milestones.ts";
 import { createKeychainStore } from "./keychain.ts";
 import { createAiToolRunner } from "./aiTools.ts";
+import { askQuestionInWindows } from "./aiQuestion.ts";
 import { resolveSandboxPath } from "./aiSandbox.ts";
 import { createCheckpointStore, type CheckpointTurn, type UndoResult } from "./aiCheckpoints.ts";
 import { announceFinishedUnseen, keepAwakeWhileWorking } from "./backgroundWork.ts";
@@ -1022,7 +1023,7 @@ function describeBackgroundCommands(): string | null {
 }
 
 /** The chat's tools. `undo` is the turn recording the writes, read when each write lands. */
-function toolRunner(undo: () => CheckpointTurn | null = () => null) {
+function toolRunner(undo: () => CheckpointTurn | null = () => null, sessionId: () => string | null = () => null) {
   return createAiToolRunner({
     openPreview: (path) => openAiPreview(broadcast, path),
     viewPage: (request, signal) => viewPage(request, { previewUrl: () => aiPreviewUrl(broadcast) }, signal),
@@ -1086,6 +1087,12 @@ function toolRunner(undo: () => CheckpointTurn | null = () => null) {
     },
     onCommandFinished: () => {
       announceProjectFiles([]);
+    },
+    askUser: (questions, signal) => {
+      const id = sessionId();
+      // A check agent with no conversation of its own has no card to draw in.
+      if (id === null) return Promise.resolve(null);
+      return askQuestionInWindows(id, questions, signal);
     },
   });
 }
@@ -1476,7 +1483,7 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
   const lean = providerId === "ollama";
   // Sub-agents share this runner, so their edits land in the same undoable turn. A lean
   // (local) model is not offered them: it should not be juggling helpers.
-  const runner = withBuiltinSkills(withAssistantExtensions(toolRunner(() => thread.checkpoint)), designTasteOn);
+  const runner = withBuiltinSkills(withAssistantExtensions(toolRunner(() => thread.checkpoint, () => thread.session.id)), designTasteOn);
   // The project's tool rules and hooks check every call exactly once: the chat's own calls
   // (delegate_task included) at its runner, each helper's at the helpers' runner.
   const rules = { root: () => thread.root, sessionId: () => thread.session.id };

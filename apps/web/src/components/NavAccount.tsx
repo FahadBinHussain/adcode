@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "@/components/IntentLink";
+import { WEB_VERSION_URL } from "@/lib/site";
 import { useAuth } from "./AuthProvider";
 import { AccountMenu } from "./AccountMenu";
 
@@ -22,9 +22,9 @@ export function NavAccount() {
 
   if (user === null) {
     return (
-      <Link href="/dashboard" className="nav-signin">
+      <a href={WEB_VERSION_URL} className="nav-signin">
         Sign in
-      </Link>
+      </a>
     );
   }
 

@@ -276,8 +276,9 @@ describe("Chat Connect ownership", () => {
 });
 
 describe("long chat memory in the chat", () => {
-  it("shows the context meter in the composer footer", () => {
-    expect(source).toContain("meters.append(contextMeter.element, ...usageMeters.elements);");
+  it("keeps Conversation actions in the footer without quota meters", () => {
+    expect(source).toContain("meters.append(contextMeter.element);");
+    expect(source).not.toContain("createComposerUsage");
     expect(source).toContain("composerFooter.append(composerHints, meters);");
     expect(styles).toMatch(/\.chat-context-meter\s*\{/);
     expect(styles).toMatch(/\.chat-context-meter\[data-tone="full"\]/);

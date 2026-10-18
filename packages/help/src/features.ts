@@ -264,16 +264,16 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
     keywords: ["agents", "agent board", "parallel agents", "background agents", "multiple agents", "run in background", "kanban", "boxes", "tasks", "ai tasks", "queued", "needs you", "ready to review", "apply and continue", "cost cap", "starter agents", "reviewer", "tester", "bug fixer", "like cursor agents", "like devin"],
   },
   "workbench.toolsPage": {
-    actions: [command("tools.open", "Open Tools"), command("tools.addServer", "Add an MCP server")],
+    actions: [command("tools.open", "Open Tools"), command("tools.addServer", "Add an MCP server"), command("tools.servers", "MCP servers"), command("tools.skills", "Skills")],
     keywords: ["tools", "mcp", "mcp server", "model context protocol", "skills", "plugins", "integrations", "marketplace", "playwright", "context7", "figma", "netlify", "chrome devtools", "tool access", "server not working", "agents and tools"],
   },
   "ai.seesYourApp": {
-    actions: [command("ai.checkApp", "Check my running app")],
+    actions: [command("ai.checkApp", "Check my running app"), command("workspace.browser", "Open browser")],
     keywords: ["see my app", "look at the page", "screenshot", "does it work", "check the page", "test in browser", "click through", "console errors", "broken images", "404", "mobile view", "phone width", "open a page", "specific page", "live server", "browser tool", "playwright", "view_page", "/check"],
   },
   "ai.agentTools": {
     actions: [command("tools.builtIn", "Show the built-in tools")],
-    keywords: ["delete file", "move file", "rename file", "dev server", "background command", "npm run dev", "long command", "timeout", "plan", "checklist", "todo list", "undo delete", "agent tools", "what can the ai do", "assistant abilities"],
+    keywords: ["delete file", "move file", "rename file", "dev server", "background command", "npm run dev", "long command", "timeout", "plan", "checklist", "todo list", "undo delete", "agent tools", "what can the ai do", "assistant abilities", "question", "ask me", "asks me", "choose an option", "multiple choice", "pick one", "which one", "type your own answer", "dismiss the question", "answer a question"],
   },
   "ai.memoryEditor": {
     actions: [command("tools.memory", "Open project memory")],

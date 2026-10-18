@@ -56,6 +56,7 @@ describe("tool rows", () => {
     expect(toolStepLabel("fetch_url")).toBe("Read URL");
     expect(toolStepLabel("view_page")).toBe("View page");
     expect(toolStepLabel("update_plan")).toBe("Update plan");
+    expect(toolStepLabel("ask_user")).toBe("Ask the user");
     expect(toolStepLabel("memory_write")).toBe("Project memory");
     expect(toolStepLabel("call_mcp")).toBe("Use MCP tool");
     // An unknown tool still reads as words, not as an identifier.

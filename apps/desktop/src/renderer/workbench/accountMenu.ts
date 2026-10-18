@@ -1,3 +1,4 @@
+import { isWebSurface, openWebAccount } from "../surface.ts";
 /**
  * The account button in the title bar, and the panel it opens.
  *
@@ -309,6 +310,7 @@ export function createAccountMenu(
 
   button.addEventListener("click", (event) => {
     event.stopPropagation();
+    if (isWebSurface()) { openWebAccount(); return; }
     setOpen(!open);
   });
 

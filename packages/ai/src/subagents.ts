@@ -13,6 +13,8 @@ import type { Agent } from "./agent.ts";
 import type { AgentEvent, ToolCallBlock, ToolDefinition, ToolRunner, ToolRunResult } from "./types.ts";
 
 export const DELEGATE_TASK_NAME = "delegate_task";
+/** Helpers run with nobody watching, so a question would hang: only the parent may ask. */
+export const ASK_USER_NAME = "ask_user";
 export const MAX_SUBAGENTS = 4;
 /** What one helper's report may add to the parent's context. */
 const REPORT_CHARS = 6000;
@@ -75,9 +77,9 @@ export function parseDelegation(input: unknown): readonly SubagentTask[] | strin
   return tasks;
 }
 
-/** A helper's tools: reads only to explore; everything but delegation to build. */
+/** A helper's tools: reads only to explore; everything but delegation and questions to build. */
 export function subagentTools(tools: readonly ToolDefinition[], mode: SubagentMode): readonly ToolDefinition[] {
-  return tools.filter((tool) => tool.name !== DELEGATE_TASK_NAME && (mode === "build" || !tool.mutating));
+  return tools.filter((tool) => tool.name !== DELEGATE_TASK_NAME && tool.name !== ASK_USER_NAME && (mode === "build" || !tool.mutating));
 }
 
 /** The helper's first message: the task and how to finish. */

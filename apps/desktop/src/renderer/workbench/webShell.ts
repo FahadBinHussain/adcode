@@ -1,3 +1,4 @@
+import { reconcileTabs, tabMotionAllowed, updateTabStrip } from "./tabMotion.ts";
 /**
  * The web version's frame around Vibe: an icon rail on the far left and chat tabs along the top.
  *
@@ -11,13 +12,16 @@
  * its working/finished mark) and open a chat by pressing that row, so a tab can never disagree
  * with the list.
  */
-import { createIcon, ICON } from "./icons.ts";
+import { createIcon, type IconSource } from "./icons.ts";
 import { brandMark } from "./brandMark.ts";
+
+import { WEB_ICON } from "./webIcons.ts";
 
 export interface RailItem {
   readonly id: string;
   readonly label: string;
-  readonly icon: string;
+  readonly shortLabel?: string;
+  readonly icon: IconSource;
   readonly run: () => void;
 }
 
@@ -40,6 +44,11 @@ function railButton(item: RailItem): HTMLButtonElement {
   button.dataset["tip"] = item.label;
   button.setAttribute("aria-label", item.label);
   button.append(createIcon(item.icon));
+  const label = document.createElement("span");
+  label.className = "web-rail-label";
+  label.textContent = item.shortLabel ?? item.label;
+  label.setAttribute("aria-hidden", "true");
+  button.append(label);
   const badge = document.createElement("span");
   badge.className = "web-rail-badge";
   badge.hidden = true;
@@ -110,6 +119,9 @@ export function createWebRail(options: {
       if (badge === undefined || badge === null) return;
       badge.textContent = text;
       badge.hidden = text === "";
+      const button = buttons.get(id)!;
+      const label = button.dataset["tip"] ?? id;
+      button.setAttribute("aria-label", text ? `${label}, ${text}` : label);
     },
   };
 }
@@ -152,7 +164,7 @@ export function createChatTabs(options: {
   add.className = "web-tabs-add";
   add.dataset["tip"] = "New chat";
   add.setAttribute("aria-label", "New chat in a new tab");
-  add.append(createIcon(ICON.plus));
+  add.append(createIcon(WEB_ICON.newChat));
   add.addEventListener("click", options.newChat);
   const lead = document.createElement("div");
   lead.className = "web-tabs-side";
@@ -180,7 +192,19 @@ export function createChatTabs(options: {
     render();
   }
 
+  const tabNodes = new Map<string | null, HTMLElement>();
   function tab(record: TabRecord | null, active: boolean): HTMLElement {
+    const existing = tabNodes.get(record?.id ?? null);
+    if (existing) {
+      existing.dataset["active"] = String(active);
+      const button = existing.querySelector<HTMLButtonElement>(".web-tab-open")!;
+      button.setAttribute("aria-selected", String(active)); button.tabIndex = active ? 0 : -1;
+      const title = record?.title ?? "New chat"; button.title = title;
+      existing.querySelector(".web-tab-title")!.textContent = title;
+      existing.querySelector<HTMLElement>(".web-tab-status")!.dataset["status"] = record === null ? "idle" : row(record.id)?.querySelector<HTMLElement>(".chat-history-status")?.dataset["status"] ?? "idle";
+      existing.querySelector(".web-tab-close")?.setAttribute("aria-label", `Close ${title}`);
+      return existing;
+    }
     const item = document.createElement("div");
     item.className = "web-tab";
     item.dataset["active"] = String(active);
@@ -198,23 +222,25 @@ export function createChatTabs(options: {
     title.textContent = record?.title ?? "New chat";
     button.title = title.textContent;
     button.append(status, title);
-    if (record !== null) button.addEventListener("click", () => { if (!active) open(record.id); });
+    if (record !== null) button.addEventListener("click", () => { if (activeId() !== record.id) open(record.id); });
     item.append(button);
     if (record !== null) {
       const shut = document.createElement("button");
       shut.type = "button";
       shut.className = "web-tab-close";
       shut.setAttribute("aria-label", `Close ${record.title}`);
-      shut.append(createIcon(ICON.close));
+      shut.append(createIcon(WEB_ICON.close));
       shut.addEventListener("click", (event) => { event.stopPropagation(); close(record.id); });
       item.append(shut);
       // Middle click closes, as a browser tab does.
       item.addEventListener("auxclick", (event) => { if (event.button === 1) { event.preventDefault(); close(record.id); } });
     }
+    tabNodes.set(record?.id ?? null, item);
     return item;
   }
 
   let painted = "";
+  let paintedOnce = false;
   function render(): void {
     const active = activeId();
     // The active chat is always a tab; titles follow renames in the list.
@@ -231,15 +257,21 @@ export function createChatTabs(options: {
       if (!record.title) record.title = "Chat";
     }
     saveTabs(tabs);
-    const items: HTMLElement[] = tabs.map((record) => tab(record, record.id === active));
-    if (active === null) items.push(tab(null, true));
     // Re-drawn only when something a person can see changed, so focus and hover hold still.
     const signature = JSON.stringify([active, tabs.map((one) => [one.id, one.title, row(one.id)?.querySelector<HTMLElement>(".chat-history-status")?.dataset["status"]])]);
     if (signature === painted) return;
     painted = signature;
     const focusedIndex = [...strip.querySelectorAll(".web-tab-open")].indexOf(document.activeElement as Element);
-    strip.replaceChildren(...items);
-    if (focusedIndex >= 0) strip.querySelectorAll<HTMLElement>(".web-tab-open")[focusedIndex]?.focus();
+    let items: HTMLElement[] = [];
+    const focused = document.activeElement;
+    updateTabStrip(strip, () => {
+      items = tabs.map((record) => tab(record, record.id === active));
+      if (active === null) items.push(tab(null, true));
+      reconcileTabs(strip, items);
+    }, paintedOnce && tabMotionAllowed());
+    paintedOnce = true;
+    for (const [id, node] of tabNodes) if (!items.includes(node)) tabNodes.delete(id);
+    if (focusedIndex >= 0 && !focused?.isConnected) strip.querySelectorAll<HTMLElement>(".web-tab-open")[Math.min(focusedIndex, items.length - 1)]?.focus();
     strip.querySelector('.web-tab[data-active="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 

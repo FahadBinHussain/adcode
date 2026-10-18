@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/components/AuthContext";
 import { CopyField } from "@/components/CopyField";
 import { moneyExact } from "@/components/money";
 import { apiFetch, type ReferralView } from "@/lib/api";

@@ -1,3 +1,5 @@
+import { createWorkspaceControls } from "./workspaceControls.ts";
+import { openWebAccount } from "../surface.ts";
 /**
  * The Vibe window's sidebar: one place to start, switch project, and see what needs you.
  *
@@ -16,12 +18,13 @@
 import type { ChatWidget } from "../ai/chatWidget.ts";
 import type { AiWorkspaceTaskView, GitStatusView } from "../../shared/api.ts";
 import type { ContextTab } from "./projectContext.ts";
-import { createIcon, ICON } from "./icons.ts";
+import { createIcon as createWorkbenchIcon, ICON, type IconSource } from "./icons.ts";
 import { attachContextMenuDismissal, createContextMenu, type ContextMenu, type ContextMenuNode } from "./contextMenu.ts";
 import { describeVibeProject, projectName, recentProjectsFor, summarizeVibeChanges, VIBE_PAGES, type VibePage } from "./vibeSidebarModel.ts";
 import { GIT_CHANGED_EVENT } from "./changesView.ts";
 import { isWebSurface } from "../surface.ts";
 import { brandMark } from "./brandMark.ts";
+import { WEB_ICON } from "./webIcons.ts";
 import { createChatTabs, createWebRail, type WebRail } from "./webShell.ts";
 
 /** Below this width the rail would squeeze the conversation, so it becomes a drawer. */
@@ -54,6 +57,14 @@ const PATH = {
   grid: "M2.5 2.5h4.5v4.5H2.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5H2.5zM9 9h4.5v4.5H9z",
   sidebar: "M2.5 3h11v10h-11zM6.5 3v10",
 } as const;
+
+// Desktop keeps its existing icon set; browser navigation uses official Lucide nodes.
+const webPaths = new Map<string, IconSource>(Object.entries(PATH).map(([key, path]) => [path, WEB_ICON[key as keyof typeof PATH]]));
+webPaths.set(ICON.earnings, WEB_ICON.earnings);
+webPaths.set(ICON.close, WEB_ICON.close);
+function createIcon(source: IconSource): SVGSVGElement {
+  return createWorkbenchIcon(isWebSurface() && typeof source === "string" ? webPaths.get(source) ?? source : source);
+}
 
 export interface VibeSidebarDeps {
   readonly chat: ChatWidget;
@@ -103,11 +114,14 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   let collapsed = false;
   /** The web frame's rail, when this is the web version; built once the rows exist. */
   let webRail: WebRail | null = null;
+  let webTabsTrailing: HTMLElement | null = null;
+  let webTabChanges: HTMLButtonElement | null = null;
+  let webTabPreview: HTMLButtonElement | null = null;
   try { collapsed = localStorage.getItem(COLLAPSED_KEY) === "true"; } catch { /* Optional preference. */ }
   let drawerOpen = false;
   let drawerTrigger: HTMLElement | null = null;
 
-  const button = (className: string, label: string, icon: string, run: () => void): HTMLButtonElement => {
+  const button = (className: string, label: string, icon: IconSource, run: () => void): HTMLButtonElement => {
     const control = document.createElement("button");
     control.type = "button";
     control.className = className;
@@ -117,7 +131,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     control.addEventListener("click", run);
     return control;
   };
-  const navItem = (label: string, icon: string, className: string, run: () => void) => {
+  const navItem = (label: string, icon: IconSource, className: string, run: () => void) => {
     const control = button(`vibe-nav-item ${className}`, label, icon, run);
     const text = document.createElement("span");
     text.className = "vibe-nav-text";
@@ -245,6 +259,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
 
   // On the web there is no second window: the same button offers the desktop app, which has the full IDE.
   const web = isWebSurface();
+  const workspaceControls = createWorkspaceControls({ run: deps.run, changes: () => deps.showContext("changes"), project: () => deps.showContext("project"), browser: () => deps.run("workspace.browser"), web });
   const ide = document.createElement("button");
   ide.type = "button";
   ide.className = "project-toolbar-action vibe-ide-button";
@@ -311,11 +326,13 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     const wordmark = document.createElement("span");
     wordmark.className = "web-sidebar-wordmark";
     wordmark.textContent = "ADCode";
-    brand.append(brandMark({ size: 24, plate: true, accent: true }), wordmark, searchButton);
+    const dismiss = button("web-sidebar-search web-sidebar-close", "Close navigation", ICON.close, () => closeDrawer());
+    brand.append(brandMark({ size: 24, plate: true, accent: true }), wordmark, searchButton, dismiss);
+    newConversation.control.querySelector("svg")?.replaceWith(createIcon(WEB_ICON.newChat));
 
-    const credits = navItem("Free AI credits", PATH.spark, "web-credits-row", () => { deps.run("ai.showCredits"); closeDrawer(); });
-    const earningsRow = navItem("Earnings", ICON.earnings, "web-earnings-row", () => { deps.run("view.earnings"); closeDrawer(); });
-    const invite = navItem("Invite friends, earn more", PATH.gift, "web-invite-row", () => { deps.run("invite.open"); closeDrawer(); });
+    const credits = navItem("Included AI", PATH.spark, "web-credits-row", () => { deps.run("ai.showCredits"); closeDrawer(); });
+    const earningsRow = navItem("Earnings", ICON.earnings, "web-earnings-row", () => { openWebAccount("earnings"); closeDrawer(); });
+    const invite = navItem("Invite friends, earn more", PATH.gift, "web-invite-row", () => { openWebAccount("invites"); closeDrawer(); });
     const usage = document.createElement("div");
     usage.className = "vibe-nav web-usage";
     usage.append(credits.control, earningsRow.control, invite.control);
@@ -330,7 +347,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     projectLabel.textContent = "Project";
     conversationsLabel.textContent = "Chats";
 
-    const link = (label: string, icon: string, run: () => void): HTMLButtonElement => {
+    const link = (label: string, icon: IconSource, run: () => void): HTMLButtonElement => {
       const row = button("vibe-nav-item web-link-row", label, icon, run);
       const text = document.createElement("span");
       text.className = "vibe-nav-text";
@@ -348,7 +365,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     const promo = document.createElement("div");
     promo.className = "web-promo";
     const promoText = document.createElement("p");
-    promoText.textContent = "For the full IDE, local models and no time limit, use ADCode on desktop.";
+    promoText.textContent = "For local projects and local models, use ADCode on desktop.";
     promo.append(promoText, ide);
 
     const panel = document.createElement("div");
@@ -364,26 +381,36 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     const feedback = document.getElementById("report-toggle");
     const rail = createWebRail({
       home: () => { deps.showPage("chat"); closeDrawer(); },
-      places: VIBE_PAGES.map((page) => ({ id: page.id, label: page.label, icon: PAGE_DETAIL[page.id].icon, run: () => { deps.showPage(page.id); closeDrawer(); } })),
+      places: VIBE_PAGES.map((page) => ({ id: page.id, label: page.label, icon: WEB_ICON[page.id], run: () => { deps.showPage(page.id); closeDrawer(); } })),
       panels: [
-        { id: "changes", label: "Changes", icon: PATH.changes, run: () => { deps.toggleContext("changes"); closeDrawer(); } },
-        { id: "preview", label: "Preview", icon: PATH.preview, run: () => { deps.togglePreview(); closeDrawer(); } },
-        { id: "automations", label: "Automations", icon: PATH.automations, run: () => { chat.openScheduleComposer(); closeDrawer(); } },
+        { id: "account", label: "Account", icon: WEB_ICON.account, run: () => { openWebAccount(); closeDrawer(); } },
+        { id: "changes", label: "Changes", icon: WEB_ICON.changes, run: () => { deps.toggleContext("changes"); closeDrawer(); } },
+        { id: "preview", label: "Preview", icon: WEB_ICON.preview, run: () => { deps.togglePreview(); closeDrawer(); } },
+        { id: "automations", label: "Automations", shortLabel: "Schedule", icon: WEB_ICON.automations, run: () => { chat.openScheduleComposer(); closeDrawer(); } },
       ],
       footer: [notifications, settings, deps.more, ...(feedback === null ? [] : [feedback]), ...(account === null ? [] : [account])],
     });
+    // These controls originate in shared chrome; keep their behavior and badges intact.
+    for (const [control, icon] of [[deps.more, WEB_ICON.more], [feedback, WEB_ICON.feedback], [account, WEB_ICON.account]] as const) {
+      control?.querySelector("svg")?.replaceWith(createIcon(icon));
+    }
     element.append(rail.element, panel);
 
     const tabToggle = button("web-tabs-button", "Hide sidebar (Ctrl+B)", PATH.sidebar, () => toggle());
-    const tabChanges = button("web-tabs-button", "Changes", PATH.changes, () => deps.toggleContext("changes"));
-    const tabPreview = button("web-tabs-button web-tabs-preview", "Preview", PATH.preview, () => deps.togglePreview());
+    const tabChanges = button("web-tabs-button", "Changes", WEB_ICON.changes, () => deps.toggleContext("changes"));
+    const tabPreview = button("web-tabs-button web-tabs-preview", "Preview", WEB_ICON.preview, () => deps.togglePreview());
     tabPreview.append(document.createTextNode("Preview"));
     const tabs = createChatTabs({
       historyHost,
       newChat: () => { deps.showPage("chat"); deps.run("ai.newConversation"); },
       leading: [tabToggle],
-      trailing: [tabChanges, tabPreview],
+      trailing: [tabChanges, tabPreview, workspaceControls.element],
     });
+    webTabsTrailing = tabs.element.querySelector(".web-tabs-trailing");
+    webTabChanges = tabChanges;
+    webTabPreview = tabPreview;
+    tabChanges.setAttribute("aria-pressed", "false");
+    tabPreview.setAttribute("aria-pressed", "false");
     document.body.append(tabs.element);
     return rail;
   }
@@ -392,10 +419,11 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   async function watchCredits(row: { control: HTMLButtonElement; badge: HTMLElement }): Promise<void> {
     const paint = async (): Promise<void> => {
       const view = await window.adcode.aiUsage.allowance().catch(() => null);
+      if (view?.unlimited) { setBadge(row, "Included AI", "Unlimited", false, "No ADCode usage allowance"); return; }
       const session = view?.credits?.session;
-      if (session === undefined) { setBadge(row, "Free AI credits", "", false, "See your free AI usage"); return; }
+      if (session === undefined) { setBadge(row, "Included AI", "", false, "See your free AI usage"); return; }
       const left = Math.max(0, Math.floor(session.remaining));
-      setBadge(row, "Free AI credits", left.toLocaleString(), left <= session.limit * 0.1, `${left.toLocaleString()} of ${session.limit.toLocaleString()} left in this session`);
+      setBadge(row, "Included AI", left.toLocaleString(), left <= session.limit * 0.1, `${left.toLocaleString()} of ${session.limit.toLocaleString()} left in this session`);
     };
     window.adcode.aiUsage.onChanged(() => void paint());
     window.setInterval(() => { if (!document.hidden) void paint(); }, 60_000);
@@ -419,11 +447,29 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   wireMenuButton(topProject, projectMenu, openProjectMenu);
   const topSearchHost = document.createElement("div");
   topSearchHost.className = "vibe-topbar-search";
-  const topPreview = button("vibe-topbar-button vibe-topbar-preview", "Preview", PATH.preview, () => deps.togglePreview());
+  const topPreview = button("vibe-topbar-button vibe-topbar-preview", "Preview", web ? WEB_ICON.preview : PATH.preview, () => deps.togglePreview());
   topPreview.append(document.createTextNode("Preview"));
   const topIde = button("vibe-topbar-button vibe-topbar-ide", web ? "Get the desktop app" : "Open IDE in a separate window", PATH.ide, () => deps.run("workspace.openIde"));
   topIde.append(document.createTextNode(web ? "Desktop app" : "Open IDE"));
-  topbar.append(menuToggle, topProject, topSearchHost, topPreview, topIde);
+  const topChanges = button("vibe-topbar-button vibe-topbar-changes", "Review changes", WEB_ICON.changes, () => deps.toggleContext("changes"));
+  topChanges.append(document.createTextNode("Changes"));
+  topChanges.setAttribute("aria-pressed", "false");
+  const compactActions = document.createElement("div");
+  compactActions.className = "web-compact-actions";
+  if (web) {
+    const newChat = button("vibe-topbar-button web-new-chat", "New chat", WEB_ICON.newChat, () => { deps.showPage("chat"); deps.run("ai.newConversation"); });
+    newChat.append(document.createTextNode("New chat"));
+    const workspaceButton = workspaceControls.element.querySelector("button")!;
+    workspaceButton.querySelector("svg")?.replaceWith(createIcon(WEB_ICON.workspace));
+    const workspaceLabel = document.createElement("span");
+    workspaceLabel.className = "web-workspace-label";
+    workspaceLabel.textContent = "Workspace";
+    workspaceButton.append(workspaceLabel);
+    compactActions.append(newChat, topChanges, topPreview);
+    topbar.append(menuToggle, topProject, topSearchHost, compactActions);
+  } else {
+    topbar.append(menuToggle, topProject, topSearchHost, topPreview, topIde, workspaceControls.element);
+  }
 
   const scrim = document.createElement("div");
   scrim.className = "vibe-drawer-scrim";
@@ -484,6 +530,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
 
   let generation = 0;
   function paintProject(root: string | null, git: GitStatusView | null): void {
+    workspaceControls.update(root, git);
     const name = projectName(root);
     cardName.textContent = name;
     cardMeta.textContent = describeVibeProject(root, git);
@@ -500,6 +547,9 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     if (root === null) {
       paintProject(null, null);
       setBadge(changes, "Changes", "", false, "Open a project to see its changes");
+      webRail?.setBadge("changes", "");
+      topChanges.setAttribute("aria-label", "Review changes");
+      topChanges.removeAttribute("data-count");
       return;
     }
     if (cardName.textContent !== projectName(root)) paintProject(root, null);
@@ -512,6 +562,9 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     const changeSummary = summarizeVibeChanges(git, taskList);
     setBadge(changes, "Changes", changeSummary.badge, changeSummary.attention, changeSummary.description);
     webRail?.setBadge("changes", changeSummary.badge);
+    topChanges.setAttribute("aria-label", `Review changes — ${changeSummary.description}`);
+    if (changeSummary.badge) topChanges.dataset["count"] = changeSummary.badge;
+    else topChanges.removeAttribute("data-count");
   }
   let refreshTimer: number | undefined;
   const scheduleRefresh = (): void => {
@@ -537,6 +590,10 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     document.body.dataset["vibeRail"] = next;
     if (isDocked && drawerOpen) closeDrawer(false);
     if (deps.search !== null) (isDocked ? searchHost : topSearchHost).append(deps.search);
+    if (web) {
+      const host = isDocked ? webTabsTrailing : compactActions;
+      if (host && workspaceControls.element.parentElement !== host) host.append(workspaceControls.element);
+    }
     menuToggle.title = isDocked ? "Hide sidebar (Ctrl+B)" : "Show sidebar (Ctrl+B)";
     menuToggle.setAttribute("aria-label", menuToggle.title);
     element.inert = !isDocked && !drawerOpen;
@@ -592,11 +649,14 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     setContextTab(tab): void {
       changes.control.setAttribute("aria-pressed", String(tab === "changes"));
       webRail?.setPressed("changes", tab === "changes");
+      topChanges.setAttribute("aria-pressed", String(tab === "changes"));
+      webTabChanges?.setAttribute("aria-pressed", String(tab === "changes"));
     },
     setPreviewOpen(open): void {
       preview.control.setAttribute("aria-pressed", String(open));
       topPreview.setAttribute("aria-pressed", String(open));
       webRail?.setPressed("preview", open);
+      webTabPreview?.setAttribute("aria-pressed", String(open));
     },
     // Called once per project switch, so no debounce: the card must not show the old name.
     refresh: () => { void refresh(); },

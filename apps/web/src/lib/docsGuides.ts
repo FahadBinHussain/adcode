@@ -899,6 +899,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Long commands - installs, builds, test suites - may run for up to ten minutes and report their real exit code. Press Stop and the command ends along with everything it started.",
       "Servers and watchers run in the background while the assistant keeps working: it reads what they print, spots the address a dev server announces, and looks at it. They stop when you close the folder or quit.",
       "For a bigger job, a Plan card appears in the conversation with every step, ticked off as each one finishes.",
+      "When a decision is genuinely yours, it asks instead of guessing: a question card with up to four questions, choices to pick from (one, or several where that fits), and a box for an answer in your own words. Dismiss the card and it carries on with its best guess rather than waiting.",
       "To see every tool in plain words, run Tools: The Assistant's Built-in Tools from the command palette.",
     ],
     benefits: [
@@ -907,6 +908,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "A dev server keeps running for the rest of the conversation instead of blocking it.",
       "Search shows the lines around each match and finds code like add( as plain text, so the assistant reads less to find more.",
       "Edits survive an indentation mismatch instead of failing and starting over, and documentation pages come back as clean text, not raw HTML.",
+      "A question you can answer in one click beats typing an explanation - and you can always answer in your own words.",
     ],
     betterThan:
       "Agents without these tools improvise: rm and mv in a shell, which no Undo reverses; servers started in the foreground that hang the turn; thirty-second limits that kill every install. ADCode gives the assistant the tools a careful engineer would use, puts every file change under one Undo, and shows its plan while it works, so you can let it run and still put things back.",
@@ -1074,7 +1076,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Open a working chat and its timeline so far is there, carrying on live. Stop stops only the chat on screen.",
       "Type into a chat while it works and the message waits for that chat - even if you go to another one meanwhile.",
       "Minimise ADCode or switch to another program: the work goes on, the computer is kept from suspending the app, and a notification says when a chat finishes.",
-      "On the web, put the tab in the background or close it: the cloud workspace stays awake while a chat works (it counts against the day's cloud time), and the tab's title gets a dot when one finishes.",
+      "On the web, put the tab in the background or close it: the cloud workspace stays awake while a chat works (there is no personal cloud time quota), and the tab's title gets a dot when one finishes.",
       "Run AI: Show Working Chats from the command palette to see them all.",
     ],
     benefits: [
@@ -1200,22 +1202,13 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   "ai-credits": {
     steps: [
-      "Sign in to ADCode with a verified email - on the desktop app or at web.bluethenics.com. Free AI is selected for you when no other model is connected.",
-      "Look beside the chat box: the Session ring is your current 5-hour window, the Weekly ring is the last 7 days. Hover a ring for the credits left and the time it refills.",
-      "Send your first message. That request opens your session window; it refills 5 hours later with a full balance, however much of it you used.",
-      "Pick any free model in Connect a model → Free · no API key. Each shows its rate: a partner model that costs less to run, such as Heabsy's, uses fewer credits for the same work.",
-      "Run AI: Show Free AI Credits (or open AI usage) for both windows as bars, with the credits left and the exact refill time.",
-      "If a window runs out mid-task, leave ADCode open: the chat or agent says when the credits refill and carries on by itself then. Press Stop to cancel instead, or switch to your own key or a local model, which never use credits.",
+      "Sign in with a verified email to use included AI without an API key.",
+      "Choose an included model and start building. ADCode has no per-user token, request, session-credit, or weekly-credit quota.",
+      "Open AI usage for recorded activity. Usage history is informational and does not stop your work.",
+      "Models still have context limits, and providers can temporarily rate-limit or become unavailable. Those messages identify the provider and explain how to retry.",
     ],
-    benefits: [
-      "A full balance every 5 hours, not once a day at midnight UTC - start late in the evening and you still get a whole session.",
-      "One number for every free model. You no longer juggle a main allowance and a separate partner allowance.",
-      "Requests start whenever you have credit left and are charged what they really used, so a long reply is never refused at 98%.",
-      "Tasks that hit the limit wait and resume on their own instead of failing, so an agent left running overnight finishes.",
-      "The same balance on every device you sign in on.",
-    ],
-    betterThan:
-      "Claude Max made the 5-hour window the way people expect an AI plan to work: a fresh allowance whenever you sit down, with a weekly ceiling so it stays fair. ADCode's free AI works the same way, for free, and shows you the windows as they fill instead of after you are cut off. Tools that count tokens per day make you plan your work around midnight UTC; tools with a separate quota per model make you guess which one still has room. Here it is one balance, one refill time, and a running task that waits instead of dying.",
+    benefits: ["No daily or weekly refill to wait for.", "The same included access across signed-in devices.", "Your own connected models remain available."],
+    betterThan: "Included AI removes provider-key setup and per-user usage allowances. ADCode records usage for service operations. Account access restrictions, provider availability, and model context limits remain in effect.",
   },
 
   "ai-project-instructions": {
@@ -1279,11 +1272,11 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Open Account and sign in with an email verified by your provider.",
       "Included AI is selected automatically on a new installation when enabled, using the administrator's default model. Send a message without entering an API key. To switch, open Connect a model → Free · no API key and choose Use this model.",
       "Choose a model and send your first message. You do not need a provider API key.",
-      "Watch the Session and Weekly rings by the chat box: free AI is measured in credits that refill every 5 hours, with a weekly ceiling. Chats, completions and agents share them across devices.",
-      "When a window runs out, a running task waits and carries on by itself when it refills - or switch to your own provider or a local model. Clearing local history does not reset your credits.",
+      "Included AI has no per-user token or request quota. Chats and agents can keep working across devices.",
+      "Provider availability and model context limits still apply. Clearing usage history does not change provider limits.",
     ],
-    benefits: ["Start without purchasing a provider key.", "See your credits and the refill time inside the editor.", "Administrators can set credits per window, each model's credit rate, individual credits and access blocks."],
-    betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models, or models from any OpenAI-compatible provider they register, using server keys, set their prices and default model, hide models, set credits per session and per week, give each model its own credit rate, and save provider keys from the admin panel. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
+    benefits: ["Start without purchasing a provider key.", "Keep working without daily or weekly refills.", "Administrators manage models, provider connections, and account access."],
+    betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models, or models from any OpenAI-compatible provider they register, using server keys, set their prices and default model, hide models, review usage, and save provider keys from the admin panel. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
   },
   "ai-provider": {
     steps: [
@@ -1612,7 +1605,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Wait a few seconds while your private cloud workspace wakes up - the first time each day takes the longest.",
       "Describe what you want to build in the box that appears and press Build it. ADCode makes the project, writes the code, runs it and opens it in Preview.",
       "Keep asking for changes in the chat. Changes shows every file the assistant touched; Commit & Push sends it to GitHub after you connect GitHub once.",
-      "Watch the time-left chip in the sidebar beside Free AI credits and Earnings (the menu at the top on a phone): you have an hour of cloud time in every 5-hour session, counted only while your workspace is running. It refills when the session ends.",
+      "Cloud workspaces have no personal running-time quota. Idle workspaces sleep automatically with your work saved.",
       "To take a project elsewhere, open Cloud workspace from the chip and choose Download, or push it to GitHub and clone it in the desktop app.",
     ],
     benefits: [
@@ -1623,7 +1616,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Ads and earnings work the same as on the desktop, in the same balance.",
     ],
     betterThan:
-      "Browser-based AI builders usually lock your project into their hosting. ADCode on the web is a full Linux workspace with git, npm and a real browser for the agent to check its work, and everything in it can be downloaded or pushed to your own GitHub at any time. When you outgrow the cloud time, the desktop app is free with no limit and runs your projects on your own computer.",
+      "Browser-based AI builders usually lock your project into their hosting. ADCode on the web is a full Linux workspace with git, npm and a real browser for the agent to check its work, and everything in it can be downloaded or pushed to your own GitHub at any time. For local development, the desktop app is free with no limit and runs your projects on your own computer.",
   },
 
   "workbench-cloud-workspace": {
@@ -1963,7 +1956,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Look down the list of models: each shows its share of tokens, its requests from the chat and from agents, and its cost at the catalogue's price.",
       "A ≈ marks counts ADCode estimated because the provider did not report them. Clear usage removes this machine's history, activity and streaks.",
       "Under Tokens, cached is the input the provider read back from its prompt cache instead of charging full price; hover a model for its own cached share.",
-      "For free AI, read your credits above the history: the current 5-hour session and this week, each with the credits left and its refill time, including credits held by replies in progress. Clearing local history does not reset them.",
+      "Included AI has no personal usage quota. Usage history helps you understand activity; clearing it only removes local records.",
     ],
     benefits: [
       "See where the money goes, model by model, before your provider's bill arrives.",

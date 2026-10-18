@@ -74,7 +74,7 @@ export function Nav() {
       <Link href="/versions" className="glass-nav-link nav-mobile-only" aria-current={pathname === "/versions" ? "page" : undefined}>Download</Link>
       {isAdmin && <Link href="/admin" className="glass-nav-link">Admin</Link>}
       {!loading && (user === null ? (
-        <Link href="/dashboard" className="glass-auth-control">Sign in</Link>
+        <a href={WEB_VERSION_URL} className="glass-auth-control">Sign in</a>
       ) : (
         <button type="button" className="glass-auth-control" disabled={leaving} onClick={() => void signOut()}>
           {leaving ? "Signing out…" : "Log out"}

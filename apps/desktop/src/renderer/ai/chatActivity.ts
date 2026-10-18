@@ -24,6 +24,13 @@ export function summarizeToolInput(input: unknown): string {
     if (titles.length > 0) return titles.join(" · ").slice(0, 96);
   }
   if (typeof record["server"] === "string" && typeof record["tool"] === "string") return `${record["server"]} / ${record["tool"]}`.slice(0, 96);
+  // ask_user: the question itself, and how many more came with it.
+  if (Array.isArray(record["questions"])) {
+    const asked = record["questions"]
+      .map((item) => typeof item === "object" && item !== null && typeof (item as Record<string, unknown>)["question"] === "string" ? String((item as Record<string, unknown>)["question"]).trim() : "")
+      .filter((text) => text.length > 0);
+    if (asked.length > 0) return `${asked[0]}${asked.length > 1 ? ` (+${String(asked.length - 1)} more)` : ""}`.slice(0, 96);
+  }
   if (typeof record["from"] === "string" && typeof record["to"] === "string") return `${record["from"]} → ${record["to"]}`.slice(0, 96);
   for (const key of ["path", "file", "pattern", "command", "query", "url", "prompt", "id"]) {
     const value = record[key];
@@ -57,6 +64,7 @@ export function toolHeaderLabel(toolName: string): string {
   if (clean === "view_page") return "Looking at the page";
   if (clean === "open_preview") return "Opening the preview";
   if (clean === "update_plan") return "Updating the plan";
+  if (clean === "ask_user") return "Asking you a question";
   if (clean === "delete_file") return "Deleting a file";
   if (clean === "move_file") return "Moving files";
   if (clean === "command_output") return "Checking a command";

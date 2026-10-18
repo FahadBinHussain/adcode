@@ -127,14 +127,14 @@ export function creditCharge(plan: CreditPlan, millicredits: number, now: number
  * has any credit left; what it really used is charged when it finishes, so one long reply can
  * take a window slightly past its limit rather than being refused near the end.
  */
-export function admitCredits(windows: CreditWindows, charge: CreditCharge):
+export function admitCredits(windows: CreditWindows, charge: CreditCharge, unlimited = false):
   | { ok: true; windows: { session: CreditWindow; week: CreditWindow } }
   | { ok: false; limit: "session-limit" | "weekly-limit" } {
   const open = (window: CreditWindow | null, length: number): CreditWindow =>
     liveWindow(window, charge.now) ?? { startedAt: charge.now, endsAt: charge.now + length, usedMillicredits: 0, reservedMillicredits: 0 };
   const session = open(windows.session, charge.sessionMs);
   const week = open(windows.week, WEEK_MS);
-  if (charge.millicredits > 0) {
+  if (!unlimited && charge.millicredits > 0) {
     if (week.usedMillicredits + week.reservedMillicredits >= charge.weeklyLimit) return { ok: false, limit: "weekly-limit" };
     if (session.usedMillicredits + session.reservedMillicredits >= charge.sessionLimit) return { ok: false, limit: "session-limit" };
   }

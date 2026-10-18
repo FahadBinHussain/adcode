@@ -1,5 +1,4 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { DEFAULT_CREDIT_PLAN } from "../../../services/api/src/credits";
 import { describe, expect, it } from "vitest";
 import { LandingArticle } from "../src/components/LandingArticle";
 import { Footer } from "../src/components/Footer";
@@ -25,15 +24,13 @@ import { WEB_VERSION_URL, url } from "../src/lib/site";
  * never ranks, or - in the FAQ case - earns a structured data penalty.
  */
 describe("landing pages", () => {
-  it("explains included AI limits and links search visitors to the browser app", () => {
+  it("explains unlimited included AI and links search visitors to the browser app", () => {
     for (const slug of ["free-ai-code-editor", "online-ai-code-editor"]) {
       const page = getLanding(slug);
       expect(page).not.toBeNull();
       if (page === null) continue;
       const text = landingPlainText(page);
-      expect(text).toContain(DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US"));
-      expect(text).toContain(DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US"));
-      expect(text).toContain(`every ${DEFAULT_CREDIT_PLAN.sessionHours} hours`);
+      expect(text.toLowerCase()).toContain("unlimited");
       expect(text).not.toContain("No request cap on the AI features");
       const markup = renderToStaticMarkup(<LandingArticle page={page} />);
       expect(markup).toContain(`href="${WEB_VERSION_URL}"`);

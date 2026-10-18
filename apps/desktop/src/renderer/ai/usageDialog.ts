@@ -90,7 +90,7 @@ export function openUsageDialog(): Promise<void> {
       resolve();
     });
 
-    const historyNote = el("p", "usage-lead", "History below covers the selected period and all models on this computer. Your free AI balance above covers all your devices. Included AI is free; costs for your own models are estimates.");
+    const historyNote = el("p", "usage-lead", "History below covers the selected period and all models on this computer. Included-AI availability above applies across your devices. Included AI is free; costs for your own models are estimates.");
     const allowance = el("div", "usage-allowance", "Checking included AI allowance…");
     const allowanceHelp = el("details", "usage-allowance-help");
     const budgetNote = el("p", "usage-note");
@@ -154,6 +154,11 @@ export function openUsageDialog(): Promise<void> {
         allowanceHelp.hidden = allowance.hidden;
         if (view === null || !view.available) return;
         if (view.blocked) { allowance.textContent = "Included AI is disabled for this account."; allowanceHelp.hidden = true; return; }
+        if (view.unlimited) {
+          allowance.replaceChildren(el("strong", "", "Unlimited included AI"), el("p", "usage-note", "No ADCode token, request, or credit allowance. Provider availability and model context limits still apply."));
+          allowanceHelp.hidden = true;
+          return;
+        }
         if (view.credits !== undefined) {
           allowance.replaceChildren(...creditRows(view.credits));
           creditHelp(view.credits);

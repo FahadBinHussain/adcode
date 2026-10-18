@@ -15,7 +15,7 @@
  * asleep, 4429 no time left in this session window, 4402 the month is full, 4503 every sandbox is busy.
  */
 import { DurableObject } from "cloudflare:workers";
-import { addUsage, nextReset, remainingMs, shouldSleep, usedMs, type Usage } from "./allowance.ts";
+import { addUsage, nextReset, shouldSleep, usedMs, type Usage } from "./allowance.ts";
 import { verifyIdToken } from "./auth.ts";
 import { numberVar, type Env } from "./env.ts";
 import { HOST_PORT as PREVIEW_RESERVED_PORT, newPreviewId, rewriteLoopbackUrl } from "./previewAuth.ts";
@@ -25,8 +25,6 @@ import { putStream } from "./r2Archive.ts";
 const HOST_PORT = PREVIEW_RESERVED_PORT;
 const TICK_MS = 60_000;
 const HEALTH_TIMEOUT_MS = 90_000;
-/** After today's time runs out, a running agent step gets this long to finish. */
-const SPENT_GRACE_MS = 5 * 60_000;
 const KEEP_ARCHIVES = 3;
 const STORAGE_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
 const MINUTE = 60_000;
@@ -77,11 +75,6 @@ export class UserSession extends DurableObject<Env> {
   }
 
   /* ── Settings ─────────────────────────────────────────────────────────── */
-
-  /** Running minutes per session window; DAILY_ALLOWANCE_MIN is the name before windows. */
-  private allowanceMs(): number {
-    return numberVar(this.env.SESSION_ALLOWANCE_MIN ?? this.env.DAILY_ALLOWANCE_MIN, 60) * MINUTE;
-  }
 
   private windowMs(): number {
     return numberVar(this.env.SESSION_HOURS, 5) * 60 * MINUTE;
@@ -142,7 +135,8 @@ export class UserSession extends DurableObject<Env> {
       t: "cloud",
       status: {
         state,
-        allowanceMs: this.allowanceMs(),
+        allowanceMs: 0,
+        unlimited: true,
         usedMs: usedMs(usage, now, this.windowMs()) + unaccounted,
         resetsAt: nextReset(usage, now, this.windowMs()),
         storageBytes: archives.at(-1)?.bytes ?? 0,
@@ -193,8 +187,6 @@ export class UserSession extends DurableObject<Env> {
 
   private async openTab(): Promise<Response> {
     const uid = await this.uid();
-    const now = Date.now();
-    if (remainingMs(await this.usage(), now, this.allowanceMs(), this.windowMs()) <= 0) return this.refuse(4429, await this.status("spent"));
 
     const running = this.ctx.container?.running === true;
     if (!running) {
@@ -478,17 +470,7 @@ export class UserSession extends DurableObject<Env> {
     }
     const lastInputAt = Math.max(hostState.lastInputAt, (await this.ctx.storage.get<number>("lastInputAt")) ?? 0);
     const idleSince = this.tabs.size === 0 ? ((await this.ctx.storage.get<number>("idleSince")) ?? now) : null;
-    const remaining = remainingMs(await this.usage(), now, this.allowanceMs(), this.windowMs());
-
-    if (remaining <= 0) {
-      const spentAt = (await this.ctx.storage.get<number>("spentAt")) ?? now;
-      await this.ctx.storage.put("spentAt", spentAt);
-      if (!hostState.busy || now - spentAt >= SPENT_GRACE_MS) {
-        await this.ctx.storage.delete("spentAt");
-        await this.sleep("spent", 4429);
-        return;
-      }
-    } else if (shouldSleep({ connections: this.tabs.size, busy: hostState.busy, lastInputAt, idleSince }, now, { idleMs: this.idleMs(), untouchedMs: this.untouchedMs() })) {
+    if (shouldSleep({ connections: this.tabs.size, busy: hostState.busy, lastInputAt, idleSince }, now, { idleMs: this.idleMs(), untouchedMs: this.untouchedMs() })) {
       await this.sleep("sleeping", 4408);
       return;
     } else if (now - ((await this.ctx.storage.get<number>("lastArchiveAt")) ?? now) >= this.snapshotEveryMs()) {

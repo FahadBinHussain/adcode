@@ -1,8 +1,7 @@
 /**
  * `view_page` as data: what the model asked for, where it may go, what the page said.
  *
- * Plain TypeScript, no Electron, so the rules that keep the agent's browser on the user's own
- * machine - and the report the model reads - are testable without opening a window.
+ * Plain TypeScript, no Electron, so the rules that constrain browser addresses - and the report the model reads - are testable without opening a window.
  * `agentBrowser.ts` owns the window and the DevTools protocol; this owns everything else.
  */
 
@@ -24,7 +23,7 @@ export interface PageAction {
 export type PageTarget =
   /** A page of the live preview, relative to its root. */
   | { readonly kind: "preview"; readonly path: string }
-  /** Any local address, such as a dev server the agent started itself. */
+  /** A local project server or public HTTP(S) address. */
   | { readonly kind: "url"; readonly url: string }
   /** Wherever the last call left the browser. */
   | { readonly kind: "current" };
@@ -46,7 +45,7 @@ const MAX_ACTIONS = 20;
 
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-/** A local http(s) address with no credentials - the only kind the agent's browser opens. */
+/** A local HTTP(S) project address with no credentials. */
 export function isLoopbackUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -56,6 +55,19 @@ export function isLoopbackUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Public web pages plus the existing local project servers; never credentialed or private-network URLs. */
+export function isBrowserUrl(value: string): boolean {
+  if (isLoopbackUrl(value)) return true;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/\.$/, "");
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return false;
+    if (!host.includes(".") || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost")) return false;
+    if (/^\[|^(0|10|127|169\.254|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\./.test(host)) return false;
+    return !host.includes(":") && host !== "metadata.google.internal";
+  } catch { return false; }
 }
 
 /**
@@ -152,12 +164,12 @@ export function parseViewPageInput(input: Record<string, unknown>): ViewPageRequ
   if (path !== undefined && typeof path !== "string") return "view_page path must be text, such as about.html.";
   if (url !== undefined && typeof url !== "string") return "view_page url must be text, such as http://localhost:5173/.";
   if (typeof path === "string" && typeof url === "string" && path.trim() && url.trim()) {
-    return "Pass path (a page of the live preview) or url (any local address), not both.";
+    return "Pass path (a page of the live preview) or url (a web address), not both.";
   }
   let target: PageTarget;
   if (typeof url === "string" && url.trim().length > 0) {
-    if (!isLoopbackUrl(url.trim())) {
-      return "view_page opens local addresses only - http://localhost:PORT or http://127.0.0.1:PORT. To read a public page, use fetch_url.";
+    if (!isBrowserUrl(url.trim())) {
+      return "Use a public HTTP or HTTPS page, or a local project server. Private-network and credentialed URLs are not supported.";
     }
     target = { kind: "url", url: new URL(url.trim()).href };
   } else if (typeof path === "string" && path.trim().length > 0) {

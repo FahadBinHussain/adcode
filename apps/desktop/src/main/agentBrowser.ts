@@ -1,3 +1,4 @@
+import type { AgentBrowserView } from "../shared/api.ts";
 /**
  * The agent's own browser: how `view_page` sees the running app.
  *
@@ -12,10 +13,9 @@
  * It is still a `BrowserWindow`, so it must never keep the app alive: when the last other
  * window closes it goes too, and it closes itself after a few idle minutes.
  *
- * **On this machine only.** It opens loopback addresses and nothing else, follows no
- * redirect or link off them, opens no popups, grants no permissions and downloads nothing.
- * Its session is in memory, so cookies and storage vanish with it. The page is the user's
- * own project - the same code the preview pane runs - and everything it prints is treated
+ * **Isolated browsing.** It opens local project servers and public HTTP(S) pages,
+ * opens no popups, grants no permissions and downloads nothing.
+ * Its session is in memory, so cookies and storage vanish with it. Pages may be local projects or public websites; everything they print is treated
  * as data, never as instructions.
  *
  * Driven through the DevTools protocol (`webContents.debugger`) rather than injected
@@ -31,7 +31,7 @@ import { AXE_RUN_SCRIPT, MOTION_SCAN_SCRIPT, formatAccessibilityScan, formatMoti
 import {
   focusForTypingScript,
   formatPageReport,
-  isLoopbackUrl,
+  isBrowserUrl,
   keyEvent,
   locateScript,
   presentScript,
@@ -103,6 +103,11 @@ let opening: Promise<AgentPage> | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 /** One call at a time: two chats driving one page would read each other's clicks. */
 let queue: Promise<unknown> = Promise.resolve();
+let browserView: AgentBrowserView | null = null;
+let browserSink: ((view: AgentBrowserView) => void) | null = null;
+export function setAgentBrowserSink(sink: (view: AgentBrowserView) => void): void { browserSink = sink; }
+export function readAgentBrowser(): AgentBrowserView | null { return browserView; }
+
 /** Made the first time the browser opens, so no other window ever creates it by asking. */
 let agentSession: Electron.Session | null = null;
 
@@ -125,7 +130,7 @@ export function isAgentBrowserContents(contents: WebContents): boolean {
 export function hardenAgentBrowser(contents: WebContents): void {
   contents.setWindowOpenHandler(() => ({ action: "deny" }));
   const stayLocal = (event: Electron.Event, url: string): void => {
-    if (!isLoopbackUrl(url) && url !== "about:blank") event.preventDefault();
+    if (!isBrowserUrl(url) && url !== "about:blank") event.preventDefault();
   };
   contents.on("will-navigate", stayLocal);
   contents.on("will-redirect", stayLocal);
@@ -513,7 +518,7 @@ async function screenshot(target: AgentPage, snapshot: PageSnapshot, fullPage: b
     format: "jpeg",
     quality: 72,
     ...(fullPage ? { captureBeyondViewport: true } : {}),
-    clip: { x: 0, y: 0, width, height, scale },
+    clip: { x: 0, y: fullPage ? 0 : snapshot.scroll.y, width, height, scale },
   });
   if (typeof shot.data !== "string" || shot.data.length === 0) return null;
   return { type: "image", mediaType: "image/jpeg", data: shot.data };
@@ -548,7 +553,7 @@ async function view(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortS
   let address: string | null = null;
   const current = target.transport.url();
   if (request.target.kind === "url") address = request.target.url;
-  else if (request.target.kind === "preview" || !isLoopbackUrl(current)) {
+  else if (request.target.kind === "preview" || !isBrowserUrl(current)) {
     const root = await deps.previewUrl();
     const path = request.target.kind === "preview" ? request.target.path : "/";
     address = resolvePreviewPage(root, path);
@@ -617,8 +622,21 @@ async function view(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortS
 }
 
 /** Load, act on and report a page. Calls queue, so two chats never share a half-finished one. */
-export function viewPage(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortSignal): Promise<ToolRunResult> {
-  const run = queue.then(() => view(request, deps, signal)).catch((error: unknown) => {
+export function viewPage(request: ViewPageRequest, deps: ViewPageDeps, signal: AbortSignal, expectedUpdatedAt?: number): Promise<ToolRunResult> {
+  const run = queue.then(async () => {
+    if (expectedUpdatedAt !== undefined && browserView?.updatedAt !== expectedUpdatedAt) return { content: "The agent changed the page. Refresh or follow the agent before interacting.", isError: true };
+    const result = await view(request, deps, signal);
+    // The shared UI always gets the current viewport, even when an agent asked only for text
+    // or a full-page capture. It must never invite clicks on an unrelated or stale image.
+    let shot = result.images?.[0];
+    if (page && (!request.screenshot || request.fullPage)) {
+      try { shot = await screenshot(page, await evaluate<PageSnapshot>(page, SNAPSHOT_SCRIPT), false) ?? undefined; } catch { shot = undefined; }
+    }
+    browserView = { url: page?.transport.url() ?? "", report: result.content, error: result.isError,
+      image: shot ? `data:${shot.mediaType};base64,${shot.data}` : null, width: request.width, height: request.height, updatedAt: Date.now() };
+    browserSink?.(browserView);
+    return result;
+  }).catch((error: unknown) => {
     // A page that crashed the browser should not wedge the next call.
     closeAgentBrowser();
     return { content: `The page could not be inspected: ${error instanceof Error ? error.message : String(error)}`, isError: true };

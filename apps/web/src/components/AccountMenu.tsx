@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "@/components/IntentLink";
+import { WEB_VERSION_URL } from "@/lib/site";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { Avatar } from "./Avatar";
@@ -78,9 +79,9 @@ export function AccountMenu() {
           </div>
 
           <div className="ios-group">
-            <Link href="/dashboard" role="menuitem" onClick={() => setOpen(false)}>
-              Earnings
-            </Link>
+            <a href={`${WEB_VERSION_URL}/?account=overview`} role="menuitem" onClick={() => setOpen(false)}>
+              Your workspace & account
+            </a>
             <Link href="/portal" role="menuitem" onClick={() => setOpen(false)}>
               Advertiser portal
             </Link>

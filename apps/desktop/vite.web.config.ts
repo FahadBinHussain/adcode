@@ -49,22 +49,37 @@ function firebaseConfig(): FirebaseWebConfig {
  * markup - explorer, status bar, Share. On a slow connection that markup showed unstyled for
  * seconds ("Explorer No folder opened Open ... Ln 1, Col 1 Share") while the module script
  * loaded. These few rules, inline in the head, keep everything but the gate invisible until
- * the shell says it is ready (`body[data-shell="ready"]`), and paint a branded splash in the
- * gate from the HTML alone. `visibility`, not `display`: the renderer measures its layout
- * while it boots, and a hidden-but-laid-out workbench measures right.
+ * the shell says it is ready (`body[data-shell="ready"]`), and paint the launch screen in the
+ * gate from the HTML alone: the login page's ASCII mark sweeping, the public introduction,
+ * and the same progress row the gate keeps once it takes over. `visibility`, not `display`:
+ * the renderer measures its layout while it boots, and a hidden-but-laid-out workbench
+ * measures right.
  */
 const CRITICAL_CSS = [
   "html,body{margin:0;height:100%;background:#111110;color:#ebe8e1}",
-  "body[data-surface=web]:not([data-shell=ready])>:not(#web-gate){visibility:hidden!important}",
+  "body[data-surface=web]:not([data-shell=ready])>:not(#web-gate):not(.web-account-dialog){visibility:hidden!important}",
   "#web-gate.web-gate-splash{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:radial-gradient(ellipse 60% 50% at 50% 42%,#1c1b19 0%,#111110 70%)}",
-  ".web-splash{display:grid;justify-items:center;gap:18px;font:600 15px/1.2 system-ui,sans-serif;letter-spacing:.01em;color:#ebe8e1}",
-  ".web-splash{box-sizing:border-box;max-width:560px;padding:24px;text-align:center}.web-splash h1{margin:0;font-size:24px;line-height:1.25}.web-splash p{margin:0;font-weight:400;line-height:1.6;color:#b9b7b2}.web-splash nav{display:flex;flex-wrap:wrap;justify-content:center;gap:18px}.web-splash a{color:#b2d8bd;text-underline-offset:4px}",
-  ".web-splash img{width:56px;height:56px;border-radius:14px;box-shadow:0 0 0 1px #2d2b28,0 18px 48px rgb(0 0 0/.55);animation:web-splash-breathe 2.4s ease-in-out infinite}",
-  ".web-splash-bar{width:132px;height:2px;border-radius:2px;overflow:hidden;background:#2d2b28}",
-  ".web-splash-bar::after{content:'';display:block;width:40%;height:100%;border-radius:inherit;background:linear-gradient(90deg,transparent,#6fb98f,transparent);animation:web-splash-scan 1.1s cubic-bezier(.65,0,.35,1) infinite}",
+  // The three faces, declared here so the splash's first paint is already in them (the files are preloaded with the page).
+  "@font-face{font-family:'Manrope';src:url('/fonts/manrope.woff2') format('woff2');font-weight:200 800;font-style:normal;font-display:swap}",
+  "@font-face{font-family:'Space Grotesk';src:url('/fonts/space-grotesk.woff2') format('woff2');font-weight:300 700;font-style:normal;font-display:swap}",
+  "@font-face{font-family:'Geist Mono';src:url('/fonts/geist-mono.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}",
+  ".web-splash{display:grid;box-sizing:border-box;max-width:600px;justify-items:center;gap:20px;padding:32px 24px;font-family:'Manrope',ui-sans-serif,system-ui,sans-serif;font-size:15px;font-weight:400;line-height:1.5;color:#ebe8e1;text-align:center;letter-spacing:.005em}",
+  // The mark: the lightest sweep, with the heaviest laid over it and revealed by a travelling band.
+  ".web-splash-mark{position:relative;width:100%;max-width:440px}",
+  ".web-splash-mark pre{margin:0;white-space:pre;font-family:'Geist Mono',ui-monospace,monospace;font-size:min(9px,calc((100vw - 64px)/45));font-weight:400;line-height:1;color:#8f8c85;text-align:left}",
+  ".web-splash-mark pre+pre{position:absolute;inset:0;color:#ece9e2;-webkit-mask-image:linear-gradient(100deg,transparent 36%,#000 50%,transparent 64%);mask-image:linear-gradient(100deg,transparent 36%,#000 50%,transparent 64%);-webkit-mask-size:300% 100%;mask-size:300% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:150% 0;mask-position:150% 0;animation:web-splash-sweep 4.8s linear infinite}",
+  "@keyframes web-splash-sweep{from{-webkit-mask-position:150% 0;mask-position:150% 0}to{-webkit-mask-position:-150% 0;mask-position:-150% 0}}",
+  ".web-splash-copy{display:grid;justify-items:center;gap:10px;max-width:46ch}",
+  ".web-splash h1{margin:0;font-family:'Space Grotesk','Manrope',sans-serif;font-size:clamp(24px,3.4vw,30px);font-weight:500;line-height:1.15;letter-spacing:-0.03em;text-wrap:balance}",
+  ".web-splash p{margin:0;color:#8f8c85;font-size:14px;line-height:1.6;text-wrap:pretty}",
+  ".web-splash nav{display:flex;flex-wrap:wrap;justify-content:center;gap:18px;font-size:13.5px}",
+  ".web-splash a{color:#b2d8bd;text-underline-offset:4px}",
+  ".web-splash-loading{display:grid;justify-items:center;gap:10px;margin-top:4px}",
+  ".web-splash-loading [role=status]{font-size:13px;font-weight:500;color:#8f8c85}",
+  ".web-splash-bar{width:160px;height:2px;border-radius:2px;overflow:hidden;background:#2d2b28}",
+  ".web-splash-bar::after{content:'';display:block;width:40%;height:100%;border-radius:inherit;background:linear-gradient(90deg,transparent,#6fb98f,transparent);animation:web-splash-scan 1.1s cubic-bezier(.77,0,.175,1) infinite}",
   "@keyframes web-splash-scan{from{transform:translateX(-100%)}to{transform:translateX(250%)}}",
-  "@keyframes web-splash-breathe{50%{transform:scale(.96);opacity:.85}}",
-  "@media (prefers-reduced-motion:reduce){.web-splash img,.web-splash-bar::after{animation:none}}",
+  "@media (prefers-reduced-motion:reduce){.web-splash-mark pre+pre,.web-splash-bar::after{animation:none}}",
 ].join("");
 
 const SPLASH = WEB_APP_SPLASH;
@@ -97,15 +112,17 @@ export default defineConfig(({ mode }) => ({
   // Its own cache, so this dev server never fights the desktop's electron-vite over one folder.
   cacheDir: resolve(DESKTOP, "out/.vite-web"),
   plugins: [webEntry()],
+  esbuild: { jsx: "automatic" },
   optimizeDeps: {
     // The scanner reads the page's raw HTML, which still names the desktop's `./main.ts`; the web
     // entry's own imports (Firebase) would otherwise be found mid-load, and Vite's re-optimise
     // breaks the first visit's dynamic import of the renderer.
     entries: ["index.html", "main.ts", "../web/boot.ts"],
-    include: ["firebase/app", "firebase/auth"],
+    include: ["firebase/app", "firebase/auth", "react", "react-dom/client"],
   },
   resolve: {
     alias: [
+      { find: /^@\//, replacement: `${resolve(REPO, "apps/web/src")}/` },
       { find: /^\/@web\//, replacement: `${resolve(DESKTOP, "src/web")}/` },
       // Monaco vendors its own DOMPurify copy; resolve it to the audited lockfile version, as the desktop does.
       { find: "./dompurify/dompurify.js", replacement: DOMPURIFY },
@@ -113,6 +130,7 @@ export default defineConfig(({ mode }) => ({
     ],
   },
   define: {
+    "process.env": JSON.stringify({}),
     __ADCODE_WEB_DEV__: JSON.stringify(mode === "development"),
     __ADCODE_FIREBASE__: JSON.stringify(firebaseConfig()),
   },
@@ -121,6 +139,7 @@ export default defineConfig(({ mode }) => ({
     strictPort: true,
     fs: { allow: [REPO] },
     proxy: {
+      "/v1": { target: process.env["ADCODE_ACCOUNT_API_ORIGIN"] ?? "https://adcode.bluethenics.com", changeOrigin: true },
       "/socket": { target: `ws://127.0.0.1:${process.env["ADCODE_HOST_PORT"] ?? "7300"}`, ws: true },
       "/__adcode": { target: `http://127.0.0.1:${process.env["ADCODE_HOST_PORT"] ?? "7300"}` },
     },

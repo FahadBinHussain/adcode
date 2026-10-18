@@ -10,6 +10,7 @@
  * cannot show it (`__ADCODE_WEB_DEV__` is compiled to `false`, pinned by a test).
  */
 import { brandMark } from "../renderer/workbench/brandMark.ts";
+import { mountMark } from "./asciiMark.ts";
 import { currentUser, firebaseConfigured, idToken, resetPassword, signInWith, signInWithEmail, signOutHere } from "./firebaseAuth.ts";
 import { firebaseErrorText } from "./gateText.ts";
 import { WEB_APP_GUIDE_URL, WEB_APP_HEADING, WEB_APP_INTRO } from "./seo.ts";
@@ -62,6 +63,8 @@ const RUN: readonly { readonly kind: "ask" | "step" | "done"; readonly text: str
   { kind: "done", text: "Preview ready", detail: "localhost:5173" },
 ];
 let stageTimer: number | undefined;
+/** The current card's mark animation; a screen change takes the old one down with its card. */
+let stopMark: (() => void) | null = null;
 /** Bumped by every screen change, so a gate fading out never hides the screen that replaced it. */
 let generation = 0;
 
@@ -82,7 +85,7 @@ function stage(): HTMLElement {
   const lines = element("ol", "web-gate-lines");
   terminal.append(bar, lines);
   const proof = element("ul", "web-gate-proof");
-  for (const fact of ["2,000 free AI credits every 5 hours", "A real Linux workspace, saved for you", "Half of the ad revenue is yours"]) proof.append(element("li", undefined, fact));
+  for (const fact of ["Included AI, without usage quotas", "A real Linux workspace, saved for you", "Half of the ad revenue is yours"]) proof.append(element("li", undefined, fact));
   root.append(grid, glow, brand, pitch, terminal, proof);
   play(lines);
   return root;
@@ -133,13 +136,18 @@ function shell(): { card: HTMLElement; body: HTMLElement } {
   const root = host();
   generation += 1;
   root.replaceChildren();
+  stopMark?.();
+  stopMark = null;
   root.hidden = false;
   root.className = "web-gate";
   const card = element("main", "web-gate-card");
-  const brand = element("div", "web-gate-brand web-gate-card-brand");
-  brand.append(brandMark({ size: 40, plate: true, accent: true }), element("span", "web-gate-wordmark", "ADCode"));
+  // The login page's ribbon mark, in ASCII. The splash ships the same rows, so the sweep that
+  // started before any script keeps running - now from the canvas, and it can be stirred.
+  const mark = element("canvas", "web-gate-mark");
+  mark.setAttribute("aria-hidden", "true");
+  stopMark = mountMark(mark);
   const body = element("div", "web-gate-body");
-  card.append(brand, body);
+  card.append(mark, body);
   const panel = element("div", "web-gate-panel");
   panel.append(card);
   root.append(stage(), panel);
@@ -259,7 +267,7 @@ function signInCard(): Promise<"signed-in" | "dev"> {
     fine.append(
       Object.assign(element("a", undefined, "How ADCode Web works"), { href: WEB_APP_GUIDE_URL }),
       document.createTextNode(". "),
-      document.createTextNode("An hour of cloud time every 5 hours, free. Ads keep it free, and you earn a share of them. "),
+      document.createTextNode("A cloud workspace with no personal time limit. Ads keep it free, and you earn a share of them. "),
       Object.assign(element("a", undefined, "Terms"), { href: `${SITE}/terms`, target: "_blank", rel: "noopener" }),
       document.createTextNode(" · "),
       Object.assign(element("a", undefined, "Privacy"), { href: `${SITE}/privacy`, target: "_blank", rel: "noopener" }),
@@ -293,17 +301,17 @@ export async function gate(): Promise<WebSession> {
   };
 }
 
-/** The waking screen, shown until the sandbox's first greeting. */
+/**
+ * The waking screen, shown until the sandbox's first greeting - the mark keeps sweeping while
+ * the status line and the bar say what is happening, the same rhythm as the splash it replaced.
+ */
 export function showWaking(message = "Waking your workspace…", detail = "A few seconds the first time each day."): void {
   const { body } = shell();
-  const spinner = element("div", "web-gate-spinner");
-  spinner.setAttribute("aria-hidden", "true");
-  spinner.append(element("i"), element("i"));
   const status = element("p", "web-gate-title web-gate-title-small", message);
   status.setAttribute("role", "status");
   const progress = element("div", "web-gate-progress");
   progress.setAttribute("aria-hidden", "true");
-  body.append(spinner, status, element("p", "web-gate-lead", detail), progress);
+  body.append(status, element("p", "web-gate-lead", detail), progress);
 }
 
 /** A full-screen message with actions: no time left in this session, the web version is full, and so on. */
@@ -329,6 +337,8 @@ export function hideGate(): void {
   const finish = (): void => {
     if (mine !== generation) return;
     window.clearTimeout(stageTimer);
+    stopMark?.();
+    stopMark = null;
     root.hidden = true;
     root.classList.remove("is-leaving");
     root.replaceChildren();

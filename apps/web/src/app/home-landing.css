@@ -347,6 +347,15 @@ body:has(.home-redesign) .website-consent :where(a, button):focus-visible {
   .marketplace-nav[data-home="true"] .glass-nav-mobile { display: none; }
   .home-redesign .modes-switch { position: absolute; right: 0; bottom: 0; }
 }
+/* The open builder is one comfortable column; on wide screens the reassurance points move beside it, where the form would otherwise leave its right half empty. Children of an open details live in its ::details-content wrapper, which becomes the grid. */
+@media (min-width: 1150px) {
+  .home-redesign .home-campaign-details[open]::details-content { display: grid; grid-template-columns: minmax(0, 760px) minmax(240px, 1fr); align-items: start; column-gap: 40px; }
+  .home-redesign .home-campaign-details[open] .landing-bid-shell { grid-column: 1; grid-row: 1; }
+  .home-redesign .home-campaign-details[open] .marketplace-principles { grid-column: 2; grid-row: 1; position: sticky; top: 96px; margin-top: 12px; }
+  .home-redesign .home-campaign-details[open] .marketplace-principles .marketplace-wrap { grid-template-columns: 1fr; padding-block: 0; }
+  .home-redesign .home-campaign-details[open] .marketplace-principles p { min-height: 0; padding: 22px 0; border-right: 0; border-bottom: 1px solid var(--hairline); }
+  .home-redesign .home-campaign-details[open] .marketplace-principles p:last-child { border-bottom: 0; }
+}
 @media (max-width: 1099px) {
   .marketplace-nav[data-home="true"] .glass-nav-secondary { display: none; }
   .marketplace-nav[data-home="true"] .glass-nav-mobile { display: block; }

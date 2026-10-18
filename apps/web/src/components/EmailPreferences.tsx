@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "./AuthProvider";
+import { useAuth } from "./AuthContext";
 import { apiFetch } from "@/lib/api";
 
 interface Preferences { subscribed: boolean; email: string | null; eligible: boolean; suppressed: boolean }

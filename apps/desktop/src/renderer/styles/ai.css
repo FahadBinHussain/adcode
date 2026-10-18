@@ -3925,6 +3925,163 @@ button.chat-setup-action {
 .chat-plan-step[data-status="done"] .chat-plan-mark { border-color: var(--chat-success); background: var(--chat-success); color: var(--bg-app); }
 @keyframes chat-plan-spin { to { transform: rotate(360deg); } }
 
+/* ── The assistant's question: it waits for an answer, then becomes the record ──
+   One question at a time - up to four - with the choices the model offered and room to
+   answer in your own words. Next walks the questions; Submit (or Ctrl+↵) sends them all.
+   Once the answer has gone back the controls are gone and what was chosen stays. */
+
+.chat-question {
+  flex: none;
+  margin: 10px 0;
+  max-width: 520px;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: var(--bg-app);
+}
+
+.chat-question-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.chat-question-progress { display: inline-flex; flex: none; gap: 4px; }
+.chat-question-dash { width: 14px; height: 3px; border-radius: 2px; background: var(--border-strong); transition: background-color var(--duration-exit) var(--ease-sheet); }
+.chat-question-dash[data-state="current"] { background: var(--chat-accent); }
+.chat-question-dash[data-state="done"] { background: var(--chat-success); }
+
+.chat-question-count { flex: 1; min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+.chat-question-collapse {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.chat-question-collapse:hover { background: var(--bg-hover); color: var(--text-primary); }
+.chat-question-collapse svg { transition: transform var(--duration-exit) var(--ease-sheet); }
+.chat-question[data-collapsed="true"] .chat-question-collapse svg { transform: rotate(-90deg); }
+.chat-question[data-collapsed="true"] .chat-question-body,
+.chat-question[data-collapsed="true"] .chat-question-feet { display: none; }
+
+.chat-question-body { padding: 10px 12px 2px; }
+.chat-question-kicker { margin: 0 0 2px; color: var(--text-tertiary); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.chat-question-title { margin: 0; color: var(--text-primary); font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+.chat-question-hint { margin: 2px 0 9px; color: var(--text-tertiary); font-size: 12px; }
+
+.chat-question-options { display: grid; gap: 6px; }
+.chat-question-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color var(--duration-exit) var(--ease-sheet),
+    background-color var(--duration-exit) var(--ease-sheet);
+}
+.chat-question-option:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.chat-question-option:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chat-question-option:has(input:checked) { border-color: var(--chat-accent); background: color-mix(in srgb, var(--chat-accent) 8%, transparent); }
+/* The native control is kept for its keyboard and screen-reader behaviour, drawn by the mark. */
+.chat-question-option input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.chat-question-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+}
+input[type="checkbox"] + .chat-question-mark { border-radius: 4px; }
+input:checked + .chat-question-mark { border-color: var(--chat-accent); background: var(--chat-accent); color: var(--bg-app); }
+input[type="radio"]:checked + .chat-question-mark::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--bg-app); }
+input[type="checkbox"]:checked + .chat-question-mark::after { content: "✓"; }
+
+.chat-question-option-text { display: grid; gap: 1px; min-width: 0; }
+.chat-question-option-label { color: var(--text-primary); font-size: 13px; font-weight: 550; line-height: 1.35; }
+.chat-question-option-description { color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+
+.chat-question-own { display: grid; gap: 4px; margin: 9px 0 0; }
+.chat-question-own-label { color: var(--text-tertiary); font-size: 11px; }
+.chat-question-input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 7px;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+.chat-question-input:focus-visible { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-question-input:disabled { opacity: .6; }
+
+.chat-question-feet { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; }
+.chat-question-dismiss {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.chat-question-dismiss:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.chat-question-dismiss:disabled { opacity: .5; cursor: default; }
+.chat-question-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-xs);
+  font-weight: 560;
+  cursor: pointer;
+  transition: transform var(--duration-exit) var(--ease-sheet);
+}
+.chat-question-next:active:not(:disabled) { transform: scale(.97); }
+.chat-question-next:disabled { opacity: .5; cursor: default; }
+/* The badge sits on the accent button, not on the page: the global kbd chip would paint it
+   dark and swallow the label. */
+.chat-question-next .chat-question-keys {
+  padding: 1px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-on-accent) 12%, transparent);
+  color: color-mix(in srgb, var(--text-on-accent) 68%, transparent);
+  font: inherit;
+  font-size: 10.5px;
+}
+
+/* Answered: the card stays in the conversation as the record of what was chosen. */
+.chat-question[data-outcome] .chat-question-dash { background: var(--chat-success); }
+.chat-question-answers { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.chat-question-answer { display: grid; gap: 1px; }
+.chat-question-answer-label { color: var(--text-tertiary); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.chat-question-answer-value { color: var(--text-primary); font-size: 13px; }
+.chat-question[data-outcome="dismissed"] .chat-question-answer-value { color: var(--text-secondary); font-style: italic; }
+
 /* ── What the assistant saw: its latest look at the running app ── */
 
 .chat-agent-view {

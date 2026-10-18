@@ -111,10 +111,11 @@ describe("the quality tool runner", () => {
     expect(invalid.isError).toBe(true);
     expect(view).not.toHaveBeenCalled();
   });
-  it("uses reduced motion and no screenshots by default, and rejects public addresses", () => {
+  it("uses reduced motion and no screenshots by default, and permits public pages but rejects private addresses", () => {
     const parsed = parseAuditPageInput({ path: "/settings" });
     expect(parsed).toMatchObject([{ reducedMotion: true, audit: true, screenshot: false, target: { kind: "preview", path: "/settings" } }, {}, {}]);
-    expect(parseAuditPageInput({ url: "https://example.com" })).toContain("local addresses only");
+    expect(parseAuditPageInput({ url: "https://example.com" })).toMatchObject([{ target: { kind: "url" } }, {}, {}]);
+    expect(parseAuditPageInput({ url: "http://192.168.1.1" })).toContain("public HTTP");
     expect(parseAuditPageInput({ reduced_motion: "false" })).toContain("true or false");
   });
 });

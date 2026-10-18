@@ -12,7 +12,8 @@ export interface BuiltInToolInfo {
   /**
    * Only the chat has it. Saved agents work in an isolated copy that is merged when they
    * finish, so tools reaching past that copy - the live preview, background processes,
-   * deletes and moves, the plan card - are not theirs to pick.
+   * deletes and moves, the plan card - are not theirs to pick; `ask_user` is left out
+   * because a board run has nobody watching to answer it.
    */
   readonly chatOnly?: true;
 }
@@ -37,6 +38,7 @@ export const BUILT_IN_TOOLS_INFO: readonly BuiltInToolInfo[] = [
   { name: "run_project_checks", label: "Run project checks", group: "Quality", description: "Run the project's checks and report each result, failure and missing check." },
   { name: "audit_page", label: "Audit a page", group: "Quality", description: "Check phone, tablet and desktop layouts, accessibility, runtime errors and reduced motion in a real browser.", chatOnly: true },
   { name: "update_plan", label: "Show a plan", group: "Plan", description: "Keep a checklist of the steps of a bigger task in the chat, ticked off as they finish.", chatOnly: true },
+  { name: "ask_user", label: "Ask you a question", group: "Plan", description: "Ask up to four questions with choices to pick from, in a card in the chat. Dismissing the card tells it to carry on without an answer.", chatOnly: true },
   { name: "fetch_url", label: "Fetch web pages", group: "Web", description: "Read a web page or API response, such as documentation, as plain text." },
   { name: "memory_search", label: "Search memory", group: "Memory", description: "Look up decisions and conventions saved for this project." },
   { name: "memory_write", label: "Save to memory", group: "Memory", description: "Record a decision or convention so nobody has to say it twice." },

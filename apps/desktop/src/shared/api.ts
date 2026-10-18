@@ -1,3 +1,13 @@
+export interface AgentBrowserView {
+  readonly url: string;
+  readonly report: string;
+  readonly error: boolean;
+  readonly image: string | null;
+  readonly width: number;
+  readonly height: number;
+  readonly updatedAt: number;
+}
+
 /**
  * The contextBridge surface: the complete list of things the renderer may ask the main
  * process to do.
@@ -595,6 +605,10 @@ export const CHANNELS = {
   /** A working conversation's turn so far, for a chat opened partway through it. */
   aiLiveTurnState: "ai:live-turn-state",
   aiAnswerAnyway: "ai:answer-anyway",
+  /** The assistant asked the user something; the card is drawn in the conversation (main/aiQuestion.ts). */
+  aiQuestion: "ai:question",
+  aiQuestionAnswer: "ai:question-answer",
+  aiQuestionDone: "ai:question-done",
   aiEvent: "ai:event",
   aiCompact: "ai:compact",
   aiContextUsage: "ai:context-usage",
@@ -699,6 +713,9 @@ export const CHANNELS = {
   windowOpenVibe: "window:open-vibe",
   windowRendererReady: "window:renderer-ready",
   workspaceChanged: "workspace:changed",
+  browserView: "browser:view",
+  browserRead: "browser:read",
+  browserChanged: "browser:changed",
   previewStart: "preview:start",
   previewStop: "preview:stop",
   previewStatus: "preview:status",
@@ -1258,6 +1275,52 @@ export interface ProposedEditView {
   readonly hunks: readonly DiffHunkView[];
 }
 
+/** One choice inside a question card. `id` names it in the answer; the card shows label and description. */
+export interface AiQuestionOptionView {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+}
+
+export interface AiQuestionItemView {
+  readonly id: string;
+  readonly question: string;
+  /** A few words naming the topic, e.g. "Layout". */
+  readonly header?: string;
+  readonly options: readonly AiQuestionOptionView[];
+  /** The user may pick more than one option; the card draws checkboxes instead of radios. */
+  readonly multiSelect: boolean;
+}
+
+/**
+ * One `ask_user` call, as the card in the conversation shows it (main/aiQuestion.ts).
+ *
+ * The main process sends the request to every window; the first answer from any of them
+ * wins, and all the windows are told when the card can go away.
+ */
+export interface AiQuestionView {
+  /** The id an answer names. */
+  readonly id: string;
+  /** The conversation the question belongs to: its card is drawn in that chat. */
+  readonly sessionId: string;
+  readonly questions: readonly AiQuestionItemView[];
+}
+
+/** What the user chose for one question: option ids, their own words, or both. */
+export interface AiQuestionAnswerView {
+  readonly questionId: string;
+  readonly optionIds: readonly string[];
+  readonly text: string;
+}
+
+/** How a question ended, so the other windows can clear their copy of the card. */
+export interface AiQuestionDoneView {
+  readonly id: string;
+  readonly sessionId: string;
+  /** Absent when the user dismissed the card without answering. */
+  readonly answers?: readonly AiQuestionAnswerView[];
+}
+
 export type AiWorkspaceTaskStateView =
   | "preparing"
   | "ready"
@@ -1744,6 +1807,11 @@ export interface AdcodeApi {
    * over an arbitrary URL to `shell.openExternal` would be a way out of the sandbox
    * dressed as a convenience.
    */
+  readonly browser: {
+    view(input: Record<string, unknown>): Promise<AgentBrowserView>;
+    read(): Promise<AgentBrowserView | null>;
+    onChanged(listener: (view: AgentBrowserView) => void): () => void;
+  };
   readonly preview: {
     /** Omit the mode to let ADCode pick: the project's dev script when there is one. */
     start(mode?: PreviewMode): Promise<PreviewStatus>;
@@ -1919,6 +1987,12 @@ export interface AdcodeApi {
     onCheckpoint(listener: (checkpoint: AiCheckpointView) => void): () => void;
     checkpoints(sessionId: string): Promise<readonly AiCheckpointView[]>;
     undoCheckpoint(id: string, force: boolean): Promise<AiUndoResultView>;
+    /** The assistant is asking a question; draw its card in `view.sessionId`'s conversation. */
+    onQuestion(listener: (view: AiQuestionView) => void): () => void;
+    /** A question was answered or dismissed, here or in another window; clear its card. */
+    onQuestionDone(listener: (view: AiQuestionDoneView) => void): () => void;
+    /** Answer the card `id` shows. An empty list dismisses it. The first answer wins. */
+    answerQuestion(id: string, answers: readonly AiQuestionAnswerView[]): void;
   };
   readonly aiWorkspace: {
     list(): Promise<readonly AiWorkspaceTaskView[]>;

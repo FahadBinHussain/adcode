@@ -1,3 +1,5 @@
+import { markRows } from "./asciiMark.ts";
+
 /** Public launch copy is shipped in HTML, before sign-in or any private workspace loads. */
 const SITE = "https://adcode.bluethenics.com";
 const APP = "https://web.bluethenics.com/";
@@ -43,12 +45,19 @@ export function webAppHead(): string {
   ].join("\n    ");
 }
 
-/** The same useful introduction is visible to people and crawlers while sign-in loads. */
+/**
+ * The same useful introduction is visible to people and crawlers while sign-in loads - under
+ * the login page's ASCII mark, shipped as two static sweeps (its lightest and heaviest) that
+ * the critical CSS slides across each other. The gate then mounts the animated canvas on the
+ * same picture, so the splash is the loading screen, not a placeholder for one.
+ */
 export const WEB_APP_SPLASH = `<div class="web-splash">
-      <img src="/favicon.svg" alt="" width="56" height="56" />
-      <h1>${WEB_APP_HEADING}</h1>
-      <p>${WEB_APP_INTRO}</p>
+      <div class="web-splash-mark" aria-hidden="true"><pre>${markRows(0).join("\n")}</pre><pre>${markRows(1).join("\n")}</pre></div>
+      <div class="web-splash-copy">
+        <h1>${WEB_APP_HEADING}</h1>
+        <p>${WEB_APP_INTRO}</p>
+      </div>
       <nav aria-label="About ADCode Web"><a href="${WEB_APP_GUIDE_URL}">How it works</a><a href="${SITE}/docs">Documentation</a><a href="${SITE}/privacy">Privacy</a></nav>
-      <span role="status">Loading workspace sign-in…</span><span class="web-splash-bar" aria-hidden="true"></span>
+      <div class="web-splash-loading"><span role="status">Loading workspace sign-in…</span><span class="web-splash-bar" aria-hidden="true"></span></div>
       <noscript><p>JavaScript is required to sign in and use the editor. The guide and documentation above work without signing in.</p></noscript>
     </div>`;

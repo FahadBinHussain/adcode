@@ -9,7 +9,7 @@
  *   the month is full - each with the one or two things a person can do next,
  * - a time-left chip, amber at ten minutes and red at two, with a toast at each.
  */
-import { DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
+import { openWebAccount, DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
 import { hideGate, showBlocked, showWaking, type WebSession } from "./gate.ts";
 import { formatReset, formatTimeLeft, timeTone } from "./gateText.ts";
 import type { HostSocket } from "./socket.ts";
@@ -95,6 +95,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
         "That's this session's cloud time",
         `${formatReset(status.resetsAt)}. Your projects are saved where you left them. The desktop app runs on your own computer, with no time limit.`,
         [
+          { label: "Your account", run: () => openWebAccount() },
           { label: "Get the desktop app", primary: true, run: openDesktop },
           { label: "Try again", run: () => { showWaking(); socket.resume(); } },
         ],
@@ -106,6 +107,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
         "The web version is full this month",
         "So many people are building that this month's cloud budget is used up. Your projects are saved. The desktop app is free and has no limit.",
         [
+          { label: "Your account", run: () => openWebAccount() },
           { label: "Get the desktop app", primary: true, run: openDesktop },
           { label: "Try again", run: () => { showWaking(); socket.resume(); } },
         ],
@@ -113,9 +115,9 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
       return;
     }
     showBlocked(
-      "Paused to save your time",
-      "Your workspace sleeps when nothing is happening, so your cloud time isn't spent on an empty room. Everything is saved.",
-      [{ label: "Resume", primary: true, run: () => { showWaking(); socket.resume(); } }],
+      "Your workspace is resting",
+      "Inactive workspaces sleep automatically. Everything is saved; resume whenever you are ready.",
+      [{ label: "Resume", primary: true, run: () => { showWaking(); socket.resume(); } }, { label: "Your account", run: () => openWebAccount() }],
     );
   };
 

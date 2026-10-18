@@ -1,5 +1,4 @@
 import { FAQ } from "@/lib/schema";
-import { DEFAULT_CREDIT_PLAN } from "@adcode/api/src/credits.ts";
 import { allPosts } from "@/lib/posts";
 import { docsBySection } from "@/lib/docs";
 import { LANDINGS, landingPath, landingPlainText } from "@/lib/landings";
@@ -99,9 +98,8 @@ Facts, stated once:
 
 - ${SITE.name} is a free, ad-supported AI code editor in your browser and on Windows and Linux. A native macOS desktop build is not published yet.
 - Open the browser app at ${WEB_VERSION_URL}. Vibe mode runs in a private cloud workspace,
-  with one hour of cloud time every ${DEFAULT_CREDIT_PLAN.sessionHours} hours.
-- Included partner AI needs no API key: ${DEFAULT_CREDIT_PLAN.sessionCredits.toLocaleString("en-US")} credits every ${DEFAULT_CREDIT_PLAN.sessionHours} hours,
-  up to ${DEFAULT_CREDIT_PLAN.weeklyCredits.toLocaleString("en-US")} a week. At the limit, tasks wait for a refill.
+  with no personal cloud time limit.
+- Included partner AI needs no API key: unlimited requests. Provider availability and model context limits apply.
   Your own provider key follows that provider's billing; local models run in the desktop app.
 - It costs the developer nothing. There is no subscription, trial, or paid tier.
 - Advertisers bid in a second-price auction from ${formatMicros(ECONOMICS.floorBlockMicros, 2)}

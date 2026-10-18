@@ -121,7 +121,7 @@ stack.stderr.on("data", (chunk) => { stackLog += chunk; });
 
 for (let attempt = 0; attempt < 120; attempt += 1) {
   try {
-    if ((await fetch(`http://127.0.0.1:${WEB_PORT}/`)).ok && (await fetch(`http://127.0.0.1:${HOST_PORT}/__adcode/health`)).ok) break;
+    if ((await fetch(`http://localhost:${WEB_PORT}/`)).ok && (await fetch(`http://127.0.0.1:${HOST_PORT}/__adcode/health`)).ok) break;
   } catch {
     // starting
   }
@@ -220,6 +220,37 @@ try {
   }
   checks.previewUrl = previewUrl;
   checks.previewServes = previewUrl === null ? false : (await (await fetch(previewUrl)).text()).includes("Fresh bread daily");
+
+  // The user sees the same Chromium session used by view_page, beside the chat.
+  await browser.viewport(1440, 900);
+  await browser.evaluate("document.querySelector('.workspace-control-trigger').click()");
+  checks.workspaceMenu = await browser.waitFor("document.querySelector('.workspace-control-panel:popover-open') !== null");
+  await shot("workspace-menu");
+  await browser.evaluate("[...document.querySelectorAll('.workspace-control-panel button')].find(b => b.textContent === 'Browser').click()");
+  checks.browserFollowsAgent = await browser.waitFor("document.querySelector('.agent-browser-image')?.src.startsWith('data:image/') && document.querySelector('.agent-browser-report').textContent.includes('Fresh bread daily')");
+  checks.noNestedWorkspaceFrame = await browser.evaluate("[document.querySelector('.main'),document.querySelector('#workbench')].every(e=>parseFloat(getComputedStyle(e).borderTopWidth)===0 && getComputedStyle(e).boxShadow==='none')");
+  checks.browserDocked = await browser.evaluate("document.querySelector('#floating-browser').classList.contains('workspace-panel-docked') && document.querySelector('#floating-browser').getBoundingClientRect().left >= document.querySelector('.vibe-workspace').getBoundingClientRect().right");
+  await shot("browser-docked");
+  checks.browserNavigation = await browser.evaluate(`window.adcode.browser.view({url:${JSON.stringify(previewUrl)}, screenshot:true}).then(v => v.report.includes('Fresh bread daily') && v.image?.startsWith('data:image/'))`);
+  checks.staleBrowserClickRejected = await browser.evaluate("window.adcode.browser.view({expectedUpdatedAt:1,actions:[{type:'eval',expression:'document.body.textContent=\"Wrong page\"'}]}).then(() => false, e => e.message.includes('changed the page'))");
+  const fixture = "document.body.innerHTML = '<button style=\"position:fixed;left:20px;top:20px\" onclick=\"this.textContent=String(40+2)\">Click me</button><input aria-label=\"Browser test field\" style=\"position:fixed;left:20px;top:90px\">'; true";
+  await browser.evaluate(`window.adcode.browser.view({actions:[{type:'eval',expression:${JSON.stringify(fixture)}}],width:800,height:600,screenshot:true})`);
+  await browser.waitFor("document.querySelector('.agent-browser-report').textContent.includes('Click me')");
+  const clickPage = async (x,y) => browser.evaluate(`(() => { const img=document.querySelector('.agent-browser-image'), r=img.getBoundingClientRect(); img.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:r.left+${x}/800*r.width,clientY:r.top+${y}/800*r.width})); return true; })()`);
+  await clickPage(45,30);
+  checks.browserClickWorks = await browser.waitFor("document.querySelector('.agent-browser-report').textContent.includes('42') && !document.querySelector('.agent-browser').dataset.busy");
+  await clickPage(50,100);
+  await browser.waitFor("!document.querySelector('.agent-browser').dataset.busy");
+  await browser.evaluate("(() => { document.querySelector('.agent-browser-input input').value='Shared browser works'; document.querySelector('.agent-browser-input').requestSubmit(); return true; })()");
+  checks.browserTypeWorks = await browser.waitFor("document.querySelector('.agent-browser-report').textContent.includes('Shared browser works') && !document.querySelector('.agent-browser').dataset.busy");
+  await browser.evaluate(`window.adcode.browser.view({url:${JSON.stringify(previewUrl)},screenshot:true})`);
+  await browser.viewport(390,844,true);
+  checks.browserMobileFits = await browser.evaluate("document.querySelector('#floating-browser').getBoundingClientRect().width <= innerWidth && !document.querySelector('#floating-browser').inert");
+  await shot("browser-phone");
+  await browser.viewport(1440,900);
+  await browser.evaluate("document.querySelector('#floating-browser .floating-panel-close').click()");
+  checks.browserCloses = await browser.waitFor("document.querySelector('#floating-browser').hidden && !document.body.classList.contains('workspace-review-open')");
+  checks.usageRingsRemoved = await browser.evaluate("document.querySelector('.composer-usage, .context-meter-ring') === null");
 
   const status = await browser.evaluate("window.adcode.git.status()");
   checks.changesShowsFile = JSON.stringify(status ?? null).includes("index.html");
@@ -347,6 +378,23 @@ try {
   checks.noChatLeftWorking = await browser.waitFor("window.adcode.ai.runs().then((runs) => runs.length === 0)", { timeoutMs: 10_000 });
   await shot("kept-going");
 
+  // Account controls open inside Vibe and leave the current conversation intact.
+  const accountShadow = "document.querySelector('.web-account-dialog > div')?.shadowRoot";
+  const currentChat = await browser.evaluate("window.adcode.chat.current().then(session => session?.id ?? null)");
+  await browser.evaluate("document.querySelector('[data-rail=account]').click()");
+  checks.accountOpens = await browser.waitFor(`${accountShadow}?.querySelector('.account-shell')`);
+  checks.accountSections = await browser.evaluate(`[...${accountShadow}.querySelectorAll('.account-nav > button')].map(button => button.textContent.replace('↗', '').trim()).join('|')`);
+  checks.accountLocalHonest = await browser.evaluate(`${accountShadow}.textContent.includes("You're exploring a local workspace")`);
+  await shot("account");
+  await browser.viewport(390, 844, true);
+  checks.accountMobileFits = await browser.evaluate(`(() => { const panel = document.querySelector('.web-account-dialog'); return panel.getBoundingClientRect().width <= innerWidth && ${accountShadow}.querySelector('.account-main').scrollWidth <= ${accountShadow}.querySelector('.account-main').clientWidth; })()`);
+  await shot("account-phone");
+  await browser.evaluate(`${accountShadow}.querySelector('.account-back').click()`);
+  checks.accountDisposed = await browser.waitFor("document.querySelector('.web-account-dialog') === null");
+  checks.accountChatPreserved = currentChat !== null && currentChat === await browser.evaluate("window.adcode.chat.current().then(session => session?.id ?? null)");
+  checks.accountAnswerVisible = await browser.evaluate(bubbleSays("Kept going and finished."));
+  checks.accountReturnsToChat = checks.accountDisposed && checks.accountChatPreserved && checks.accountAnswerVisible;
+
   await phase("phone");
   await browser.viewport(390, 844, true);
   await sleep(1200);
@@ -416,7 +464,7 @@ if (checks.threw === undefined) {
 }
 
 console.log(JSON.stringify(checks, null, 2));
-const passed = checks.threw === undefined && checks.gateShown && checks.gateDevMode && checks.vibeVisible && checks.onboardingAsks && checks.modelReady && checks.sidebarShowsProject &&
+const passed = checks.accountOpens && checks.accountLocalHonest && checks.accountMobileFits && checks.accountReturnsToChat && checks.accountSections === "Overview|Earnings|Invites|Payouts|Activity|Ledger|Email preferences" && checks.threw === undefined && checks.gateShown && checks.gateDevMode && checks.vibeVisible && checks.onboardingAsks && checks.modelReady && checks.sidebarShowsProject &&
   checks.chatReply && checks.fileWritten && checks.previewServes && checks.changesShowsFile && checks.commitWorks &&
   checks.timelineWhileWorking && checks.liveHeading === "Working" && checks.spinnerAtFoot && checks.mascotsWhileWorking <= 1 &&
   checks.timeline?.heading === "Worked" && checks.timeline.folded && checks.timeline.answerOutsideFold && checks.timeline.textBetweenStepsInFold &&
