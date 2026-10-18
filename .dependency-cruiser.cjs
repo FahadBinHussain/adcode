@@ -190,7 +190,7 @@ module.exports = {
     // noisiest - it was contributing 260 orphan warnings, which is enough to bury a real
     // violation in the scroll-back and make the firewall's output not worth reading.
     // apps/cloud/public and apps/cloud/container/host are build outputs (npm run cloud:build).
-    exclude: { path: "(^|/)(__fixtures__|node_modules|out|dist|\\.next)/|^apps/cloud/(public|container/host)/" },
+    exclude: { path: "(^|/)(__fixtures__|node_modules|out|dist|\\.next|\\.open-next)/|^apps/cloud/(public|container/host)/" },
     tsConfig: { fileName: "tsconfig.json" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {

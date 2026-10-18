@@ -101,3 +101,6 @@ apps/cloud/.wrangler/
 
 # Other agents' worktrees, nested inside the repo so they share node_modules.
 .claude/worktrees/
+
+# Local workspace memory is runtime state, never release source.
+/.adcode/
