@@ -1077,6 +1077,20 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
     if (typeof id !== "string" || id.length > 2048) throw new Error("Invalid skill ID.");
     return assistantControls().previewSkill(id);
   });
+  ipcMain.handle(CHANNELS.aiConnectorsPick, async () => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
+    const options = {
+      title: "Choose a connector file or folder",
+      buttonLabel: "Choose",
+      properties: ["openFile", "openDirectory"] as ("openFile" | "openDirectory")[],
+      filters: [
+        { name: "Connectors", extensions: ["json", "mcpb", "dxt", "zip"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    };
+    const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0] ?? null;
+  });
   ipcMain.handle(CHANNELS.aiAgentSettingsOpen, (_event, scope: unknown) => openAgentSettings(scope, currentWorkspace()?.root ?? null));
 
   ipcMain.handle(CHANNELS.aiSetKey, (_event, provider: unknown, key: unknown) => {

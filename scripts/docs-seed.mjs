@@ -122,16 +122,39 @@ function readMetadata() {
   const source = read(join(ROOT, "packages", "help", "src", "features.ts"));
   const result = new Map();
 
+  /*
+   * A label may contain an apostrophe ("Open the project's rules") and an argument an
+   * escaped quote, so each is read up to its own closing quote rather than to any quote
+   * character. The earlier `[^"']+` form matched none of those and dropped the whole
+   * call silently - a route missing from the seed with nothing failing.
+   */
+  const literal = `(?:"((?:[^"\\\\]|\\\\.)*)"|'((?:[^'\\\\]|\\\\.)*)')`;
+  const callPattern = new RegExp(`command\\(\\s*${literal}\\s*,\\s*${literal}\\s*\\)`, "g");
+  const unquote = (text) => text.replace(/\\(["'\\])/g, "$1");
+  let readCalls = 0;
+
   for (const block of source.matchAll(/\n  ["']([^"']+)["']: \{\n([\s\S]*?)\n  \},/g)) {
     const id = block[1];
     const body = block[2];
-    const actions = [...body.matchAll(/command\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)/g)].map((match) => ({
-      command: match[1],
-      label: match[2],
-    }));
+    const actions = [...body.matchAll(callPattern)].map((match) => {
+      readCalls += 1;
+      return {
+        command: unquote(match[1] ?? match[2]),
+        label: unquote(match[3] ?? match[4]),
+      };
+    });
     const keywordsBlock = /keywords:\s*\[([^\]]*)\]/.exec(body)?.[1] ?? "";
     const keywords = [...keywordsBlock.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
     result.set(id, { actions, keywords });
+  }
+
+  // Counted over the whole file rather than per block: a call the pattern cannot read
+  // still counts, wherever it sits, and a call the block pattern never reached counts too.
+  const callsInSource = [...source.matchAll(/command\(\s*["']/g)].length;
+  if (readCalls !== callsInSource) {
+    throw new Error(
+      `features.ts: read ${readCalls} command routes but the file holds ${callsInSource} command(...) calls - one call's shape was not read`,
+    );
   }
 
   if (result.size === 0) {

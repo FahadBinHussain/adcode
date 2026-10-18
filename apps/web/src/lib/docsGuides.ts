@@ -1715,20 +1715,22 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
     steps: [
       "Choose Tools in the Vibe sidebar, or Open Tools in the command palette.",
       "Built-in lists ADCode's own tools in plain words and which of your agents may use each one - change that in the agent's editor on the Agents page.",
-      "Open MCP servers and press Add server. On Catalogue, press Add beside a server such as Playwright (test pages in a real browser) or Context7 (current library docs); it is saved and connected in one click. Custom takes any command or URL.",
-      "Watch each server's light: green is connected. If something is wrong, the card says what to do, such as installing Node.js, and Retry tries again. Tools on a connected server turns individual tools on or off.",
+      "Open Connectors. Each card wears a badge saying what it is - MCP, Extension, Plugin or Actions - and Add connector offers four ways in.",
+      "Catalogue adds a server such as Playwright (test pages in a real browser) or Context7 (current library docs) in one click. Import scans what Claude Desktop, Claude Code, Cursor, Windsurf and VS Code already have; From a file reads a config file, an OpenAPI description, a ChatGPT plugin manifest, a .mcpb extension or a plugin folder, or takes a link or pasted text; Custom is for a server or API you know by hand.",
+      "On the web, Import scans your private cloud workspace, not apps on your computer. Link or text accepts a link, pasted config or the path to a file or plugin folder already in the cloud workspace; it does not open files from your computer.",
+      "What is found waits as a dashed card - nothing is installed until you press Add. Adding asks for any values it needs, such as an API key, and keeps them encrypted on your computer or in your private cloud workspace, never in ADCode's settings.",
+      "Watch each connector's light: green is connected. A connector still coming up breathes; if something is wrong, the card says what to do, such as installing Node.js, and Retry tries again. Tools on a connected server turns individual tools on or off.",
       "Open Skills to turn written routines on or off, preview one, or press New skill to write your own.",
-      "Open Memory to read and correct what the assistant has learned about the project, or to share that memory with Claude Code and other tools.",
-      "Type in the search box to filter every tab at once.",
+      "Open Memory to read and correct what the assistant has learned about the project, or to share that memory with Claude Code and other tools. Type in the search box to filter every tab at once.",
     ],
     benefits: [
       "One place for every capability the assistant has, instead of settings pages and JSON files.",
+      "The connectors other AI tools already have - Claude Desktop extensions, Claude Code plugins, ChatGPT-style actions - work here without being rebuilt.",
       "Popular servers are one click, with a note on anything they need first.",
-      "A broken server tells you how to fix it rather than failing silently.",
-      "You can see exactly which agent may touch which tool.",
+      "Plugins and extensions are copied into ADCode's own folder, so removing one leaves the tool it came from untouched, and its hooks are copied but never run.",
     ],
     betterThan:
-      "Most editors make MCP a config file you edit by hand and debug by reading logs. ADCode shows servers as cards with a health light, explains failures in plain words, and adds the common ones in one click - without ever asking you to paste a key into a text box.",
+      "Most editors make MCP a config file you edit by hand and debug by reading logs, and none of them can use a Claude plugin, a .mcpb extension or a ChatGPT plugin at all. ADCode shows connectors as cards with a health light, explains failures in plain words, imports what your other tools already have, and keeps every secret it asks for in the operating system's encrypted store.",
   },
 
   "workbench-floating-panels": {

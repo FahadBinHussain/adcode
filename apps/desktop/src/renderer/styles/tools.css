@@ -1,5 +1,5 @@
 /*
- * Tools page: built-in tools, MCP servers, skills and project memory, as cards.
+ * Tools page: built-in tools, connectors, skills and project memory, as cards.
  * Shares the Agents page's buttons (.agents-primary, .agent-box-action) so the two read as one app.
  */
 .tools-page {
@@ -110,3 +110,113 @@
 .tools-tool-text p { margin: 0; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .tools-tool-text small { color: var(--text-tertiary); font-size: 11px; }
 .tools-preview { max-height: min(420px, 55vh); margin: 0; padding: 10px 12px; overflow: auto; border-radius: 8px; background: var(--bg-editor); border: 1px solid var(--border-subtle); font-family: var(--font-mono, monospace); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ── Connectors ───────────────────────────────────────────────────────────────
+   Everything imported from outside - MCP servers, Claude Desktop extensions,
+   Claude Code plugins, OpenAI-style actions - wears the same card with a badge
+   saying which it is. What was found but not yet added is dashed: nothing solid
+   has happened until Add. Each kind gets one hue, mixed into the theme's text
+   and border colours so the badges read in light and dark alike. */
+
+.tools-page [data-kind="mcp"] { --kind-color: #6ea8fe; }
+.tools-page [data-kind="openapi"] { --kind-color: #54b987; }
+.tools-page [data-kind="extension"] { --kind-color: #b78bfa; }
+.tools-page [data-kind="plugin"] { --kind-color: #e0aa65; }
+
+.tools-kind {
+  flex: none;
+  padding: 1px 8px 2px;
+  border: 1px solid color-mix(in srgb, var(--kind-color) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--kind-color) 13%, transparent);
+  color: color-mix(in srgb, var(--kind-color) 58%, var(--text-primary));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+
+/* Waiting to be added: the same card, hollow. */
+.tools-drafts .tools-group-note { font-variant-numeric: tabular-nums; }
+.tools-draft-card {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--kind-color) 30%, var(--border-strong));
+}
+.tools-draft-card[data-kind] .tool-card-users:first-of-type { color: var(--text-secondary); }
+.tools-draft-card .tool-card-actions { margin-top: auto; }
+
+/* Stored values: which names exist, that they live encrypted, and one way out. */
+.tool-card-values {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.tools-lock { flex: none; align-self: center; display: inline-flex; color: var(--text-tertiary); }
+.tools-lock svg { width: 12px; height: 12px; }
+.tools-inline-action {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tools-inline-action:hover { color: var(--text-primary); }
+.tools-inline-action:disabled { color: var(--text-tertiary); cursor: default; }
+
+/* ── The Add-connector dialog: four ways in, drafts below ───────────────────── */
+.tools-dialog-step { display: grid; gap: 10px; }
+.tools-dialog-step[hidden] { display: none; }
+.tools-dialog-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tools-dialog-row-end { justify-content: flex-end; }
+.tools-dialog-row .form-input { flex: 1; min-width: 200px; }
+.tools-dialog-row .agents-primary, .tools-dialog-row button { flex: none; }
+.tools-dialog-status {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tools-dialog-status[hidden] { display: none; }
+.tools-dialog-note { margin: 0; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+.tools-dialog-drafts { display: grid; gap: 8px; }
+.tools-dialog-drafts[hidden] { display: none; }
+.tools-dialog-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.tools-dialog-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tools-dialog-name strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tools-draft-list { max-height: min(280px, 34vh); }
+.tools-draft-list .tools-catalogue-item[data-kind] { border-color: color-mix(in srgb, var(--kind-color) 26%, var(--border-subtle)); }
+
+/* The notes a draft carries, folded away until asked for. */
+.tools-draft-notes {
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-app);
+}
+.tools-draft-notes summary { color: var(--text-secondary); font-size: 12px; font-weight: 650; cursor: pointer; }
+.tools-draft-notes[open] summary { margin-bottom: 6px; }
+.tools-draft-notes .tool-card-problem + .tool-card-problem { margin-top: 6px; }

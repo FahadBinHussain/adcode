@@ -118,6 +118,29 @@
     }
   }
 
+  /*
+   * Connectors: a card lifts a hair under the pointer, and one that is still coming up
+   * breathes - the same light, filling in and out, so a connect in progress never looks
+   * like it has quietly died.
+   */
+  @media (hover: hover) and (pointer: fine) {
+    :root:not([data-reduced-motion="true"]) .tools-grid > .tool-card {
+      transition: translate var(--motion-move) var(--motion-curve), border-color 140ms ease;
+    }
+    :root:not([data-reduced-motion="true"]) .tools-grid > .tool-card:hover {
+      translate: 0 -2px;
+      border-color: color-mix(in srgb, var(--kind-color, var(--accent)) 38%, var(--border-strong));
+    }
+  }
+  :root:not([data-reduced-motion="true"]) .tools-health[data-status="connecting"] {
+    animation: motion-breathe 1.5s ease-in-out infinite;
+  }
+
+  /* The Add-connector dialog's answer line eases in where the report is expected. */
+  :root:not([data-reduced-motion="true"]) .tools-dialog-status:not([hidden]) {
+    animation: motion-fade-in var(--motion-enter) ease-out backwards;
+  }
+
   /* A meter that moves shows the change; one that jumps reads as a glitch. */
   :root:not([data-reduced-motion="true"]) .composer-meter-fill {
     transition: stroke-dashoffset 300ms cubic-bezier(0.23, 1, 0.32, 1), stroke 200ms ease;
@@ -157,4 +180,9 @@
 @keyframes motion-fade-in {
   from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes motion-breathe {
+  0%, 100% { opacity: .35; scale: .8; }
+  50% { opacity: 1; scale: 1; }
 }

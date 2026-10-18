@@ -1,17 +1,44 @@
+/**
+ * The real MCP transports, kept separate so policy and persistence can be tested offline.
+ *
+ * A connector arrives here with its values already decrypted. Where they go depends on
+ * the transport, and each is handled the way that transport actually works:
+ *
+ * - stdio: the values are environment variables for the child process. The SDK replaces
+ *   the environment entirely when `env` is given, so the default environment is merged
+ *   back in - otherwise `PATH` disappears and `npx` stops resolving;
+ * - HTTP: the values are headers on every request;
+ * - SSE (the older transport, still in use): the values are headers on the POSTs, and
+ *   the stream request needs a fetch of its own, because the EventSource API has no way
+ *   to set headers at all.
+ */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import type { FetchLike, Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { AssistantServerInput } from "../shared/assistantControls.ts";
-import type { McpSession, RemoteTool } from "./assistantControlsService.ts";
+import type { AssistantConnectRequest, McpSession, RemoteTool } from "./assistantControlsService.ts";
 
-/** Real SDK transport, kept separate so policy and persistence can be tested offline. */
-export async function connectAssistantMcp(server: AssistantServerInput, onClose: () => void): Promise<McpSession> {
+export async function connectAssistantMcp(request: AssistantConnectRequest, onClose: () => void): Promise<McpSession> {
+  const { server, values } = request;
   const client = new Client({ name: "adcode-assistant", version: "1.0.2" }, { capabilities: {} });
-  const transport = server.transport === "stdio"
-    ? new StdioClientTransport({ command: server.endpoint, args: [...server.args], stderr: "ignore", maxBufferSize: 2_000_000 })
-    : new StreamableHTTPClientTransport(new URL(server.endpoint), { requestInit: { redirect: "error" } });
+  let transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport;
+  if (server.transport === "stdio") {
+    transport = new StdioClientTransport({
+      command: server.endpoint,
+      args: [...server.args],
+      env: { ...getDefaultEnvironment(), ...values },
+      stderr: "ignore",
+      maxBufferSize: 2_000_000,
+    });
+  } else if (server.transport === "sse") {
+    const headers: Record<string, string> = { ...values };
+    const withHeaders: FetchLike = (url, init) => fetch(url, { ...init, headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) } });
+    transport = new SSEClientTransport(new URL(server.endpoint), { eventSourceInit: { fetch: withHeaders }, requestInit: { headers, redirect: "error" } });
+  } else {
+    transport = new StreamableHTTPClientTransport(new URL(server.endpoint), { requestInit: { headers: { ...values }, redirect: "error" } });
+  }
   client.onclose = onClose;
   // Revoke the cached tool catalogue immediately when its definitions change.
   // Reconnect discovers the new signatures and requires re-enabling changed tools.

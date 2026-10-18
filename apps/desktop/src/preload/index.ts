@@ -155,6 +155,7 @@ const api: AdcodeApi = {
     controls: () => ipcRenderer.invoke(CHANNELS.aiControlsRead),
     control: (action) => ipcRenderer.invoke(CHANNELS.aiControlsAction, action),
     previewSkill: (id) => ipcRenderer.invoke(CHANNELS.aiControlsPreviewSkill, id),
+    pickConnectorFile: () => ipcRenderer.invoke(CHANNELS.aiConnectorsPick),
     openAgentSettings: (scope) => ipcRenderer.invoke(CHANNELS.aiAgentSettingsOpen, scope),
     onControlsChanged: (listener) => subscribe(CHANNELS.aiControlsChanged, listener),
     status: () => ipcRenderer.invoke(CHANNELS.aiProviders),

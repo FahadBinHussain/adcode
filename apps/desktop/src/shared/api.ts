@@ -591,6 +591,7 @@ export const CHANNELS = {
   aiControlsRead: "ai-controls:read",
   aiControlsAction: "ai-controls:action",
   aiControlsPreviewSkill: "ai-controls:preview-skill",
+  aiConnectorsPick: "ai-connectors:pick",
   aiAgentSettingsOpen: "ai:agent-settings:open",
   aiControlsChanged: "ai-controls:changed",
   aiCompletion: "ai:completion",
@@ -1925,6 +1926,8 @@ export interface AdcodeApi {
     controls(): Promise<AssistantControlsView>;
     control(action: AssistantControlAction): Promise<AssistantControlsView>;
     previewSkill(id: string): Promise<string>;
+    /** Ask for a connector file or folder with the OS picker. Null when the picker was closed. */
+    pickConnectorFile(): Promise<string | null>;
     /** The agents' rules file - the project's .adcode/settings.json or your own - created with a commented starter if missing. */
     openAgentSettings(scope: "project" | "user"): Promise<{ readonly ok: true; readonly path: string } | { readonly ok: false; readonly message: string }>;
     onControlsChanged(listener: () => void): () => void;

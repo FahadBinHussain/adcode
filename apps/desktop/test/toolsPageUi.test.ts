@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-it("runs the Tools page in real Chromium: servers, catalogue, skills, memory, sharing", () => {
+it("runs the Tools page in real Chromium: connectors, drafts, catalogue, skills, memory, sharing", () => {
   const require = createRequire(import.meta.url);
   const env = { ...process.env };
   delete env["ELECTRON_RUN_AS_NODE"];
@@ -16,11 +16,16 @@ it("runs the Tools page in real Chromium: servers, catalogue, skills, memory, sh
     qualityTools: true,
     usedBy: true,
     liveState: true,
+    kindBadges: true,
+    pluginCard: true,
+    lockedValues: true,
     toggleReachesBackend: true,
     escapedMetadata: true,
     filter: true,
     catalogueAdd: true,
+    importScan: true,
     saveServer: true,
+    webImports: true,
     systemFilter: true,
     skillToggle: true,
     skillPreview: true,

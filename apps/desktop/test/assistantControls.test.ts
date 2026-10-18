@@ -2,7 +2,10 @@ import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAssistantControlsService, parseAssistantServer, type McpSession, type RemoteTool } from "../src/main/assistantControlsService.ts";
+import type { ConnectorDraft } from "@adcode/connect";
+import { createAssistantControlsService, parseAssistantServer, type AssistantConnectRequest, type McpSession, type RemoteTool } from "../src/main/assistantControlsService.ts";
+import type { ConnectorSecretStore } from "../src/main/connectorSecrets.ts";
+import type { ConnectorSources, PendingDraft } from "../src/main/connectorImport.ts";
 import { discoverSkills, installedSkillRoots, parseSkill } from "../src/main/assistantSkills.ts";
 
 const directories: string[] = [];
@@ -11,21 +14,46 @@ async function temp() { const path = await mkdtemp(join(tmpdir(), "adcode-contro
 const server = { id: "test-server", name: "Test server", transport: "stdio" as const, endpoint: "test-executable", args: ["--mcp"] };
 const remoteTool: RemoteTool = { name: "find_issues", description: "Search project issues", inputSchema: { type: "object", properties: { query: { type: "string" } } } };
 const skillText = "---\nname: review-code\ndescription: Review code for bugs\n---\nRead the changed files and check their callers.\n";
+
+/** An in-memory stand-in for the OS-encrypted store. */
+function fakeSecrets(): ConnectorSecretStore {
+  const stored = new Map<string, Record<string, string>>();
+  return {
+    read: async (id) => ({ ...(stored.get(id) ?? {}) }),
+    write: async (id, values) => { if (Object.keys(values).length === 0) stored.delete(id); else stored.set(id, { ...values }); },
+    clear: async (id) => { stored.delete(id); },
+  };
+}
+
+/** No imports waiting, for tests that never touch the Add dialog. */
+function emptySources(): ConnectorSources {
+  return {
+    scan: async () => ({ added: [], notes: [] }),
+    fromPath: async () => ({ added: [], notes: [] }),
+    fromUrl: async () => ({ added: [], notes: [] }),
+    fromText: async () => ({ added: [], notes: [] }),
+    views: () => [],
+    take: () => null,
+    drop: () => undefined,
+  };
+}
+
 async function setup() {
   const directory = await temp();
   let root: string | null = directory;
   let closed = () => {};
   const session: McpSession = { list: vi.fn(async () => [remoteTool]), call: vi.fn(async () => ({ content: "Found 2 issues", isError: false })), close: vi.fn(async () => {}) };
-  const connect = vi.fn(async (_server, onClose: () => void) => { closed = onClose; return session; });
+  const connect = vi.fn(async (_request: AssistantConnectRequest, onClose: () => void) => { closed = onClose; return session; });
   const confirm = vi.fn(async (_title: string, _detail: string, _signal?: AbortSignal) => true);
-  const service = createAssistantControlsService({ directory, workspace: () => root, connect, confirm });
+  const deps = { directory, workspace: () => root, connect, confirm, secrets: fakeSecrets(), sources: emptySources(), install: vi.fn(async () => join(directory, "installed")) };
+  const service = createAssistantControlsService(deps);
   const run = (name: string, input: Record<string, unknown>, signal = new AbortController().signal) => service.runner.run({ type: "tool-call", id: "call", name, input }, signal);
   const saveConnect = async () => {
     await service.action({ kind: "save-server", server });
     await service.action({ kind: "connect", id: server.id });
   };
   const enable = (enabled = true) => service.action({ kind: "set-tool", id: server.id, tool: remoteTool.name, enabled });
-  return { directory, service, session, connect, confirm, run, saveConnect, enable, setRoot: (value: string | null) => { root = value; }, disconnectRemotely: () => closed() };
+  return { directory, service, session, connect, confirm, run, saveConnect, enable, deps, setRoot: (value: string | null) => { root = value; }, disconnectRemotely: () => closed() };
 }
 
 describe("assistant capability controls", () => {
@@ -50,7 +78,7 @@ describe("assistant capability controls", () => {
     await t.enable();
     const discovery = JSON.parse((await t.run("discover_capabilities", { query: "issues" })).content);
     expect(discovery.matches[0]).toMatchObject({ kind: "mcp", server: server.id, inputSchema: remoteTool.inputSchema });
-    const restarted = createAssistantControlsService({ directory: t.directory, workspace: () => t.directory, connect: t.connect, confirm: t.confirm });
+    const restarted = createAssistantControlsService({ ...t.deps, workspace: () => t.directory });
     expect((await restarted.snapshot()).servers[0]?.status).toBe("disconnected");
     expect(t.connect).toHaveBeenCalledTimes(1);
     expect((await readFile(join(t.directory, "assistant-controls.json"), "utf8"))).toContain("find_issues");
@@ -139,7 +167,7 @@ describe("assistant capability controls", () => {
     const directory = await temp();
     const file = join(directory, "assistant-controls.json");
     await writeFile(file, "{bad");
-    const service = createAssistantControlsService({ directory, workspace: () => null, connect: vi.fn(), confirm: vi.fn() });
+    const service = createAssistantControlsService({ directory, workspace: () => null, connect: vi.fn(), confirm: vi.fn(), secrets: fakeSecrets(), sources: emptySources(), install: vi.fn() });
     expect((await service.snapshot()).notice).toContain("could not be read");
     expect(await readFile(file, "utf8")).toBe("{bad");
   });
@@ -161,12 +189,12 @@ describe("skill format and containment", () => {
     const path = join(home, ".codex", "skills", ".system", "review-code");
     await mkdir(path, { recursive: true });
     await writeFile(join(path, "SKILL.md"), skillText);
-    const roots = installedSkillRoots(home);
+    const roots = await installedSkillRoots(home);
     const skills = await discoverSkills(null, {}, roots);
     expect(skills).toHaveLength(1);
     expect(skills[0]).toMatchObject({ name: "review-code", scope: "system", source: "Codex system", enabled: false });
     expect(skills[0]?.id).toMatch(/^system:/);
-    expect(installedSkillRoots(home, join(home, "custom"))).toContainEqual({ path: join(home, "custom", "skills"), source: "Codex" });
+    expect(await installedSkillRoots(home, join(home, "custom"))).toContainEqual({ path: join(home, "custom", "skills"), source: "Codex" });
   });
   it("keeps duplicate skill names distinct across installations and the project", async () => {
     const home = await temp();
@@ -174,7 +202,7 @@ describe("skill format and containment", () => {
     for (const folder of [join(home, ".claude", "skills", "review-code"), join(home, ".agents", "skills", "review-code"), join(project, ".agents", "skills", "review-code")]) {
       await mkdir(folder, { recursive: true }); await writeFile(join(folder, "SKILL.md"), skillText);
     }
-    const found = await discoverSkills(project, {}, installedSkillRoots(home));
+    const found = await discoverSkills(project, {}, await installedSkillRoots(home));
     expect(found).toHaveLength(3);
     expect(new Set(found.map(skill => skill.id)).size).toBe(3);
     expect(found[0]?.scope).toBe("workspace");
@@ -187,7 +215,7 @@ describe("skill format and containment", () => {
     await writeFile(join(folder, "references", "checks.md"), "Check caller behavior.");
     let workspace: string | null = null;
     const directory = await temp();
-    const service = createAssistantControlsService({ directory, workspace: () => workspace, installedSkills: installedSkillRoots(home), connect: vi.fn(), confirm: vi.fn() });
+    const service = createAssistantControlsService({ directory, workspace: () => workspace, installedSkills: async () => installedSkillRoots(home), connect: vi.fn(), confirm: vi.fn(), secrets: fakeSecrets(), sources: emptySources(), install: vi.fn() });
     const id = (await service.snapshot()).skills[0]!.id;
     await service.action({ kind: "set-skill", id, enabled: true });
     workspace = await temp();
@@ -213,5 +241,164 @@ describe("skill format and containment", () => {
     await writeFile(join(outside, "review-code", "SKILL.md"), skillText);
     await symlink(outside, join(directory, ".agents", "skills"), process.platform === "win32" ? "junction" : "dir");
     expect(await discoverSkills(directory, {})).toEqual([]);
+  });
+});
+
+/* ── Imported drafts, through the Add dialog ───────────────────────────────── */
+
+/** Pending drafts served by a stand-in for the import module; `drop` is what add consumes. */
+function draftSources(pending: PendingDraft[]): ConnectorSources {
+  return {
+    scan: async () => ({ added: [], notes: [] }),
+    fromPath: async () => ({ added: [], notes: [] }),
+    fromUrl: async () => ({ added: [], notes: [] }),
+    fromText: async () => ({ added: [], notes: [] }),
+    views: () => [],
+    take: (handle) => pending.find(entry => entry.handle === handle) ?? null,
+    drop: (handle) => { const at = pending.findIndex(entry => entry.handle === handle); if (at >= 0) pending.splice(at, 1); },
+  };
+}
+
+const mcpDraft: ConnectorDraft = {
+  kind: "mcp", name: "Files", slug: "files", purpose: "Reads files.", source: "Claude Desktop", origin: "import",
+  transport: "stdio", endpoint: "npx", args: ["-y", "files-server"], env: { API_KEY: "from-file" }, headers: {},
+  values: [], spec: null, auth: null, skills: [], servers: [], warnings: [], homepage: null,
+};
+const openApiText = JSON.stringify({
+  openapi: "3.0.3",
+  info: { title: "Todos", version: "1.0.0" },
+  servers: [{ url: "https://todos.example.com" }],
+  paths: { "/todos": { get: { operationId: "listTodos", summary: "List todos" } } },
+});
+const openApiDraft: ConnectorDraft = {
+  kind: "openapi", name: "Todos", slug: "todos", purpose: "Calls Todos 1.0.0.", source: "Imported link: todos.example.com", origin: "actions",
+  transport: "http", endpoint: "", args: [], env: {}, headers: {},
+  values: [
+    { key: "token", label: "API token", hint: null, required: true, secret: true, preset: null },
+    { key: "__base_url", label: "Server address", hint: null, required: true, secret: false, preset: null },
+  ],
+  spec: openApiText, auth: { kind: "bearer", name: null, needsToken: true }, skills: [], servers: [], warnings: [], homepage: null,
+};
+const extensionDraft: ConnectorDraft = {
+  kind: "extension", name: "Hello Tools", slug: "hello-tools", purpose: "Says hello.", source: "Extension file: hello.mcpb", origin: "extension",
+  transport: "stdio", endpoint: "node", args: ["${__dirname}/server/index.js"], env: {}, headers: {},
+  values: [{ key: "API_KEY", label: "API key", hint: "From hello.example.com", required: true, secret: true, preset: null }],
+  spec: null, auth: null, skills: [], servers: [], warnings: [], homepage: null,
+};
+const pluginDraft: ConnectorDraft = {
+  kind: "plugin", name: "Team Tools", slug: "team-tools", purpose: "Team routines.", source: "Plugin folder: team-tools", origin: "plugin",
+  transport: "stdio", endpoint: "", args: [], env: {}, headers: {}, values: [], spec: null, auth: null,
+  skills: ["skills/standup"],
+  servers: [{ name: "Team search", slug: "team-search", transport: "stdio", endpoint: "node", args: ["${CLAUDE_PLUGIN_ROOT}/search.js"], env: { SEARCH_KEY: "${CLAUDE_PLUGIN_ROOT}/key.txt" }, headers: {}, warnings: [] }],
+  warnings: [], homepage: null,
+};
+
+describe("imported connectors through the Add dialog", () => {
+  let counter = 0;
+  const pendingDraft = (draft: ConnectorDraft, overrides: Partial<PendingDraft> = {}): PendingDraft => ({
+    handle: `draft-${(counter++).toString(16).padStart(4, "0")}`, draft, install: null, problem: null, operations: 0, version: null, createdAt: Date.now(), ...overrides,
+  });
+
+  async function setup(pending: PendingDraft[], secrets: ConnectorSecretStore = fakeSecrets()) {
+    const directory = await temp();
+    const installed: string[] = [];
+    const removed: string[] = [];
+    const session: McpSession = { list: vi.fn(async () => [remoteTool]), call: vi.fn(async () => ({ content: "ok", isError: false })), close: vi.fn(async () => {}) };
+    const connect = vi.fn(async (_request: AssistantConnectRequest, _onClose: () => void) => session);
+    const install = vi.fn(async (item: PendingDraft) => {
+      const target = join(await temp(), item.draft.slug);
+      await mkdir(target, { recursive: true });
+      installed.push(target);
+      return target;
+    });
+    const service = createAssistantControlsService({
+      directory,
+      workspace: () => directory,
+      connect,
+      confirm: vi.fn(async () => true),
+      secrets,
+      sources: draftSources(pending),
+      install,
+      removeInstall: vi.fn(async (path: string) => { removed.push(path); }),
+    });
+    return { directory, service, connect, secrets, install, installed, removed };
+  }
+
+  it("turns an imported MCP config into a connector, moving its values to the encrypted store", async () => {
+    const pending = [pendingDraft(mcpDraft)];
+    const t = await setup(pending);
+    const view = await t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: { EXTRA: "typed" } });
+    expect(view.servers[0]).toMatchObject({ id: "files", kind: "mcp", origin: "import", source: "Claude Desktop", endpoint: "npx", valueKeys: ["API_KEY", "EXTRA"] });
+    expect(await readFile(join(t.directory, "assistant-controls.json"), "utf8")).not.toContain("from-file");
+    expect(pending).toEqual([]);
+    await t.service.action({ kind: "connect", id: "files" });
+    expect(t.connect.mock.calls[0]?.[0].values).toEqual({ API_KEY: "from-file", EXTRA: "typed" });
+  });
+
+  it("holds an OpenAPI connector until its token and address are answered", async () => {
+    const pending = [pendingDraft(openApiDraft, { operations: 1, version: "1.0.0" })];
+    const t = await setup(pending);
+    await expect(t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: { __base_url: "https://todos.example.com" } })).rejects.toThrow("needs its token");
+    const view = await t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: { token: "k", __base_url: "https://todos.example.com" } });
+    expect(view.servers[0]).toMatchObject({ id: "todos", kind: "openapi", endpoint: "https://todos.example.com", transport: "http", valueKeys: ["__base_url", "token"] });
+    expect(await t.secrets.read("todos")).toEqual({ token: "k", __base_url: "https://todos.example.com" });
+    await t.service.action({ kind: "forget-values", id: "todos" });
+    expect(await t.secrets.read("todos")).toEqual({});
+    expect((await t.service.snapshot()).servers[0]?.valueKeys).toEqual([]);
+  });
+
+  it("refuses a draft the source could not complete", async () => {
+    const pending = [pendingDraft(extensionDraft, { problem: "This is only the extension's manifest. Choose the .mcpb file itself." })];
+    const t = await setup(pending);
+    await expect(t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: {} })).rejects.toThrow("only the extension's manifest");
+    await expect(t.service.action({ kind: "add-draft", handle: "draft-gone", values: {} })).rejects.toThrow("no longer waiting");
+    expect(t.install).not.toHaveBeenCalled();
+  });
+
+  it("asks an extension's questions before its files are installed, then links the record to the folder", async () => {
+    const pending = [pendingDraft(extensionDraft, { version: "1.0.0" })];
+    const t = await setup(pending);
+    await expect(t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: { API_KEY: "" } })).rejects.toThrow("needed before this extension can be added");
+    expect(t.install).not.toHaveBeenCalled();
+    const view = await t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: { API_KEY: "k" } });
+    const record = view.servers[0]!;
+    expect(record).toMatchObject({ id: "hello-tools", kind: "extension", version: "1.0.0", root: t.installed[0] });
+    expect(record.valueKeys).toEqual(["API_KEY"]);
+    await t.service.action({ kind: "connect", id: "hello-tools" });
+    const request = t.connect.mock.calls[0]![0];
+    // The placeholder is replaced with the install folder; the template's own slash stays.
+    expect(request.server.args).toEqual([`${t.installed[0]!}/server/index.js`]);
+    expect(request.values).toEqual({ API_KEY: "k" });
+  });
+
+  it("puts a plugin, its skills and its own servers in place, resolving the plugin root", async () => {
+    const pending = [pendingDraft(pluginDraft, { version: "1.2.0" })];
+    const t = await setup(pending);
+    const view = await t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: {} });
+    expect(view.servers.map(server => server.id)).toEqual(["team-tools", "team-tools-team-search"]);
+    const [container, server] = view.servers;
+    expect(container).toMatchObject({ kind: "plugin", root: t.installed[0], version: "1.2.0" });
+    expect(server).toMatchObject({ kind: "mcp", origin: "plugin", source: "Plugin: Team Tools" });
+    expect(server?.endpoint).toBe("node");
+    expect(server?.args).toEqual([`${t.installed[0]!}/search.js`]);
+    await expect(t.service.action({ kind: "connect", id: "team-tools" })).rejects.toThrow("separate connectors");
+    await t.service.action({ kind: "connect", id: "team-tools-team-search" });
+    expect(t.connect.mock.calls[0]?.[0].values).toEqual({ SEARCH_KEY: `${t.installed[0]!}/key.txt` });
+
+    await t.service.action({ kind: "remove-server", id: "team-tools" });
+    expect(t.removed).toEqual([t.installed[0]]);
+    expect((await t.service.snapshot()).servers).toEqual([]);
+  });
+
+  it("reclaims the installed folder when saving fails after the files landed", async () => {
+    const directory = await temp();
+    const store = fakeSecrets();
+    const failing: ConnectorSecretStore = { ...store, write: async () => { throw new Error("The store refused the write."); } };
+    const pending = [pendingDraft(extensionDraft, { version: "1.0.0" })];
+    const t = await setup(pending, failing);
+    await expect(t.service.action({ kind: "add-draft", handle: pending[0]!.handle, values: { API_KEY: "k" } })).rejects.toThrow("refused the write");
+    expect(t.removed).toEqual([t.installed[0]]);
+    expect(pending).toHaveLength(1);
+    expect(directory.length).toBeGreaterThan(0);
   });
 });

@@ -1,17 +1,27 @@
 /**
  * The Tools page: what the assistant and your agents can use.
  *
- * Four tabs of cards - ADCode's built-in tools, MCP servers, skills, and project memory - with
- * one search across all of them. Agents are who; tools are what. Every tool card says which
- * agents may use it, a server's failure is explained in plain words with the fix, a popular
- * server is one click away, and what the assistant has learned about the project can be read,
- * corrected and shared with other AI tools.
+ * Four tabs of cards - ADCode's built-in tools, connectors, skills, and project memory -
+ * with one search across all of them. Agents are who; tools are what.
  *
- * The MCP and skill state is the main process's (see `assistantControlsService.ts`); this page
- * renders it and sends actions, with no optimistic copy of its own.
+ * The connectors tab is the front door for everything that comes from outside: MCP
+ * servers added by hand or imported from Claude Desktop, Claude Code, Cursor, Windsurf
+ * or VS Code; Claude Desktop extensions (`.mcpb`); Claude Code plugins; and OpenAPI
+ * descriptions standing in for ChatGPT plugins and GPT Actions. Each card carries a badge
+ * saying which it is, and the import dialog never installs anything until Add is pressed.
+ *
+ * The connector and skill state is the main process's (see `assistantControlsService.ts`);
+ * this page renders it and sends actions, with no optimistic copy of its own.
  */
 import type { McpConnectionInfo, MemoryItemView } from "../../shared/api.ts";
-import type { AssistantControlAction, AssistantControlsView, AssistantServerView, AssistantSkillView } from "../../shared/assistantControls.ts";
+import type {
+  AssistantConnectorKind,
+  AssistantControlAction,
+  AssistantControlsView,
+  AssistantServerView,
+  AssistantSkillView,
+  ConnectorDraftView,
+} from "../../shared/assistantControls.ts";
 import { MCP_CATALOGUE } from "../../shared/mcpCatalogue.ts";
 import { MCP_NODE_REQUIREMENT, mcpNodeNote } from "../../shared/mcpNode.ts";
 import { AGENT_PROFILES_SETTING, parseAgentProfiles, type AgentProfile } from "../ai/agentProfiles.ts";
@@ -21,6 +31,7 @@ import { createIcon, ICON } from "../workbench/icons.ts";
 import { BUILT_IN_TOOLS_INFO, type BuiltInToolGroup } from "./builtInTools.ts";
 import { explainMcpError, matchesQuery, serverSummary, toolUsers } from "./toolsModel.ts";
 import { indexForStagger, markFor } from "../motionFlip.ts";
+import { isWebSurface } from "../surface.ts";
 
 export type ToolsTab = "built-in" | "servers" | "skills" | "memory";
 
@@ -34,16 +45,22 @@ export interface ToolsPage {
   hidden(): void;
   refresh(): Promise<void>;
   showTab(tab: ToolsTab): void;
-  /** Open Add server on the catalogue. */
+  /** Open Add connector, on the import step. */
   addServer(): void;
 }
 
 const TABS: readonly { readonly id: ToolsTab; readonly label: string }[] = [
   { id: "built-in", label: "Built-in" },
-  { id: "servers", label: "MCP servers" },
+  { id: "servers", label: "Connectors" },
   { id: "skills", label: "Skills" },
   { id: "memory", label: "Memory" },
 ];
+
+/** How each kind of connector is named on its badge. */
+const KIND_LABEL: Readonly<Record<AssistantConnectorKind, string>> = { mcp: "MCP", openapi: "Actions", extension: "Extension", plugin: "Plugin" };
+
+/** Where the OpenAPI description alone could not say how to sign in. */
+const TOKEN_KEY = "token";
 
 const GROUPS: readonly { readonly id: BuiltInToolGroup; readonly note: string }[] = [
   { id: "Read", note: "Look at the project without changing it." },
@@ -87,6 +104,28 @@ function toggle(label: string, checked: boolean, onChange: (checked: boolean) =>
   return wrap;
 }
 
+/** A badge naming what a connector is: MCP, Extension, Plugin, or Actions. */
+function kindBadge(kind: AssistantConnectorKind): HTMLElement {
+  const badge = el("span", "tools-kind", KIND_LABEL[kind]);
+  badge.dataset["kind"] = kind;
+  return badge;
+}
+
+/** Where this connector came from, in the fewest honest words. */
+function originText(server: AssistantServerView): string {
+  const version = server.version !== null ? ` · v${server.version}` : "";
+  if (server.kind === "extension") return `Claude Desktop extension${version}`;
+  if (server.kind === "plugin") return `Claude Code plugin${version}`;
+  if (server.kind === "openapi") return server.source !== "" ? server.source : "OpenAPI actions";
+  return server.source !== "" ? server.source : "Added by hand";
+}
+
+function addressOf(server: AssistantServerView): string {
+  if (server.kind === "plugin" || server.kind === "extension") return server.endpoint;
+  if (server.transport === "stdio") return [server.endpoint, ...server.args].join(" ");
+  return server.endpoint;
+}
+
 export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
   const element = el("div", "tools-page");
   element.setAttribute("aria-labelledby", "tools-title");
@@ -100,8 +139,8 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
   heading.append(title, summary);
   const search = el("input", "form-input tools-search");
   search.type = "search";
-  search.placeholder = "Search tools, servers, skills and memory";
-  search.setAttribute("aria-label", "Search tools, servers, skills and memory");
+  search.placeholder = "Search tools, connectors, skills and memory";
+  search.setAttribute("aria-label", "Search tools, connectors, skills and memory");
   header.append(heading, search);
 
   const tabList = el("div", "tools-tabs");
@@ -172,14 +211,21 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
   }
 
   async function act(action: AssistantControlAction, success?: string): Promise<boolean> {
+    return (await perform(action, success)) === null;
+  }
+
+  /** Same as `act`, but hands the failure message back for a dialog to show in place. */
+  async function perform(action: AssistantControlAction, success?: string): Promise<string | null> {
     try {
       controls = await window.adcode.ai.control(action);
       render();
+      if (controls.notice !== null) say(controls.notice);
       if (success !== undefined) say(success);
-      return true;
+      return null;
     } catch (error) {
-      say(errorText(error, "That did not work. Try again."));
-      return false;
+      const message = errorText(error, "That did not work. Try again.");
+      say(message);
+      return message;
     }
   }
 
@@ -187,17 +233,18 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
   function render(): void {
     const query = search.value;
     renderBuiltIn(query);
-    renderServers(query);
+    renderConnectors(query);
     renderSkills(query);
     renderMemory(query);
-    for (const panel of panels.values()) for (const grid of panel.querySelectorAll<HTMLElement>("ul")) indexForStagger(grid);
+    for (const panel of panels.values()) for (const grid of panel.querySelectorAll<HTMLElement>("ul, ol")) indexForStagger(grid);
     const serverCount = controls?.servers.length ?? 0;
     const skillCount = controls?.skills.length ?? 0;
+    const draftCount = controls?.drafts.length ?? 0;
     counts.get("built-in")!.textContent = String(BUILT_IN_TOOLS_INFO.length);
-    counts.get("servers")!.textContent = String(serverCount);
+    counts.get("servers")!.textContent = String(serverCount + draftCount);
     counts.get("skills")!.textContent = String(skillCount);
     counts.get("memory")!.textContent = String(memories.length);
-    summary.textContent = `${BUILT_IN_TOOLS_INFO.length} built-in · ${serverCount} MCP server${serverCount === 1 ? "" : "s"} · ${skillCount} skill${skillCount === 1 ? "" : "s"} · ${memories.length} memor${memories.length === 1 ? "y" : "ies"}`;
+    summary.textContent = `${BUILT_IN_TOOLS_INFO.length} built-in · ${serverCount} connector${serverCount === 1 ? "" : "s"}${draftCount > 0 ? ` + ${draftCount.toString()} to add` : ""} · ${skillCount} skill${skillCount === 1 ? "" : "s"} · ${memories.length} memor${memories.length === 1 ? "y" : "ies"}`;
   }
 
   function emptyNote(text: string): HTMLElement {
@@ -235,55 +282,127 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     if (shown === 0) panel.append(emptyNote("No built-in tool matches that search."));
   }
 
-  function renderServers(query: string): void {
+  /* ── Connectors ────────────────────────────────────────────────────────── */
+
+  function renderConnectors(query: string): void {
     const panel = panels.get("servers")!;
     const bar = el("div", "tools-bar");
-    bar.append(el("p", "tools-panel-intro", "Extra tools from MCP servers - browsers, docs, design files, deploys. The chat can use them; each call asks you first."));
-    const add = button("Add server", "agents-primary", () => openAddServer("catalogue"));
+    bar.append(el("p", "tools-panel-intro", "Connectors give the assistant extra tools: MCP servers, Claude Desktop extensions, Claude Code plugins, and OpenAI-style actions. The chat can use them; each call asks you first."));
+    const add = button("Add connector", "agents-primary", () => openAddConnector("import"));
     add.prepend(createIcon(ICON.plus));
     bar.append(add);
     panel.replaceChildren(bar);
-    const servers = (controls?.servers ?? []).filter((server) => matchesQuery(query, [server.name, server.id, server.endpoint, ...server.tools.map((tool) => tool.name)]));
-    if (controls !== null && controls.workspace === null) panel.append(emptyNote("Open a project to use MCP servers - they start in its folder."));
+
+    const drafts = (controls?.drafts ?? []).filter((draft) => matchesQuery(query, [draft.name, draft.purpose, draft.source, draft.kind, ...draft.skills, ...draft.servers.map((item) => item.name)]));
+    if (drafts.length > 0) panel.append(draftSection(drafts));
+
+    const servers = (controls?.servers ?? []).filter((server) => matchesQuery(query, [server.name, server.id, server.endpoint, server.source, KIND_LABEL[server.kind], ...server.tools.map((tool) => tool.name)]));
     if (servers.length === 0) {
-      panel.append(emptyNote(query.trim() ? "No servers or tools match that search." : "No MCP servers yet. Add one from the catalogue in one click."));
+      panel.append(emptyNote(query.trim() ? "No connectors or tools match that search." : "No connectors yet. Import what Claude, Cursor or VS Code already have, add a file, or pick one from the catalogue."));
       return;
     }
     const grid = el("ul", "tools-grid");
     grid.setAttribute("role", "list");
-    for (const server of servers) grid.append(serverCard(server));
+    for (const server of servers) grid.append(connectorCard(server));
     panel.append(grid);
   }
 
-  function serverCard(server: AssistantServerView): HTMLLIElement {
+  /** The things found but not yet added. Dashed borders: nothing here is installed yet. */
+  function draftSection(drafts: readonly ConnectorDraftView[]): HTMLElement {
+    const section = el("section", "tools-group tools-drafts");
+    const head = el("div", "tools-group-head");
+    head.append(el("h2", "tools-group-title", "Waiting to be added"), el("span", "tools-group-note", `${drafts.length.toString()} found · nothing is installed until you press Add`));
+    const grid = el("ul", "tools-grid");
+    grid.setAttribute("role", "list");
+    for (const draft of drafts) grid.append(draftCard(draft));
+    section.append(head, grid);
+    return section;
+  }
+
+  function draftCard(draft: ConnectorDraftView): HTMLLIElement {
+    const card = el("li", "tool-card tools-draft-card");
+    card.setAttribute("role", "listitem");
+    card.dataset["kind"] = draft.kind;
+    const head = el("div", "tool-card-head");
+    head.append(el("strong", "tool-card-name", draft.name), kindBadge(draft.kind));
+    card.append(head, el("p", "tool-card-users", draft.source));
+    card.append(el("p", "tool-card-text", draft.purpose));
+    const facts: string[] = [];
+    if (draft.skills.length > 0) facts.push(`${draft.skills.length.toString()} skill${draft.skills.length === 1 ? "" : "s"}`);
+    if (draft.servers.length > 0) facts.push(`${draft.servers.length.toString()} MCP server${draft.servers.length === 1 ? "" : "s"}`);
+    if (draft.operations > 0) facts.push(`${draft.operations.toString()} operation${draft.operations === 1 ? "" : "s"}`);
+    if (draft.values.length > 0) facts.push(`asks for ${draft.values.length.toString()} value${draft.values.length === 1 ? "" : "s"}`);
+    if (facts.length > 0) card.append(el("p", "tool-card-users", facts.join(" · ")));
+    if (draft.endpoint !== "" && draft.kind !== "plugin") card.append(el("code", "tool-card-id", draft.endpoint));
+    for (const warning of draft.warnings.slice(0, 3)) {
+      const problem = el("p", "tool-card-problem", warning);
+      card.append(problem);
+    }
+    if (draft.warnings.length > 3) card.append(el("p", "tool-card-users", `and ${(draft.warnings.length - 3).toString()} more note${draft.warnings.length - 3 === 1 ? "" : "s"}`));
+    if (draft.problem !== null) {
+      const problem = el("p", "tool-card-problem", draft.problem);
+      problem.setAttribute("role", "alert");
+      card.append(problem);
+    }
+    const actions = el("div", "tool-card-actions");
+    const add = button("Add", "agent-box-action agent-box-action-primary", () => openDraftValues(draft));
+    add.disabled = !draft.installable;
+    add.setAttribute("aria-label", `Add ${draft.name}`);
+    const discard = button("Discard", "agent-box-action", () => void act({ kind: "discard-draft", handle: draft.handle }, `${draft.name} discarded.`));
+    discard.setAttribute("aria-label", `Discard ${draft.name}`);
+    actions.append(add, discard);
+    card.append(actions);
+    return card;
+  }
+
+  function connectorCard(server: AssistantServerView): HTMLLIElement {
     const card = el("li", "tool-card tool-server");
     card.setAttribute("role", "listitem");
     card.dataset["status"] = server.status;
+    card.dataset["kind"] = server.kind;
     const head = el("div", "tool-card-head");
     const light = el("span", "tools-health");
     light.dataset["status"] = server.status;
     light.setAttribute("aria-hidden", "true");
-    head.append(light, el("strong", "tool-card-name", server.name), el("span", "tools-health-label", HEALTH[server.status]));
-    card.append(head, el("code", "tool-card-id", server.transport === "http" ? server.endpoint : [server.endpoint, ...server.args].join(" ")));
-    card.append(el("p", "tool-card-text", serverSummary(server.tools)));
+    head.append(light, el("strong", "tool-card-name", server.name), kindBadge(server.kind), el("span", "tools-health-label", HEALTH[server.status]));
+    card.append(head);
+    const meta = [originText(server), server.purpose].filter((part) => part.trim() !== "").join(" · ");
+    if (meta !== "") card.append(el("p", "tool-card-users", meta));
+    card.append(el("code", "tool-card-id", addressOf(server)));
+    if (server.kind !== "plugin") card.append(el("p", "tool-card-text", serverSummary(server.tools)));
+    if (server.kind === "plugin") card.append(el("p", "tool-card-text", `Installed in ${server.root ?? server.endpoint}. Its skills appear on the Skills tab; its own servers are connectors of their own.`));
+    if (server.valueKeys.length > 0) card.append(valuesRow(server));
     const problem = explainMcpError(server.error);
     if (problem !== null) {
       const warning = el("p", "tool-card-problem", problem);
       warning.setAttribute("role", "alert");
       card.append(warning);
     }
-    card.append(el("p", "tool-card-users", "Used by: Chat"));
+    if (server.kind !== "plugin") card.append(el("p", "tool-card-users", "Used by: Chat"));
     const actions = el("div", "tool-card-actions");
-    if (server.status === "connected") {
-      actions.append(button("Tools", "agent-box-action agent-box-action-primary", () => openServerTools(server.id)));
-      actions.append(button("Disconnect", "agent-box-action", () => void act({ kind: "disconnect", id: server.id }, `${server.name} disconnected.`)));
-    } else {
-      actions.append(button(server.status === "error" ? "Retry" : "Connect", "agent-box-action agent-box-action-primary", () => void act({ kind: "connect", id: server.id })));
+    if (server.kind !== "plugin") {
+      if (server.status === "connected") {
+        actions.append(button("Tools", "agent-box-action agent-box-action-primary", () => openServerTools(server.id)));
+        actions.append(button("Disconnect", "agent-box-action", () => void act({ kind: "disconnect", id: server.id }, `${server.name} disconnected.`)));
+      } else {
+        const label = server.status === "error" ? "Retry" : server.status === "connecting" ? "Connecting…" : "Connect";
+        const connect = button(label, "agent-box-action agent-box-action-primary", () => void act({ kind: "connect", id: server.id }));
+        connect.disabled = server.status === "connecting";
+        actions.append(connect);
+      }
+      if (missingToken(server)) actions.append(button("Add token", "agent-box-action", () => openValues(server, [TOKEN_KEY])));
     }
-    actions.append(button("Remove", "agent-box-action", () => void (async () => {
-      if (!await askThemed({ title: `Remove ${server.name}?`, body: "The assistant stops using its tools. You can add it again later.", confirmLabel: "Remove", danger: true })) return;
+    const remove = button("Remove", "agent-box-action", () => void (async () => {
+      const destroys = server.kind === "extension" || server.kind === "plugin";
+      if (!await askThemed({
+        title: `Remove ${server.name}?`,
+        body: destroys ? "The assistant stops using its tools, and the files ADCode installed for it are deleted." : "The assistant stops using its tools. You can add it again later.",
+        confirmLabel: "Remove",
+        danger: true,
+      })) return;
       await act({ kind: "remove-server", id: server.id }, `${server.name} removed.`);
-    })()));
+    })());
+    actions.append(remove);
     for (const control of actions.querySelectorAll("button")) {
       const text = control.textContent ?? "";
       control.setAttribute("aria-label", `${text} ${server.name}`);
@@ -291,6 +410,28 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     card.append(actions);
     return card;
   }
+
+  /** Which stored values a connector has, with a way to forget them all. */
+  function valuesRow(server: AssistantServerView): HTMLElement {
+    const row = el("p", "tool-card-values");
+    const lock = el("span", "tools-lock");
+    lock.append(createIcon(ICON.lock));
+    lock.setAttribute("aria-hidden", "true");
+    row.append(lock, document.createTextNode(`${server.valueKeys.join(", ")} · kept in the OS-encrypted store`));
+    const forget = button("Forget", "tools-inline-action", () => void (async () => {
+      if (!await askThemed({ title: `Forget stored values for ${server.name}?`, body: "The connector keeps working only if its values are not needed - most need them, and will ask again.", confirmLabel: "Forget", danger: true })) return;
+      await act({ kind: "forget-values", id: server.id }, `Stored values for ${server.name} forgotten.`);
+    })());
+    forget.setAttribute("aria-label", `Forget stored values for ${server.name}`);
+    row.append(forget);
+    return row;
+  }
+
+  function missingToken(server: AssistantServerView): boolean {
+    return server.kind === "openapi" && server.auth !== null && server.auth.needsToken && !server.valueKeys.includes(TOKEN_KEY);
+  }
+
+  /* ── Skills ────────────────────────────────────────────────────────────── */
 
   function renderSkills(query: string): void {
     const panel = panels.get("skills")!;
@@ -343,6 +484,8 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     card.append(actions);
     return card;
   }
+
+  /* ── Memory ────────────────────────────────────────────────────────────── */
 
   function renderMemory(query: string): void {
     const panel = panels.get("memory")!;
@@ -426,16 +569,44 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     return card;
   }
 
-  /* ── Dialogs ───────────────────────────────────────────────────────────── */
-  function openAddServer(start: "catalogue" | "custom"): void {
-    const { dialog, card, finish } = openFormModal("tools-add-server", "Add an MCP server", () => undefined);
+  /* ── Connector dialogs ─────────────────────────────────────────────────── */
+
+  /** The four ways in: the catalogue, this computer, a file or link, or by hand. */
+  function openAddConnector(start: "catalogue" | "import" | "file" | "custom"): void {
+    const web = isWebSurface();
+    const { dialog, card, finish } = openFormModal("tools-add-connector", "Add a connector", () => undefined);
     const switcher = el("div", "tools-tabs tools-dialog-tabs");
     switcher.setAttribute("role", "tablist");
-    const catalogueTab = button("Catalogue", "tools-tab", () => pick("catalogue"));
-    const customTab = button("Custom", "tools-tab", () => pick("custom"));
-    for (const tab of [catalogueTab, customTab]) tab.setAttribute("role", "tab");
-    switcher.append(catalogueTab, customTab);
+    const steps = [
+      { id: "catalogue" as const, label: "Catalogue" },
+      { id: "import" as const, label: "Import" },
+      { id: "file" as const, label: web ? "Link or text" : "From a file" },
+      { id: "custom" as const, label: "Custom" },
+    ];
+    const stepButtons = new Map<string, HTMLButtonElement>();
+    for (const step of steps) {
+      const control = button(step.label, "tools-tab", () => pick(step.id));
+      control.setAttribute("role", "tab");
+      stepButtons.set(step.id, control);
+      switcher.append(control);
+    }
 
+    const status = el("p", "tools-dialog-status");
+    status.setAttribute("role", "status");
+    status.hidden = true;
+    function report(text: string | null): void {
+      status.textContent = text ?? "";
+      status.hidden = text === null;
+    }
+    /** Run an action from inside the dialog and keep its answer here, where the focus is. */
+    async function run(action: AssistantControlAction, success?: string): Promise<boolean> {
+      const failure = await perform(action, success);
+      report(failure ?? success ?? null);
+      renderDrafts();
+      return failure === null;
+    }
+
+    /* Catalogue: one-click additions that need no values. */
     const catalogue = el("ul", "tools-catalogue");
     catalogue.setAttribute("role", "list");
     const existing = new Set((controls?.servers ?? []).map((server) => server.id));
@@ -460,6 +631,67 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
       catalogue.append(item);
     }
 
+    /* Import: whatever other AI tools on this computer already have. */
+    const importStep = el("div", "tools-dialog-step");
+    importStep.append(el("p", "result-summary", web
+      ? "ADCode scans connector files in your private cloud workspace. It cannot read apps or files on your computer. Use Link or text to paste a config, read a link, or enter a path in the cloud workspace. Nothing is added or started until you press Add on a card."
+      : "ADCode reads the connectors already set up in Claude Desktop, Claude Code, Cursor, Windsurf and VS Code. Nothing is added or started until you press Add on a card."));
+    const scan = button(web ? "Scan cloud workspace" : "Scan this computer", "agents-primary", () => void run({ kind: "scan-imports" }, "Scan finished. Review what was found below."));
+    scan.prepend(createIcon(ICON.search));
+    const scanRow = el("div", "tools-dialog-row");
+    scanRow.append(scan);
+    importStep.append(scanRow, el("p", "tools-dialog-note", web
+      ? "Tokens, environment values and headers are kept encrypted in your private cloud workspace when you add them."
+      : "Values found in those files - tokens, environment values, headers - go to the OS-encrypted store when you add them, never into ADCode's settings."));
+
+    /* From a file: an OS picker, a link, or pasted text. */
+    const fileStep = el("div", "tools-dialog-step");
+    fileStep.append(el("p", "result-summary", web
+      ? "Paste a connector config or API description, read a link, or enter the path of a file or plugin folder already in your cloud workspace. Files on your computer are not opened by this dialog."
+      : "Choose a config file, an OpenAPI description, a chat plugin manifest, a .mcpb extension, a plugin folder - or paste a link or the document itself."));
+    const choose = button("Choose a file or folder…", "agents-primary", () => void (async () => {
+      try {
+        const path = await window.adcode.ai.pickConnectorFile();
+        if (path === null) return;
+        await run({ kind: "import-path", from: path }, "Reading what you chose…");
+      } catch (error) {
+        report(errorText(error, "The file picker could not be opened."));
+      }
+    })());
+    const chooseRow = el("div", "tools-dialog-row");
+    if (web) {
+      const path = el("input", "form-input");
+      path.placeholder = "/workspace/project/.mcp.json";
+      path.setAttribute("aria-label", "Path in cloud workspace");
+      const readPath = button("Read workspace path", "agent-box-action", () => void (async () => {
+        if (path.value.trim() === "") { report("Enter a path in your cloud workspace first."); return; }
+        await run({ kind: "import-path", from: path.value.trim() }, "Reading that workspace path…");
+      })());
+      chooseRow.append(field("In your cloud workspace", path), readPath);
+    } else chooseRow.append(choose);
+    const link = el("input", "form-input");
+    link.type = "url";
+    link.placeholder = "https://example.com/.well-known/ai-plugin.json";
+    link.setAttribute("aria-label", "Address of a connector file or API description");
+    const readLink = button("Read link", "agent-box-action", () => void (async () => {
+      if (link.value.trim() === "") { report("Paste an address first."); return; }
+      await run({ kind: "import-url", from: link.value.trim() }, "Reading that link…");
+    })());
+    const linkRow = el("div", "tools-dialog-row");
+    linkRow.append(link, readLink);
+    const pasted = el("textarea", "form-input");
+    pasted.rows = 5;
+    pasted.placeholder = '{"mcpServers": {"…": {"command": "npx", "args": ["…"]}}}';
+    pasted.setAttribute("aria-label", "Pasted connector document");
+    const readText = button("Read pasted text", "agent-box-action", () => void (async () => {
+      if (pasted.value.trim() === "") { report("Paste the document first."); return; }
+      await run({ kind: "import-text", text: pasted.value, fileName: null }, "Reading the pasted document…");
+    })());
+    const pasteRow = el("div", "tools-dialog-row tools-dialog-row-end");
+    pasteRow.append(readText);
+    fileStep.append(chooseRow, field("From a link", link), linkRow, field("Paste a document", pasted), pasteRow);
+
+    /* Custom: the form for a server or an API known by hand. */
     const form = el("form", "form-dialog-form");
     const name = el("input", "form-input");
     name.required = true;
@@ -471,7 +703,7 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     id.pattern = "[a-z0-9]+(-[a-z0-9]+)*";
     id.placeholder = "project-search";
     const transport = el("select", "form-select");
-    for (const [value, label] of [["stdio", "Local command (stdio)"], ["http", "Remote URL (HTTP)"]] as const) {
+    for (const [value, label] of [["stdio", "Local command (stdio)"], ["http", "Remote URL (HTTP)"], ["sse", "Remote URL (SSE)"]] as const) {
       const option = el("option", "", label);
       option.value = value;
       transport.append(option);
@@ -482,20 +714,26 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     const args = el("input", "form-input");
     args.value = "[]";
     args.placeholder = '["-y", "your-mcp-server"]';
+    const values = el("textarea", "form-input");
+    values.rows = 3;
+    values.placeholder = "API_KEY=… (one NAME=value per line; values go to the OS-encrypted store)";
+    values.setAttribute("aria-label", "Environment variables or headers");
     transport.addEventListener("change", () => {
-      endpoint.placeholder = transport.value === "http" ? "https://example.com/mcp" : "e.g. npx";
-      args.disabled = transport.value === "http";
+      const remote = transport.value !== "stdio";
+      endpoint.placeholder = transport.value === "stdio" ? "e.g. npx" : "https://example.com/mcp";
+      args.disabled = remote;
+      values.placeholder = transport.value === "stdio" ? "API_KEY=… (one NAME=value per line; values go to the OS-encrypted store)" : "Authorization=Bearer … (one Header=value per line)";
     });
     const problem = el("p", "form-notice");
     problem.setAttribute("role", "alert");
     problem.hidden = true;
     const row = el("div", "form-row");
-    row.append(field("Server ID", id, "Lowercase words joined by hyphens."), field("Connection", transport));
+    row.append(field("Connector ID", id, "Lowercase words joined by hyphens."), field("Connection", transport));
     const buttons = el("div", "confirm-buttons");
-    const save = el("button", "result-close", "Save server");
+    const save = el("button", "result-close", "Save connector");
     save.type = "submit";
     buttons.append(button("Cancel", "confirm-cancel", finish), save);
-    form.append(field("Name", name), row, field("Command or URL", endpoint), field("Arguments (a JSON list)", args, "Local commands run with your account's permissions. Keep keys and passwords out of these fields - use the server's own sign-in."), problem, buttons);
+    form.append(field("Name", name), row, field("Command or URL", endpoint), field("Arguments (a JSON list)", args, web ? "Commands run inside your private cloud workspace." : "Local commands run with your account's permissions."), field("Values", values), problem, buttons);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       let parsed: unknown;
@@ -505,24 +743,164 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
         problem.textContent = 'Arguments must be a JSON list of strings, like ["-y", "server-name"].';
         return;
       }
-      const argsList = transport.value === "http" ? [] : (parsed as string[]);
-      void act({ kind: "save-server", server: { id: id.value.trim(), name: name.value.trim(), transport: transport.value as "stdio" | "http", endpoint: endpoint.value.trim(), args: argsList } }, `${name.value.trim()} saved. Connect it from its card.`).then((ok) => {
+      const entered: Record<string, string> = {};
+      for (const line of values.value.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed === "" || trimmed.startsWith("#")) continue;
+        const at = trimmed.indexOf("=");
+        if (at <= 0) {
+          problem.hidden = false;
+          problem.textContent = `"${trimmed}" is not a NAME=value line.`;
+          return;
+        }
+        entered[trimmed.slice(0, at).trim()] = trimmed.slice(at + 1).trim();
+      }
+      const argsList = transport.value === "stdio" ? (parsed as string[]) : [];
+      void act({
+        kind: "save-server",
+        server: { id: id.value.trim(), name: name.value.trim(), transport: transport.value as "stdio" | "http" | "sse", endpoint: endpoint.value.trim(), args: argsList },
+        values: entered,
+      }, `${name.value.trim()} saved. Connect it from its card.`).then((ok) => {
         if (ok) { finish(); showTab("servers"); }
       });
     });
 
-    function pick(which: "catalogue" | "custom"): void {
-      catalogueTab.setAttribute("aria-selected", String(which === "catalogue"));
-      customTab.setAttribute("aria-selected", String(which === "custom"));
+    /* The drafts, whatever step they came from. */
+    const draftsRegion = el("section", "tools-dialog-drafts");
+    function renderDrafts(): void {
+      const drafts = controls?.drafts ?? [];
+      draftsRegion.replaceChildren();
+      draftsRegion.hidden = drafts.length === 0;
+      if (drafts.length === 0) return;
+      draftsRegion.append(el("h3", "tools-dialog-subtitle", `Waiting to be added (${drafts.length.toString()})`));
+      const list = el("ul", "tools-catalogue tools-draft-list");
+      list.setAttribute("role", "list");
+      for (const draft of drafts) list.append(draftListItem(draft));
+      draftsRegion.append(list);
+      markFor(draftsRegion, "stagger", "true", 900);
+      indexForStagger(list);
+    }
+
+    function draftListItem(draft: ConnectorDraftView): HTMLLIElement {
+      const item = el("li", "tools-catalogue-item");
+      item.dataset["kind"] = draft.kind;
+      const text = el("div", "tools-catalogue-text");
+      const nameRow = el("div", "tools-dialog-name");
+      nameRow.append(el("strong", "", draft.name), kindBadge(draft.kind));
+      text.append(nameRow, el("p", "", draft.purpose), el("small", "", draft.source));
+      if (draft.problem !== null) text.append(el("small", "tool-card-problem", draft.problem));
+      const add = button("Add", draft.installable ? "agent-box-action agent-box-action-primary" : "agent-box-action", () => openDraftValues(draft, run));
+      add.disabled = !draft.installable;
+      add.setAttribute("aria-label", `Add ${draft.name}`);
+      const discard = button("Discard", "agent-box-action", () => void run({ kind: "discard-draft", handle: draft.handle }, `${draft.name} discarded.`));
+      discard.setAttribute("aria-label", `Discard ${draft.name}`);
+      const actions = el("div", "tools-dialog-row tools-dialog-row-end");
+      actions.append(add, discard);
+      item.append(text, actions);
+      return item;
+    }
+
+    function pick(which: "catalogue" | "import" | "file" | "custom"): void {
+      for (const [id_, control] of stepButtons) control.setAttribute("aria-selected", String(id_ === which));
       catalogue.hidden = which !== "catalogue";
+      importStep.hidden = which !== "import";
+      fileStep.hidden = which !== "file";
       form.hidden = which !== "custom";
     }
     const closeRow = el("div", "confirm-buttons");
     closeRow.append(button("Close", "confirm-cancel", finish));
-    card.append(switcher, catalogue, form, closeRow);
+    card.append(switcher, catalogue, importStep, fileStep, form, status, draftsRegion, closeRow);
     pick(start);
+    renderDrafts();
     dialog.showModal();
-    (start === "custom" ? name : catalogueTab).focus();
+    (start === "custom" ? name : stepButtons.get(start)!).focus();
+  }
+
+  /** The questions a draft asks, then the add itself. */
+  function openDraftValues(draft: ConnectorDraftView, nested?: (action: AssistantControlAction, success?: string) => Promise<boolean>): void {
+    const { dialog, card, finish } = openFormModal("tools-draft-values", `Add ${draft.name}`, () => undefined);
+    const intro = el("p", "result-summary", draft.purpose);
+    card.append(intro);
+    const context = el("p", "tool-card-users", [draft.source, draft.servers.length > 0 ? `brings ${draft.servers.length.toString()} MCP server${draft.servers.length === 1 ? "" : "s"}: ${draft.servers.map((server) => server.name).join(", ")}` : "", draft.skills.length > 0 ? `${draft.skills.length.toString()} skill${draft.skills.length === 1 ? "" : "s"}` : ""].filter((part) => part !== "").join(" · "));
+    card.append(context);
+    if (draft.warnings.length > 0) {
+      const details = el("details", "tools-draft-notes");
+      details.append(el("summary", "", `${draft.warnings.length.toString()} note${draft.warnings.length === 1 ? "" : "s"} about this connector`));
+      for (const warning of draft.warnings) details.append(el("p", "tool-card-problem", warning));
+      card.append(details);
+    }
+    const form = el("form", "form-dialog-form");
+    const inputs = new Map<string, HTMLInputElement>();
+    for (const ask of draft.values) {
+      const input = el("input", "form-input");
+      input.type = ask.secret ? "password" : "text";
+      input.required = ask.required;
+      input.maxLength = 4096;
+      input.autocomplete = "off";
+      if (ask.preset !== null) input.value = ask.preset;
+      if (ask.key === "__base_url") input.placeholder = "https://api.example.com";
+      inputs.set(ask.key, input);
+      form.append(field(ask.label, input, ask.hint ?? undefined));
+    }
+    const note = el("p", "tools-dialog-note", draft.kind === "extension" || draft.kind === "plugin"
+      ? "The files are copied into ADCode's own folder when you press Add. Values are kept in the OS-encrypted store. Hooks are copied but never run."
+      : "Values are kept in the OS-encrypted store, never in ADCode's settings file. Each tool call still asks you first.");
+    const problem = el("p", "form-notice");
+    problem.setAttribute("role", "alert");
+    problem.hidden = true;
+    const buttons = el("div", "confirm-buttons");
+    const submit = el("button", "result-close", "Add");
+    submit.type = "submit";
+    if (nested === undefined) buttons.append(button("Cancel", "confirm-cancel", finish));
+    else buttons.append(button("Close", "confirm-cancel", finish));
+    buttons.append(submit);
+    form.append(note, problem, buttons);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const answers: Record<string, string> = {};
+      for (const [key, input] of inputs) answers[key] = input.value.trim();
+      void (async () => {
+        const action: AssistantControlAction = { kind: "add-draft", handle: draft.handle, values: answers };
+        if (nested !== undefined) {
+          // Adding from inside the import dialog: keep the dialog open so more can be added.
+          await nested(action, `${draft.name} added. Connect it from its card.`);
+          finish();
+          return;
+        }
+        const ok = await act(action, `${draft.name} added. Connect it from its card.`);
+        if (ok) { finish(); showTab("servers"); } else { problem.hidden = false; problem.textContent = "That could not be added. See the note on the page."; }
+      })();
+    });
+    card.append(form);
+    dialog.showModal();
+    (inputs.values().next().value ?? submit).focus();
+  }
+
+  /** Add or replace one of a connector's stored values. */
+  function openValues(server: AssistantServerView, keys: readonly string[]): void {
+    const { dialog, card, finish } = openFormModal("tools-connector-values", `Values for ${server.name}`, () => undefined);
+    const verb = keys.includes(TOKEN_KEY) ? "token" : "value";
+    card.append(el("p", "result-summary", `Paste the ${verb} here. It goes straight to the OS-encrypted store.`));
+    const form = el("form", "form-dialog-form");
+    const input = el("input", "form-input");
+    input.type = "password";
+    input.required = true;
+    input.maxLength = 4096;
+    input.autocomplete = "off";
+    const buttons = el("div", "confirm-buttons");
+    const save = el("button", "result-close", "Save");
+    save.type = "submit";
+    buttons.append(button("Cancel", "confirm-cancel", finish), save);
+    form.append(field("Token", input), buttons);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const answers: Record<string, string> = {};
+      for (const key of keys) answers[key] = input.value.trim();
+      void act({ kind: "save-server", server: { ...server }, values: answers }, `Saved for ${server.name}. Connect it again to use it.`).then((ok) => { if (ok) finish(); });
+    });
+    card.append(form);
+    dialog.showModal();
+    input.focus();
   }
 
   function openServerTools(serverId: string): void {
@@ -542,7 +920,7 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
       item.append(text, toggle(`Allow ${tool.name}`, tool.enabled, (enabled) => void act({ kind: "set-tool", id: server.id, tool: tool.name, enabled })));
       list.append(item);
     }
-    if (server.tools.length === 0) list.append(el("li", "tools-empty", "This server has not offered any tools."));
+    if (server.tools.length === 0) list.append(el("li", "tools-empty", "This connector has not offered any tools."));
     const buttons = el("div", "confirm-buttons");
     buttons.append(button("Done", "result-close", finish));
     card.append(list, buttons);
@@ -694,6 +1072,6 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     },
     refresh,
     showTab,
-    addServer: () => openAddServer("catalogue"),
+    addServer: () => openAddConnector("import"),
   };
 }

@@ -753,6 +753,7 @@
 .form-dialog { max-width: min(600px, calc(100vw - 48px)); width: 100%; }
 .form-dialog-card { justify-items: stretch; text-align: left; gap: 12px; padding: 22px 24px 18px; max-height: calc(100vh - 64px); overflow: auto; }
 .form-dialog-form { display: grid; gap: 14px; }
+.form-dialog-form[hidden] { display: none; }
 .form-field { display: grid; gap: 6px; min-width: 0; }
 .form-field-label { font-size: 12px; font-weight: 650; color: var(--text-secondary); }
 .form-field-hint { color: var(--text-tertiary); font-size: 11px; }

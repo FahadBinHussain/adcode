@@ -5901,9 +5901,9 @@ function registerCommands(): void {
   });
   add("agents.race", "Agents: Race Several Agents on One Task", () => { openAgents(); agentsPage.newRace(); });
   add("tools.open", "Open Tools", () => openTools());
-  add("tools.servers", "Tools: MCP Servers", () => openTools("servers"));
+  add("tools.servers", "Tools: Connectors", () => openTools("servers"));
   add("tools.skills", "Tools: Skills", () => openTools("skills"));
-  add("tools.addServer", "Tools: Add an MCP Server", () => { openTools("servers"); toolsPage.addServer(); });
+  add("tools.addServer", "Tools: Add a Connector", () => { openTools("servers"); toolsPage.addServer(); });
   add("tools.memory", "Tools: Project Memory", () => openTools("memory"));
   add("tools.builtIn", "Tools: The Assistant's Built-in Tools", () => openTools("built-in"));
   add("workspace.browser", "Open Browser", () => agentBrowserPane.open());

@@ -1,0 +1,14 @@
+{
+  "name": "@adcode/connect",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Outside connector formats, read and normalized: MCP configs, Claude Desktop extensions, Claude Code plugins, ChatGPT plugins and OpenAPI actions.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

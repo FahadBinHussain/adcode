@@ -4,7 +4,8 @@ import { connectAssistantMcp } from "../src/main/assistantMcp.ts";
 
 it("connects to a real stdio MCP server, discovers paginated tools, calls one, and revokes a changed catalogue", async () => {
   const onClose = vi.fn();
-  const session = await connectAssistantMcp({ id: "fixture", name: "Fixture", transport: "stdio", endpoint: process.execPath, args: [fileURLToPath(new URL("./fixtures/assistantMcp.mjs", import.meta.url))] }, onClose);
+  const server = { id: "fixture", name: "Fixture", transport: "stdio" as const, endpoint: process.execPath, args: [fileURLToPath(new URL("./fixtures/assistantMcp.mjs", import.meta.url))], kind: "mcp" as const, origin: "custom" as const, source: "Test", purpose: "", valueKeys: [], spec: null, auth: null, homepage: null, root: null, version: null };
+  const session = await connectAssistantMcp({ server, values: {} }, onClose);
   try {
     expect((await session.list()).map(tool => tool.name)).toEqual(["echo", "change_catalogue"]);
     expect(await session.call("echo", { text: "MCP round trip" }, new AbortController().signal)).toEqual({ content: "MCP round trip", isError: false });

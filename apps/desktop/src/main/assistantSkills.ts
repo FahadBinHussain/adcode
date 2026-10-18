@@ -10,16 +10,34 @@ export const fingerprint = (text: string): string => createHash("sha256").update
 export interface DiscoveredSkill extends AssistantSkillView { readonly content: string; readonly fingerprint: string; readonly directory: string }
 export interface InstalledSkillRoot { readonly path: string; readonly source: string }
 
-/** Known user installation locations only: never crawl an entire disk or plugin cache. */
-export function installedSkillRoots(home: string, codexHome?: string): InstalledSkillRoot[] {
+/**
+ * Known user installation locations only: never crawl an entire disk or plugin cache.
+ *
+ * Plugins installed from outside (Claude Code plugins, and the ones ADCode installs from
+ * a folder or zip) keep their skills in the plugin's own folder, so each installed
+ * plugin's `skills` folder is a location too. It is read fresh on every call, so a
+ * plugin added while the app is running appears without a restart.
+ */
+export async function installedSkillRoots(home: string, codexHome?: string): Promise<InstalledSkillRoot[]> {
   const codex = codexHome ? resolve(codexHome) : join(home, ".codex");
-  return [
+  const roots: InstalledSkillRoot[] = [
     { path: join(home, ".agents", "skills"), source: "User skills" },
     { path: join(home, ".adcode", "skills"), source: "Adcode" },
     { path: join(home, ".claude", "skills"), source: "Claude" },
     { path: join(codex, "skills"), source: "Codex" },
     { path: join(codex, "skills", ".system"), source: "Codex system" },
   ];
+  const installed = join(home, ".adcode", "plugins");
+  for (const entry of await readdir(installed, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
+    const skills = join(installed, entry.name, "skills");
+    try {
+      if ((await stat(skills)).isDirectory()) roots.push({ path: skills, source: `Plugin: ${entry.name}` });
+    } catch {
+      // A plugin without skills is perfectly normal.
+    }
+  }
+  return roots;
 }
 
 /** Common scalar and multiline YAML metadata, without interpreting tags or executing YAML. */

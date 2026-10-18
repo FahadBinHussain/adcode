@@ -264,8 +264,8 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
     keywords: ["agents", "agent board", "parallel agents", "background agents", "multiple agents", "run in background", "kanban", "boxes", "tasks", "ai tasks", "queued", "needs you", "ready to review", "apply and continue", "cost cap", "starter agents", "reviewer", "tester", "bug fixer", "like cursor agents", "like devin"],
   },
   "workbench.toolsPage": {
-    actions: [command("tools.open", "Open Tools"), command("tools.addServer", "Add an MCP server"), command("tools.servers", "MCP servers"), command("tools.skills", "Skills")],
-    keywords: ["tools", "mcp", "mcp server", "model context protocol", "skills", "plugins", "integrations", "marketplace", "playwright", "context7", "figma", "netlify", "chrome devtools", "tool access", "server not working", "agents and tools"],
+    actions: [command("tools.open", "Open Tools"), command("tools.addServer", "Add a connector"), command("tools.servers", "Connectors"), command("tools.skills", "Skills")],
+    keywords: ["tools", "mcp", "mcp server", "model context protocol", "connectors", "skills", "plugins", "integrations", "marketplace", "playwright", "context7", "figma", "netlify", "chrome devtools", "tool access", "server not working", "agents and tools", "claude desktop extension", ".mcpb", "claude code plugin", "chatgpt plugin", "gpt actions", "openapi", "import from cursor", "import from vs code", "windsurf", "api token", "encrypted values"],
   },
   "ai.seesYourApp": {
     actions: [command("ai.checkApp", "Check my running app"), command("workspace.browser", "Open browser")],
