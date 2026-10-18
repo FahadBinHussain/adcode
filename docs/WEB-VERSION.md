@@ -97,7 +97,7 @@ Done on 2026-10-15 unless marked otherwise.
 3. **Previews (launch blocker, DNS checked 2026-10-18)**: a proxied `*.web` DNS record on bluethenics.com (AAAA `100::` is
    enough; the Worker answers), and Advanced Certificate Manager for `*.web.bluethenics.com` -
    Universal SSL covers one wildcard level only. The `*.web.bluethenics.com/*` route is already
-   in place. Without these the app works and previews do not load.
+   in place. The proxied wildcard DNS record is now installed and public DNS/TLS checks pass. Verify an actual authenticated preview after deployment.
    A lookup of `p-5173-abcdefghij.web.bluethenics.com` returned NXDOMAIN on 2026-10-18.
    Verify wildcard certificate coverage after creating the record.
 4. **Firebase authorized domain (verified 2026-10-18)**: the public Firebase project configuration
