@@ -588,6 +588,9 @@ if (checks.threw === undefined) {
 console.log(JSON.stringify(checks, null, 2));
 const passed = checks.accountOpens && checks.accountLocalHonest && checks.accountMobileFits && checks.accountReturnsToChat && checks.accountSections === "Overview|Earnings|Invites|Payouts|Activity|Ledger|Email preferences" && checks.threw === undefined && checks.gateShown && checks.gateDevMode && checks.vibeVisible && checks.onboardingAsks && checks.modelReady && checks.sidebarShowsProject &&
   checks.chatReply && checks.fileWritten && checks.previewServes && checks.changesShowsFile && checks.commitWorks &&
+  checks.workspaceMenu && checks.browserFollowsAgent && checks.noNestedWorkspaceFrame && checks.browserDocked &&
+  checks.reviewResizes && checks.reviewKeyboardReset && checks.browserNavigation && checks.staleBrowserClickRejected &&
+  checks.browserClickWorks && checks.browserTypeWorks && checks.browserMobileFits && checks.browserCloses && checks.usageRingsRemoved &&
   checks.timelineWhileWorking && checks.liveHeading === "Working" && checks.spinnerAtFoot && checks.mascotsWhileWorking <= 1 &&
   checks.timeline?.heading === "Worked" && checks.timeline.folded && checks.timeline.answerOutsideFold && checks.timeline.textBetweenStepsInFold &&
   checks.timeline.thought === "Planning the bakery page" && checks.timeline.mascotsLeft === 0 && checks.unfolds &&
