@@ -882,8 +882,13 @@ select {
    * auto-placement the stage would slide up into the device bar's row whenever it was
    * hidden, and the layout would depend on which combination of things happened to be
    * showing.
+   *
+   * The first track follows the bar rather than pinning it to 32px. Docked, the bar
+   * carries the shared tab strip on a line of its own above the preview's controls, and a
+   * fixed track left that second line outside the bar - where the frame, painted later,
+   * covered it.
    */
-  grid-template-rows: 32px auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   min-width: 0;
   background: var(--bg-editor);
   border-left: 1px solid var(--border-hairline);
@@ -1919,6 +1924,19 @@ body[data-resizing="y"] {
   cursor: row-resize;
 }
 
+/*
+ * While a divider is being dragged, frames take no pointer events.
+ *
+ * Pointer capture is not honoured across a frame boundary: the browser routes input by the
+ * frame under the pointer, and the capture lives in this document. The moment a drag crossed
+ * the preview's page the events stopped arriving - and a drag that stops arriving never
+ * ends, because its release goes the same way. A frame that takes no pointer events keeps
+ * the hit test inside this document, where the capture is.
+ */
+body[data-resizing] iframe {
+  pointer-events: none;
+}
+
 /* ── Live preview: engine badge and output drawer ─────────────────────── */
 
 /*
@@ -1955,9 +1973,11 @@ body[data-resizing="y"] {
  * The drawer takes its height from the frame rather than overlaying it. A dev server's
  * output is read while looking at the page it produced, and a panel that covers the page
  * makes the two impossible to compare.
+ *
+ * Five rows, as above: the 40% is the drawer's row, not the inspector's.
  */
 .preview-pane[data-log="shown"] {
-  grid-template-rows: 32px auto minmax(0, 1fr) 40%;
+  grid-template-rows: auto auto minmax(0, 1fr) auto 40%;
 }
 
 /*

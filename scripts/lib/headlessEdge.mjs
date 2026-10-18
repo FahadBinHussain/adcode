@@ -21,6 +21,12 @@ const CANDIDATES = [
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Edge may put a sync/sign-in dialog ahead of the launched tab in its target list. */
+export function selectPageTarget(targets) {
+  return targets.find((target) => target.type === "page" && target.url === "about:blank")
+    ?? targets.find((target) => target.type === "page" && /^https?:\/\//.test(target.url));
+}
+
 /** `args`: extra browser switches, e.g. `--host-resolver-rules=MAP host address` to reach a site before DNS has. */
 export async function launchBrowser({ port = 9473, width = 1280, height = 820, args = [] } = {}) {
   const executable = CANDIDATES.find((path) => existsSync(path));
@@ -28,7 +34,7 @@ export async function launchBrowser({ port = 9473, width = 1280, height = 820, a
   const profile = mkdtempSync(join(tmpdir(), "adcode-headless-"));
   const child = spawn(executable, [
     "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
-    "--no-first-run", "--no-default-browser-check", "--disable-extensions", `--window-size=${width},${height}`,
+    "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-sync", `--window-size=${width},${height}`,
     ...args,
     "about:blank",
   ], { stdio: "ignore" });
@@ -37,13 +43,14 @@ export async function launchBrowser({ port = 9473, width = 1280, height = 820, a
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
       targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-      if (targets.some((target) => target.type === "page")) break;
+      if (selectPageTarget(targets) !== undefined) break;
     } catch {
       // not up yet
     }
     await sleep(250);
   }
-  const page = targets.find((target) => target.type === "page");
+  // Keep this tab's own socket: an internal dialog appearing later cannot retarget it.
+  const page = selectPageTarget(targets);
   if (page === undefined) throw new Error("The headless browser did not open a page");
 
   const socket = new WebSocket(page.webSocketDebuggerUrl);
@@ -86,6 +93,7 @@ export async function launchBrowser({ port = 9473, width = 1280, height = 820, a
     consoleErrors,
     async goto(url) {
       await send("Page.navigate", { url });
+      await send("Page.bringToFront");
       await sleep(500);
     },
     async evaluate(expression, { awaitPromise = true, timeoutMs = 20_000 } = {}) {
@@ -120,6 +128,7 @@ export async function launchBrowser({ port = 9473, width = 1280, height = 820, a
       return send(method, params);
     },
     async screenshot(path) {
+      await send("Page.bringToFront");
       const { data } = await send("Page.captureScreenshot", { format: "png" });
       const { writeFileSync } = await import("node:fs");
       writeFileSync(path, Buffer.from(data, "base64"));

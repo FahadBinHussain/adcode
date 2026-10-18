@@ -63,6 +63,14 @@ export function createSplitter(deps: SplitterDeps): void {
   function onPointerMove(event: PointerEvent): void {
     if (!dragging) return;
 
+    /*
+     * A release the divider never heard - the window lost the pointer, or a frame under it
+     * swallowed the event - would otherwise leave it pinned to the pointer, resizing as the
+     * mouse travels with nothing held. The first move with no buttons down says the drag is
+     * over, so it ends here and what the user last saw is what gets kept.
+     */
+    if (event.buttons === 0) { stop(event); return; }
+
     const position = axis === "x" ? event.clientX : event.clientY;
     pendingSize = startSize + (position - startPointer) * deps.sign;
     paint.schedule();
@@ -79,10 +87,29 @@ export function createSplitter(deps: SplitterDeps): void {
     deps.commit();
   }
 
+  /**
+   * Did this press land on the divider itself? The `::before` gives it a wider grab area than
+   * its 6px track, so the test allows for that overhang.
+   */
+  function onDivider(event: PointerEvent): boolean {
+    const rect = element.getBoundingClientRect();
+    return axis === "x"
+      ? event.clientX >= rect.left - 3 && event.clientX <= rect.right + 3
+      : event.clientY >= rect.top - 3 && event.clientY <= rect.bottom + 3;
+  }
+
   element.addEventListener("pointerdown", (event) => {
     // Left button only: a right-click here should not start a drag that can only be
     // ended by pressing and releasing the left one.
     if (event.button !== 0) return;
+
+    /*
+     * A capture held over from a drag whose release was never heard - the window lost the
+     * focus, or a frame took the event - would otherwise re-anchor this press, which is
+     * anywhere the user happened to click, and resize from a place the divider is not.
+     * Ending that drag first keeps the divider's meaning tied to its own position.
+     */
+    if (dragging && !onDivider(event)) { stop(event); return; }
 
     event.preventDefault();
     dragging = true;

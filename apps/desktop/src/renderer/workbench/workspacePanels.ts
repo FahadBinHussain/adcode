@@ -1,4 +1,5 @@
 import { createIcon, ICON } from "./icons.ts";
+import { createSplitter } from "./splitter.ts";
 import { reconcileTabs, tabMotionAllowed, updateTabStrip } from "./tabMotion.ts";
 /** Shared review tabs without reparenting live panels or reloading preview frames. */
 type TabNode = { wrap: HTMLElement; button: HTMLButtonElement; label: HTMLElement; close: HTMLButtonElement };
@@ -14,14 +15,84 @@ function measure(): void {
   if (!rect || rect.height === 0) return;
   document.body.style.setProperty("--workspace-panel-top", `${rect.top}px`);
   document.body.style.setProperty("--workspace-panel-bottom", `${Math.max(8, innerHeight - rect.bottom)}px`);
+  // A window that shrank cannot fit a width it once could: re-clamp the review column.
+  if (reviewWidth !== null && reviewWidth > reviewMax()) { reviewWidth = reviewMax(); paintReviewWidth(); }
 }
 window.addEventListener("resize", measure);
+
+/*
+ * The review column's width, and the drag that can close it.
+ *
+ * Docked, the review column is the workbench's third box: a strip of tabs with the panel
+ * they select under it. It keeps the window's own share - 45vw, which follows the window -
+ * until someone drags the edge, and their pixels after that. Dragged nearly shut and
+ * released, the panel it holds closes, which is what "drag a box away" should mean.
+ *
+ * The width lives on the body as one variable, because the column and the conversation
+ * beside it have to agree about where the boundary is - the same arrangement as the rail.
+ */
+const REVIEW_KEY = "adcode.workspace.review.width";
+/** Narrower than this the column stops being a place to work, so a resize snaps up to it. */
+const REVIEW_MIN = 320;
+/** A release this narrow is a close, not a resize. */
+const REVIEW_CLOSE_AT = 200;
+function reviewDefault(): number { return Math.round(Math.max(REVIEW_MIN, window.innerWidth * 0.45)); }
+/** Never so wide that the conversation beside it stops being usable. */
+function reviewMax(): number { return Math.max(REVIEW_MIN, Math.min(window.innerWidth * 0.75, window.innerWidth - 640)); }
+let reviewWidth: number | null = null;
+try {
+  const saved = Math.round(Number(localStorage.getItem(REVIEW_KEY)));
+  if (Number.isFinite(saved) && saved > 0) reviewWidth = Math.max(REVIEW_MIN, Math.min(reviewMax(), saved));
+} catch { /* Optional storage. */ }
+/** The width the column comes back to: what it last was, when it was last a width. */
+let reviewRestore: number | null = reviewWidth;
+function paintReviewWidth(): void {
+  if (reviewWidth === null) document.body.style.removeProperty("--workspace-review-width");
+  else document.body.style.setProperty("--workspace-review-width", `${reviewWidth}px`);
+}
+paintReviewWidth();
+const reviewSplitter = document.createElement("div");
+reviewSplitter.id = "workspace-review-splitter";
+document.body.append(reviewSplitter);
+createSplitter({
+  element: reviewSplitter, axis: "x", sign: -1, label: "Resize review panel", reset: reviewDefault,
+  current: () => active?.element.getBoundingClientRect().width ?? reviewWidth ?? reviewDefault(),
+  // Nothing at all while the pointer is down: dragging the column away is a gesture, and
+  // the release decides whether it was a squeeze or a close.
+  apply: (value) => { reviewWidth = Math.max(0, Math.min(reviewMax(), value)); paintReviewWidth(); },
+  commit: () => {
+    if (reviewWidth !== null && reviewWidth < REVIEW_MIN) {
+      if (reviewWidth > REVIEW_CLOSE_AT) reviewWidth = REVIEW_MIN;
+      else {
+        // Dragged away: the panel closes and remembers where the column last was, so
+        // Preview or Changes opens it the same width - now or after a restart.
+        const closing = active;
+        reviewWidth = reviewRestore;
+        paintReviewWidth();
+        closing?.close();
+        return;
+      }
+    }
+    // Within a rounding error of the default share: let the window have the width back.
+    if (reviewWidth !== null && Math.abs(reviewWidth - reviewDefault()) <= 2) reviewWidth = null;
+    reviewRestore = reviewWidth;
+    paintReviewWidth();
+    try {
+      if (reviewWidth === null) localStorage.removeItem(REVIEW_KEY);
+      else localStorage.setItem(REVIEW_KEY, String(reviewWidth));
+    } catch { /* Optional storage. */ }
+  },
+});
 function refresh(): void {
   measure();
   const shown = entries.filter(e => !e.element.hidden && !e.element.closest("dialog"));
   if (!active || !shown.includes(active)) active = shown.at(-1);
   const docked = wide.matches && document.body.dataset["workspaceMode"] === "vibe";
   document.body.classList.toggle("workspace-review-open", docked && shown.length > 0);
+  // The column's edge can be dragged only while there is a column to drag: maximised it
+  // fills the workbench, and there is no boundary left for the pointer to find.
+  const maximised = active?.element.dataset["maximised"] === "true";
+  document.body.classList.toggle("workspace-review-resizable", docked && shown.length > 0 && !maximised);
   for (const entry of entries) {
     const available = shown.includes(entry);
     entry.element.classList.toggle("workspace-panel-docked", docked && available);
@@ -78,7 +149,7 @@ export function registerWorkspacePanel(element: HTMLElement, header: HTMLElement
     if (event.key === "Home" || event.key === "End") { event.preventDefault(); buttons[event.key === "Home" ? 0 : buttons.length - 1]?.focus(); }
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); buttons[(index + (event.key === "ArrowRight" ? 1 : buttons.length - 1)) % buttons.length]?.focus(); }
   });
-  new MutationObserver(() => { if (!element.hidden) active = entry; refresh(); }).observe(element, { attributes: true, attributeFilter: ["hidden"] });
+  new MutationObserver(() => { if (!element.hidden) active = entry; refresh(); }).observe(element, { attributes: true, attributeFilter: ["hidden", "data-maximised"] });
   refresh();
   return { activate: () => select(entry), refresh };
 }

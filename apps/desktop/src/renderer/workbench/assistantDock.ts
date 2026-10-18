@@ -253,21 +253,42 @@ export function createAssistantDock(deps: AssistantDockDeps) {
   // of the workbench, with its width on the body so both the rail and the
   // offset content read the same value.
   const RAIL_KEY = "adcode.vibe.rail.width";
+  const RAIL_MIN = 232;
+  const RAIL_MAX = 400;
+  /** A release narrower than this closes the rail instead of resizing it. */
+  const RAIL_CLOSE_AT = 150;
   let railWidth = 272;
-  try { railWidth = Math.max(232, Math.min(400, Number(localStorage.getItem(RAIL_KEY)) || 272)); } catch { /* Optional storage. */ }
-  document.body.style.setProperty("--vibe-rail-width", `${railWidth}px`);
+  try { railWidth = Math.max(RAIL_MIN, Math.min(RAIL_MAX, Number(localStorage.getItem(RAIL_KEY)) || 272)); } catch { /* Optional storage. */ }
+  /** What the rail comes back to: the last width that was still a width. */
+  let railRestore = railWidth;
+  const paintRail = (): void => { document.body.style.setProperty("--vibe-rail-width", `${railWidth}px`); };
+  paintRail();
   const railSplitter = document.createElement("div");
   railSplitter.id = "vibe-rail-splitter";
   document.body.append(railSplitter);
   createSplitter({
     element: railSplitter, axis: "x", sign: 1, label: "Resize vibe sidebar", reset: 272,
     current: () => railWidth,
+    // Below its minimum the rail keeps shrinking, so pulling it away is a gesture that
+    // reads; the release then decides between a squeeze and a close.
     apply: (value) => {
-      railWidth = Math.max(232, Math.min(400, window.innerWidth * 0.4, value));
-      document.body.style.setProperty("--vibe-rail-width", `${railWidth}px`);
+      railWidth = Math.max(0, Math.min(RAIL_MAX, window.innerWidth * 0.4, value));
+      paintRail();
     },
     commit: () => {
-      try { localStorage.setItem(RAIL_KEY, String(railWidth)); } catch { /* Optional storage. */ }
+      if (railWidth < RAIL_MIN) {
+        if (railWidth > RAIL_CLOSE_AT) railWidth = RAIL_MIN;
+        else {
+          railWidth = railRestore;
+          paintRail();
+          if (vibeSidebar?.isDocked() === true) vibeSidebar.toggle();
+          return;
+        }
+      }
+      railWidth = Math.max(RAIL_MIN, railWidth);
+      railRestore = railWidth;
+      paintRail();
+      try { localStorage.setItem(RAIL_KEY, String(Math.round(railWidth))); } catch { /* Optional storage. */ }
     },
   });
   const brand = document.createElement("span");

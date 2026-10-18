@@ -72,11 +72,26 @@
 .workspace-panel-docked > .floating-panel-header { cursor:default; }
 .workspace-panel-docked > .floating-panel-edge,.workspace-panel-docked > .preview-resize-handle { display:none; }
 @media (min-width:1200px) {
- body.workspace-review-open .vibe-workspace { right:calc(45vw + 8px); border:1px solid var(--border-subtle); border-radius:16px; overflow:hidden; }
- .workspace-panel-docked:not([data-maximised="true"]) { position:fixed !important; inset:var(--workspace-panel-top,48px) 8px var(--workspace-panel-bottom,8px) auto !important; width:45vw !important; height:auto !important; transform:none !important; border-radius:16px !important; }
- .workspace-panel-docked > .preview-bar { flex-wrap:wrap; }
+ body.workspace-review-open .vibe-workspace { right:calc(var(--workspace-review-width,45vw) + 8px); border:1px solid var(--border-subtle); border-radius:16px; overflow:hidden; }
+ .workspace-panel-docked:not([data-maximised="true"]) { position:fixed !important; inset:var(--workspace-panel-top,48px) 8px var(--workspace-panel-bottom,8px) auto !important; width:var(--workspace-review-width,45vw) !important; height:auto !important; transform:none !important; border-radius:16px !important; }
+ /* Two rows, the way the browser panel's header has them: the shared tab strip, then this
+    panel's own controls. The pane's first grid track is auto, so both rows sit inside the
+    bar instead of the second one sliding under the frame. */
+ .workspace-panel-docked > .preview-bar { flex-wrap:wrap; padding-block:4px; }
  .workspace-panel-docked > .preview-bar > .workspace-panel-tabs { flex-basis:100%; }
 }
+/*
+ * The docked review column's edge, draggable - the rail's divider, mirrored.
+ *
+ * The column grows as the pointer moves left. Squeezed to nothing and released, the panel
+ * it holds closes; the top bar's Preview and Changes buttons bring one back. Shown only
+ * while there is a column to resize - never while one is maximised, which has no boundary
+ * left to find. The z-index clears the preview pane's own 40, because that pane is one of
+ * the columns this divider has to be draggable over.
+ */
+#workspace-review-splitter { display:none; position:fixed; z-index:41; top:var(--workspace-panel-top,48px); bottom:var(--workspace-panel-bottom,8px); right:calc(var(--workspace-review-width,45vw) + 5px); width:6px; padding:0; border:0; background:transparent; cursor:ew-resize; touch-action:none; }
+body.workspace-review-resizable #workspace-review-splitter { display:block; }
+#workspace-review-splitter:hover,#workspace-review-splitter[data-dragging="true"],#workspace-review-splitter:focus-visible { background:color-mix(in srgb,var(--accent) 28%,transparent); outline:none; }
 [data-reduced-motion="true"] :is(.workspace-hive,.workspace-control-panel,.agent-browser *) { animation:none !important; transition:none !important; }
 @media (hover:hover) and (pointer:fine) { .workspace-panel-tabs button:hover { background:var(--bg-hover); color:var(--text-primary); } }
 

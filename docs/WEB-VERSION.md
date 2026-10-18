@@ -69,6 +69,11 @@ status stays `full` until the next UTC calendar month; they may then choose Try 
 the configured cap can also admit them again before then. Personal runtime remains unlimited
 while the shared budget and capacity are available.
 
+The cutoff RPC accepts both the new charge result and the prior budget object's void result.
+During a mixed-version rollout, a void result triggers the old object's exact admission check
+for the session's existing slot, so cap checks do not depend on rounded statistics. Runtime is
+recorded before this extra check, preventing an admission-check retry from charging it twice.
+
 This is an operational cutoff, not a hard Cloudflare billing limit. Under normal alarm timing,
 the estimate can overshoot by up to one polling interval per running sandbox, plus the time to
 finish shutdown snapshots. Startup/restoration, platform scheduling delays and stop failures can

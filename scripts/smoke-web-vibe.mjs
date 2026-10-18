@@ -256,6 +256,19 @@ try {
   checks.noNestedWorkspaceFrame = await browser.evaluate("[document.querySelector('.main'),document.querySelector('#workbench')].every(e=>parseFloat(getComputedStyle(e).borderTopWidth)===0 && getComputedStyle(e).boxShadow==='none')");
   checks.browserDocked = await browser.evaluate("document.querySelector('#floating-browser').classList.contains('workspace-panel-docked') && document.querySelector('#floating-browser').getBoundingClientRect().left >= document.querySelector('.vibe-workspace').getBoundingClientRect().right");
   await shot("browser-docked");
+  // Exercise the newly consolidated divider with real pointer and keyboard input.
+  const divider = await browser.evaluate(`(() => {
+    const edge = document.querySelector('#workspace-review-splitter').getBoundingClientRect();
+    return { x: edge.left + edge.width / 2, y: edge.top + Math.min(100, edge.height / 2), width: document.querySelector('#floating-browser').getBoundingClientRect().width };
+  })()`);
+  await browser.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: divider.x, y: divider.y, button: 'left', buttons: 1, clickCount: 1 });
+  await browser.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: divider.x - 80, y: divider.y, button: 'left', buttons: 1 });
+  await browser.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: divider.x - 80, y: divider.y, button: 'left', buttons: 0, clickCount: 1 });
+  checks.reviewResizes = await browser.waitFor(`!document.body.dataset.resizing && document.querySelector('#floating-browser').getBoundingClientRect().width > ${divider.width + 60}`);
+  await browser.evaluate("document.querySelector('#workspace-review-splitter').focus()");
+  await browser.cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 });
+  await browser.cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 });
+  checks.reviewKeyboardReset = await browser.waitFor(`Math.abs(document.querySelector('#floating-browser').getBoundingClientRect().width - ${divider.width}) < 3`);
   checks.browserNavigation = await browser.evaluate(`window.adcode.browser.view({url:${JSON.stringify(previewUrl)}, screenshot:true}).then(v => v.report.includes('Fresh bread daily') && v.image?.startsWith('data:image/'))`);
   checks.staleBrowserClickRejected = await browser.evaluate("window.adcode.browser.view({expectedUpdatedAt:1,actions:[{type:'eval',expression:'document.body.textContent=\"Wrong page\"'}]}).then(() => false, e => e.message.includes('changed the page'))");
   const fixture = "document.body.innerHTML = '<button style=\"position:fixed;left:20px;top:20px\" onclick=\"this.textContent=String(40+2)\">Click me</button><input aria-label=\"Browser test field\" style=\"position:fixed;left:20px;top:90px\">'; true";
@@ -495,7 +508,18 @@ try {
 
   await phase("phone");
   await browser.viewport(390, 844, true);
-  await sleep(1200);
+  await browser.cdp("Page.bringToFront");
+  await browser.evaluate(`(() => { if (document.body.dataset.vibeDrawer === 'open') document.querySelector('.web-sidebar-close')?.click(); return true; })()`);
+  checks.phoneReadable = await browser.waitFor(`(() => {
+    const sidebar = document.querySelector('.vibe-sidebar');
+    const scrim = document.querySelector('.vibe-drawer-scrim');
+    const transcript = document.querySelector('.chat-transcript');
+    if (!sidebar || !transcript || document.body.dataset.vibeDrawer === 'open') return false;
+    const hidden = element => !element || getComputedStyle(element).display === 'none' || getComputedStyle(element).visibility === 'hidden' || Number(getComputedStyle(element).opacity) === 0;
+    const bounds = transcript.getBoundingClientRect();
+    return (hidden(sidebar) || sidebar.getBoundingClientRect().right <= 1)
+      && hidden(scrim) && bounds.left >= -1 && bounds.right <= innerWidth + 1;
+  })()`, { timeoutMs: 15_000 });
   await shot("phone");
   checks.phoneOverflow = await browser.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth");
   checks.modelRequests = requests.length;
@@ -573,7 +597,7 @@ const passed = checks.accountOpens && checks.accountLocalHonest && checks.accoun
   checks.helperRowsWhileWorking?.spinning >= 1 && checks.helperRowsWhileWorking?.details?.some((text) => text.length > 0) &&
   checks.helpersAnswered && checks.helpersSettle?.states?.join("|") === "done|done" && checks.helpersSettle?.spinners === 0 && checks.helpersSettle?.calls?.join("|") === "0 calls|1 call" &&
   checks.helpersSettle?.summary === "all 2 finished" && checks.helpersSettle?.unfolded === true && checks.helpersSettle?.stepOpen === true && checks.helpersSettle?.reportOpen === true && checks.helpersSettle?.reportVisible === true && checks.noChatLeftWorkingAfterHelpers &&
-  checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.refusalExplained === true && checks.phoneOverflow === 0 && checks.consoleErrors.length === 0;
+  checks.reconnectRestores && checks.uploadWorks && checks.downloadWorks && checks.viewPageSawPage && checks.refusalExplained === true && checks.phoneOverflow === 0 && checks.phoneReadable === true && checks.consoleErrors.length === 0;
 if (!passed) {
   console.log("--- stack log (tail) ---");
   console.log(stackLog.slice(-4000));

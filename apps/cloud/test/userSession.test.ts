@@ -73,8 +73,8 @@ function fixture(options: { saved?: boolean; missing?: boolean; restoreStatus?: 
     delete: vi.fn(),
   };
   const budget = {
-    charge: vi.fn(async () => ({ full: options.budgetFull ?? false })),
-    admit: vi.fn(async () => ({ ok: true })),
+    charge: vi.fn(async (): Promise<{ full: boolean } | void> => ({ full: options.budgetFull ?? false })),
+    admit: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: "full" | "busy" }> => ({ ok: true })),
     release: vi.fn(async () => undefined),
   };
   const env = {
@@ -229,5 +229,26 @@ describe("monthly budget cutoff for active sessions", () => {
     budget.charge.mockRejectedValueOnce(new Error("accounting unavailable"));
     await expect(session.alarm()).rejects.toThrow("accounting unavailable");
     expect(values.get("lastTickAt")).toBe(previousTick);
+  });
+
+  it("pauses at the exact cap when an older budget RPC returns no result", async () => {
+    const { session, lifecycle, budget, frames, tab } = fixture({ restored: true });
+    budget.charge.mockResolvedValueOnce(undefined);
+    budget.admit.mockResolvedValueOnce({ ok: false, reason: "full" });
+    lifecycle.tabs.add(tab as unknown as WebSocket);
+    await session.alarm();
+    expect(budget.admit).toHaveBeenCalledWith("person");
+    expect(frames.at(-1)?.status).toMatchObject({ state: "full" });
+    expect(tab.close).toHaveBeenCalledWith(4402, "full");
+  });
+
+  it("does not re-charge a recorded interval if the legacy admission fallback fails", async () => {
+    const { session, budget, values } = fixture({ restored: true });
+    budget.charge.mockResolvedValueOnce(undefined);
+    budget.admit.mockRejectedValueOnce(new Error("admission unavailable"));
+    await expect(session.alarm()).rejects.toThrow("admission unavailable");
+    expect(values.get("lastTickAt")).toBe(Date.now());
+    await session.alarm();
+    expect(budget.charge.mock.calls).toEqual([["person", 1], ["person", 0]]);
   });
 });

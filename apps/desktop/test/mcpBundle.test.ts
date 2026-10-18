@@ -68,6 +68,8 @@ describe("the MCP server an installed build points agents at", () => {
    * read it, and once inside the asar, where only Electron can.
    */
   it("keeps the bundle out of the asar, where no outside process could read it", () => {
+    // Loading electron-builder's packaging graph can exceed the pure-test budget on
+    // a cold Windows filesystem, just as building the real bundle below can.
     const { FileMatcher } = require("app-builder-lib/out/fileMatcher.js");
     const app = join(ROOT, "apps", "desktop");
     const packed = new FileMatcher(
@@ -82,7 +84,7 @@ describe("the MCP server an installed build points agents at", () => {
     expect(packed(join(app, bundleDir, MCP_BUNDLE.file), file)).toBe(false);
     expect(packed(join(app, bundleDir, "package.json"), file)).toBe(false);
     expect(packed(join(app, "out", "main", "index.js"), file)).toBe(true);
-  });
+  }, 90_000);
 
   it("is bundled by both packaging scripts before electron-builder runs", () => {
     for (const script of ["package.mjs", "package-store.mjs"]) {

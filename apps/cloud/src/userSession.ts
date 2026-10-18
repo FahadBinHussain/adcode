@@ -457,9 +457,16 @@ export class UserSession extends DurableObject<Env> {
     const lastTick = await this.ctx.storage.get<number>("lastTickAt");
     if (lastTick === undefined) return false;
     const delta = Math.max(0, now - lastTick);
-    const full = (await this.env.BUDGET.getByName("global").charge(await this.uid(), delta / MINUTE)).full;
+    const uid = await this.uid();
+    const budget = this.env.BUDGET.getByName("global");
+    const charged = await budget.charge(uid, delta / MINUTE);
     await this.ctx.storage.put({ usage: addUsage(await this.usage(), now, delta, this.windowMs()), lastTickAt: now });
-    return full;
+    if (charged !== undefined) return charged.full;
+    // A BudgetObject on the prior Worker version returns void. Its admission check uses
+    // the exact cap and recognizes this session's existing slot. Keep the charged interval
+    // recorded before the extra RPC, so its failure cannot charge that interval twice.
+    const admitted = await budget.admit(uid);
+    return !admitted.ok && admitted.reason === "full";
   }
 
   private async sleep(state: "sleeping" | "spent" | "full", code: number): Promise<void> {

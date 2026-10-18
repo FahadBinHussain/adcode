@@ -121,7 +121,8 @@ export default defineConfig(({ mode }) => ({
     // The renderer loads after sign-in. Prebundle its browser dependencies now so Vite
     // cannot invalidate that first dynamic import by discovering them mid-startup.
     include: [
-      "firebase/app", "firebase/auth", "react", "react-dom/client", "lucide",
+      "firebase/app", "firebase/auth", "react", "react-dom/client",
+      "react/jsx-runtime", "react/jsx-dev-runtime", "lucide",
       "monaco-editor",
       "monaco-editor/languages/features/typescript/register.js",
       "monaco-editor/languages/features/json/register.js",
