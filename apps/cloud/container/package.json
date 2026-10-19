@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "description": "What adcode-host needs installed beside its bundle inside the sandbox image.",
+  "allowScripts": {
+    "node-pty@1.1.0": true
+  },
   "dependencies": {
     "node-pty": "1.1.0"
   }

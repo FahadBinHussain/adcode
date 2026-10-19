@@ -18,9 +18,12 @@ npm run verify
 npm run cloud:build
 npm run web:build
 npm run smoke:web-vibe -- --no-build
+npm run smoke:cloud-container
 ```
 
 Account acceptance uses synthetic responses, never real payouts. `npm run smoke:account` requires a local Vite server; set `ADCODE_ACCOUNT_TEST_URL` if its port differs from 5180. Run heavy browser checks separately on machines where concurrent Chromium fixtures cause contention.
+
+The container check requires a working local Linux Docker engine and the freshly generated cloud bundle. It builds the image, then checks the real bundled host, secret-protected access, Git/files, Chromium at desktop and phone sizes, native terminal commands, downloads and home-archive restoration in two fresh disposable containers. Runtime networking is isolated, no host ports are published, and cleanup removes only the check's own labeled containers/network. Test traffic reaches container loopback through the local Docker connection. It leaves the image available locally and writes screenshots/results under `.tmp/cloud-container-check-*/`. `-- --no-build` checks the existing image and verifies its host bundle against the current build.
 
 ## Production preparation and remaining launch steps
 
@@ -28,11 +31,13 @@ Account acceptance uses synthetic responses, never real payouts. `npm run smoke:
 2. Completed: applied `supabase/migrations/20261018184813_free_ai_credits.sql`, then `supabase/migrations/20261018184823_unlimited_included_ai.sql`. The filenames now match the remote migration versions. Do not replay them on production; migration history and actual schema were verified.
 3. Completed: verified `reserve_included_ai` (16 arguments), `settle_included_ai` (7), and `reserve_unlimited_ai` (16). Require service-role execution, no anonymous/authenticated execution, and RLS on `ai_credit_windows`. Keep legacy RPCs for rollback.
 4. Completed: added proxied wildcard DNS `*.web.bluethenics.com` as AAAA `100::`. Public DNS resolves, normal TLS verification succeeds, and an unknown preview ID returns the expected 404. A real authenticated preview remains part of deployment acceptance.
-5. Validate the Linux sandbox image. Local Docker startup currently fails on an inaccessible stale socket, so a local image build is not yet established. Docker Desktop 4.91.0 is installed. Docker maintainers identify the stuck socket rename as fixed in 4.92+; the current official 4.95.0 update also includes later WSL fixes. Prefer a supported in-place update preserving Docker data/settings, or use another supported Linux Docker host. Avoid factory reset or repeated socket workarounds. See https://github.com/docker/desktop-feedback/issues/460 and https://docs.docker.com/desktop/release-notes/. A Worker-only dry run skips this image check.
-6. Deploy the reviewed website/API, then the cloud Worker, assets and image together. The cloud configuration includes `ACCOUNT_API` bound to the existing `adcode` Worker. Current production predates this account gateway.
+5. Completed on 2026-10-19: the Linux image build and full runtime acceptance passed, including real Chromium, native terminal commands and restoration into a fresh home. Repeat with `npm run smoke:cloud-container`. Both stopped Docker data disks and settings were backed up and hash-verified before a supported in-place update to Docker Desktop 4.95.0; Linux Engine 29.8.2 is healthy and existing inventory/preferences remain available. No reset or reboot was performed. The image explicitly permits the pinned native terminal dependency's install scripts and verifies that its Linux binding loads during build. A Worker-only dry run skips the image checks.
+6. After launch authorization, record fresh deployment version IDs, then deploy the reviewed website/API followed by the cloud Worker, assets and image together. The cloud configuration includes `ACCOUNT_API` bound to the existing `adcode` Worker. Current production predates this account gateway. Run `node scripts/cloud-probe.mjs https://web.bluethenics.com` and inspect every result: the production page must omit development sign-in, send its security headers, and reject unauthenticated API/socket access and foreign origins. The probe prints findings; its exit code alone is not acceptance.
 7. Complete signed-in acceptance: Google/GitHub or email login, workspace startup, a real included-AI request AND settlement, file editing, preview, reconnect, saved-home restore, and account navigation. Use a test account; synthetic tests do not establish real payouts or provider entitlement.
 
 `web.bluethenics.com` is already in Firebase's authorized domains. Presence of secret names does not verify their values. Only the explicitly approved database and preview DNS preparation changed production. No application deployment, payment action, or email send was performed.
+
+The `adcode-cloud-homes` bucket's enabled 90-day object expiration rule was independently verified through the Cloudflare API on 2026-10-19.
 
 ## Rollback and local work
 

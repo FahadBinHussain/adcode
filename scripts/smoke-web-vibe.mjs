@@ -513,13 +513,31 @@ try {
   checks.phoneReadable = await browser.waitFor(`(() => {
     const sidebar = document.querySelector('.vibe-sidebar');
     const scrim = document.querySelector('.vibe-drawer-scrim');
-    const transcript = document.querySelector('.chat-transcript');
-    if (!sidebar || !transcript || document.body.dataset.vibeDrawer === 'open') return false;
+    const transcript = document.querySelector('.vibe-workspace .chat-transcript');
+    if (!sidebar || !transcript || document.body.dataset.vibeRail !== 'compact' || document.body.dataset.vibeDrawer === 'open') return false;
     const hidden = element => !element || getComputedStyle(element).display === 'none' || getComputedStyle(element).visibility === 'hidden' || Number(getComputedStyle(element).opacity) === 0;
     const bounds = transcript.getBoundingClientRect();
     return (hidden(sidebar) || sidebar.getBoundingClientRect().right <= 1)
-      && hidden(scrim) && bounds.left >= -1 && bounds.right <= innerWidth + 1;
+      && hidden(scrim) && bounds.width >= innerWidth - 40 && bounds.height > 0
+      && bounds.left >= -1 && bounds.right <= innerWidth + 1;
   })()`, { timeoutMs: 15_000 });
+  checks.phoneLayout = await browser.evaluate(`(() => {
+    const describe = element => element ? {
+      bounds: element.getBoundingClientRect().toJSON(),
+      display: getComputedStyle(element).display,
+      visibility: getComputedStyle(element).visibility,
+      opacity: getComputedStyle(element).opacity,
+      hiddenParent: element.closest('[hidden]')?.className ?? null,
+    } : null;
+    return {
+      viewport: innerWidth,
+      drawer: document.body.dataset.vibeDrawer,
+      rail: document.body.dataset.vibeRail,
+      sidebar: describe(document.querySelector('.vibe-sidebar')),
+      scrim: describe(document.querySelector('.vibe-drawer-scrim')),
+      transcripts: [...document.querySelectorAll('.chat-transcript')].map(describe),
+    };
+  })()`);
   await shot("phone");
   checks.phoneOverflow = await browser.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth");
   checks.modelRequests = requests.length;

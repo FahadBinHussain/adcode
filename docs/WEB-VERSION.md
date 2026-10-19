@@ -89,17 +89,16 @@ active/busy-session cutoff, unlimited runtime below the cap, and UTC month rollo
 
 ## One-time setup (Cloudflare and Firebase)
 
-Done on 2026-10-15 unless marked otherwise.
+Initial setup was completed on 2026-10-15; later verification dates are noted below.
 
-1. **R2 bucket** `adcode-cloud-homes`, with a lifecycle rule deleting objects older than 90 days.
+1. **R2 bucket** `adcode-cloud-homes`, with an enabled lifecycle rule deleting objects older than 90 days (verified through the Cloudflare API on 2026-10-19).
 2. **The app's domain**: `web.bluethenics.com` is a Workers custom domain (`routes` in
    `wrangler.jsonc`); the first deploy created its DNS record and certificate itself.
-3. **Previews (launch blocker, DNS checked 2026-10-18)**: a proxied `*.web` DNS record on bluethenics.com (AAAA `100::` is
-   enough; the Worker answers), and Advanced Certificate Manager for `*.web.bluethenics.com` -
-   Universal SSL covers one wildcard level only. The `*.web.bluethenics.com/*` route is already
-   in place. The proxied wildcard DNS record is now installed and public DNS/TLS checks pass. Verify an actual authenticated preview after deployment.
-   A lookup of `p-5173-abcdefghij.web.bluethenics.com` returned NXDOMAIN on 2026-10-18.
-   Verify wildcard certificate coverage after creating the record.
+3. **Previews (prepared 2026-10-18)**: the proxied `*.web` AAAA `100::` DNS record and
+   `*.web.bluethenics.com/*` Worker route are installed. Public DNS resolves and an unknown
+   preview host passes normal TLS verification before returning the expected 404.
+   Preview hosts need certificate coverage for `*.web.bluethenics.com`, beyond Universal
+   SSL's first wildcard level. Verify an actual authenticated preview after deployment.
 4. **Firebase authorized domain (verified 2026-10-18)**: the public Firebase project configuration
    includes `web.bluethenics.com`. This meets the authorized-domain requirement for Google
    and GitHub sign-in from this origin.

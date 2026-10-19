@@ -121,7 +121,10 @@ export async function launchBrowser({ port = 9473, width = 1280, height = 820, a
     },
     async viewport(width, height, mobile = false) {
       await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
-      if (mobile) await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+      await send("Emulation.setTouchEmulationEnabled", { enabled: mobile, maxTouchPoints: mobile ? 5 : 1 });
+      // Headless Edge can leave the resize event queued until its next rendered frame.
+      // Force that frame before callers measure responsive controls or click them.
+      await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
     },
     /** Any DevTools protocol call, for what the helpers above do not cover. */
     async cdp(method, params = {}) {

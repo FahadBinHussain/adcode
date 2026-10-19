@@ -24,7 +24,9 @@ RUN useradd --create-home --home-dir /home/adcode --shell /bin/bash adcode
 WORKDIR /opt/adcode
 COPY package.json package-lock.json ./
 # node-pty is native: built here for Linux and this Node, never copied from a Windows checkout.
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+RUN npm ci --omit=dev --no-audit --no-fund \
+ && node -e "require('node-pty')" \
+ && npm cache clean --force
 COPY host/ ./host/
 
 ENV NODE_ENV=production \

@@ -57,6 +57,7 @@
     "seo-audit": "node scripts/seo-audit.mjs",
     "smoke:vibe": "node scripts/smoke-vibe.mjs",
     "smoke:web-vibe": "node scripts/smoke-web-vibe.mjs",
+    "smoke:cloud-container": "node scripts/smoke-cloud-container.mjs",
     "smoke:account": "node scripts/smoke-account.mjs",
     "models:check": "node scripts/models-check.mjs",
     "cloud:typecheck": "tsc --noEmit -p apps/cloud/tsconfig.json"
