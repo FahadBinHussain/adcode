@@ -150,6 +150,14 @@ export default defineConfig(({ mode }) => ({
     port: 5180,
     strictPort: true,
     fs: { allow: [REPO] },
+    /*
+     * The grammar blobs are copied in, not authored: `scripts/grammars.mjs` writes megabytes of
+     * `.wasm` into `public/grammars`, and while anything has one of them open - another dev
+     * server, a running app, a build copying them - the watcher's `fs.watch` on that file fails
+     * with EBUSY. Vite raises that as an unhandled error and the dev server exits. So the folder
+     * is left unwatched: nothing edits it by hand, and no reload is lost that anyone wants.
+     */
+    watch: { ignored: [resolve(DESKTOP, "src/renderer/public/grammars/**")] },
     proxy: {
       "/v1": { target: process.env["ADCODE_ACCOUNT_API_ORIGIN"] ?? "https://adcode.bluethenics.com", changeOrigin: true },
       "/socket": { target: `ws://127.0.0.1:${process.env["ADCODE_HOST_PORT"] ?? "7300"}`, ws: true },

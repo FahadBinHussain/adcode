@@ -91,6 +91,16 @@
   bottom: var(--web-gap);
   left: calc(var(--vibe-rail-width, 272px) + var(--web-rail) + var(--web-gap) / 2 - 3px);
 }
+/*
+ * The review column is a card eight pixels in from the window's edge, and the conversation
+ * card keeps eight pixels between the two (`workspacePolish.css`). That distance is the
+ * workbench's own right margin, which the docked frame has and the full-bleed compact one
+ * does not - without this, closing the sidebar slides the conversation under the review
+ * column and the gap disappears.
+ */
+:root[data-surface="web"] body[data-workspace-mode="vibe"][data-vibe-rail="compact"].workspace-review-open .workbench {
+  margin-right: var(--web-gap);
+}
 :root[data-surface="web"] body[data-workspace-mode="vibe"][data-vibe-rail="compact"] .vibe-sidebar {
   top: var(--ui-chrome-height);
   width: min(calc(296px + var(--web-rail)), calc(100vw - 32px));

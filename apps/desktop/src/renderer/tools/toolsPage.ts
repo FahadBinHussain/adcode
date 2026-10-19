@@ -574,7 +574,11 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
   /** The four ways in: the catalogue, this computer, a file or link, or by hand. */
   function openAddConnector(start: "catalogue" | "import" | "file" | "custom"): void {
     const web = isWebSurface();
-    const { dialog, card, finish } = openFormModal("tools-add-connector", "Add a connector", () => undefined);
+    const { dialog, card, title, finish } = openFormModal("tools-add-connector", "Add a connector", () => undefined);
+    // Title over one honest line: the four ways in, and when anything actually happens.
+    const head = el("div", "tools-dialog-head");
+    head.append(title, el("p", "tools-dialog-sub", "Catalogue, import, a file or link, or by hand - nothing is added until you press Add."));
+    card.prepend(head);
     const switcher = el("div", "tools-tabs tools-dialog-tabs");
     switcher.setAttribute("role", "tablist");
     const steps = [
@@ -649,16 +653,14 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     fileStep.append(el("p", "result-summary", web
       ? "Paste a connector config or API description, read a link, or enter the path of a file or plugin folder already in your cloud workspace. Files on your computer are not opened by this dialog."
       : "Choose a config file, an OpenAPI description, a chat plugin manifest, a .mcpb extension, a plugin folder - or paste a link or the document itself."));
-    const choose = button("Choose a file or folder…", "agents-primary", () => void (async () => {
-      try {
-        const path = await window.adcode.ai.pickConnectorFile();
-        if (path === null) return;
-        await run({ kind: "import-path", from: path }, "Reading what you chose…");
-      } catch (error) {
-        report(errorText(error, "The file picker could not be opened."));
-      }
-    })());
-    const chooseRow = el("div", "tools-dialog-row");
+    /** One field, one full-width block: the label and control, with the button that reads it right under, at the right edge. */
+    const readField = (labelText: string, control: HTMLElement, action: HTMLButtonElement): HTMLElement => {
+      const block = el("div", "tools-dialog-fieldset");
+      const row = el("div", "tools-dialog-row tools-dialog-row-end");
+      row.append(action);
+      block.append(field(labelText, control), row);
+      return block;
+    };
     if (web) {
       const path = el("input", "form-input");
       path.placeholder = "/workspace/project/.mcp.json";
@@ -667,8 +669,21 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
         if (path.value.trim() === "") { report("Enter a path in your cloud workspace first."); return; }
         await run({ kind: "import-path", from: path.value.trim() }, "Reading that workspace path…");
       })());
-      chooseRow.append(field("In your cloud workspace", path), readPath);
-    } else chooseRow.append(choose);
+      fileStep.append(readField("In your cloud workspace", path, readPath));
+    } else {
+      const choose = button("Choose a file or folder…", "agents-primary", () => void (async () => {
+        try {
+          const path = await window.adcode.ai.pickConnectorFile();
+          if (path === null) return;
+          await run({ kind: "import-path", from: path }, "Reading what you chose…");
+        } catch (error) {
+          report(errorText(error, "The file picker could not be opened."));
+        }
+      })());
+      const chooseRow = el("div", "tools-dialog-row");
+      chooseRow.append(choose);
+      fileStep.append(chooseRow);
+    }
     const link = el("input", "form-input");
     link.type = "url";
     link.placeholder = "https://example.com/.well-known/ai-plugin.json";
@@ -677,8 +692,6 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
       if (link.value.trim() === "") { report("Paste an address first."); return; }
       await run({ kind: "import-url", from: link.value.trim() }, "Reading that link…");
     })());
-    const linkRow = el("div", "tools-dialog-row");
-    linkRow.append(link, readLink);
     const pasted = el("textarea", "form-input");
     pasted.rows = 5;
     pasted.placeholder = '{"mcpServers": {"…": {"command": "npx", "args": ["…"]}}}';
@@ -687,9 +700,7 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
       if (pasted.value.trim() === "") { report("Paste the document first."); return; }
       await run({ kind: "import-text", text: pasted.value, fileName: null }, "Reading the pasted document…");
     })());
-    const pasteRow = el("div", "tools-dialog-row tools-dialog-row-end");
-    pasteRow.append(readText);
-    fileStep.append(chooseRow, field("From a link", link), linkRow, field("Paste a document", pasted), pasteRow);
+    fileStep.append(readField("From a link", link, readLink), readField("Paste a document", pasted, readText));
 
     /* Custom: the form for a server or an API known by hand. */
     const form = el("form", "form-dialog-form");
@@ -800,12 +811,15 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
       return item;
     }
 
+    /** Every step, so `pick` can hide all but one and let the one it shows rise in. */
+    const stepViews: Record<"catalogue" | "import" | "file" | "custom", HTMLElement> = { catalogue, import: importStep, file: fileStep, custom: form };
+    let pickedOnce = false;
     function pick(which: "catalogue" | "import" | "file" | "custom"): void {
       for (const [id_, control] of stepButtons) control.setAttribute("aria-selected", String(id_ === which));
-      catalogue.hidden = which !== "catalogue";
-      importStep.hidden = which !== "import";
-      fileStep.hidden = which !== "file";
-      form.hidden = which !== "custom";
+      for (const [id_, view] of Object.entries(stepViews)) view.hidden = id_ !== which;
+      // The first step arrives with the dialog itself; a later pick rises in on its own.
+      if (pickedOnce) markFor(stepViews[which], "enter", "step", 500);
+      pickedOnce = true;
     }
     const closeRow = el("div", "confirm-buttons");
     closeRow.append(button("Close", "confirm-cancel", finish));

@@ -27,7 +27,13 @@ export function createAccountMenu(
   confirm: ConfirmDialog,
 ): AccountMenu {
   const photo = document.getElementById("account-photo") as HTMLImageElement | null;
-  const glyph = document.getElementById("account-glyph");
+  /*
+   * The icon is not named here on purpose. The web rail swaps the button's glyph for its own
+   * account icon (vibeSidebar moves the title-bar controls into the rail and re-icons them),
+   * so hiding `#account-glyph` by id would leave that icon showing beside the photo on the
+   * web - a stacked pair inside a 40px button. The button carries the state and CSS hides
+   * whichever icon it holds.
+   */
 
   const panel = document.createElement("div");
   panel.className = "account-panel";
@@ -162,7 +168,11 @@ export function createAccountMenu(
       if (photo !== null && state.photoUrl !== null) {
         photo.src = state.photoUrl;
         photo.hidden = false;
-        if (glyph !== null) glyph.setAttribute("hidden", "");
+        button.dataset["photo"] = "shown";
+      } else {
+        // Signed in without a picture: the icon stands, and no stale photo is left behind.
+        if (photo !== null) photo.hidden = true;
+        delete button.dataset["photo"];
       }
       return;
     }
@@ -180,7 +190,7 @@ export function createAccountMenu(
     signOut.hidden = true;
 
     if (photo !== null) photo.hidden = true;
-    if (glyph !== null) glyph.removeAttribute("hidden");
+    delete button.dataset["photo"];
   }
 
   function setOpen(next: boolean, why: "free-ai" | null = null): void {

@@ -2382,6 +2382,18 @@ body[data-resizing] iframe {
 }
 
 /*
+ * Signed in with a picture: the photo is the button's whole face, so the icon inside it
+ * stands down.
+ *
+ * Keyed to the button rather than to the glyph's id because the web rail replaces that
+ * glyph with its own account icon. Left showing, the two stack inside the 40px button -
+ * icon above the avatar, touching, the avatar pushed past the button's bottom edge.
+ */
+#account-toggle[data-photo="shown"] svg {
+  display: none;
+}
+
+/*
  * Anchored to the button in fixed position rather than nested inside the title bar: the
  * bar is a fixed-height flex row and a child tall enough to hold this would either be
  * clipped or would stretch the bar.

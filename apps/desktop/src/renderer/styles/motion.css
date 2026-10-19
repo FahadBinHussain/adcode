@@ -79,11 +79,11 @@
     animation: motion-fade-in var(--motion-enter) ease-out backwards;
   }
 
-  /* Press feel: the button gives a little under the pointer. */
-  :root:not([data-reduced-motion="true"]) :is(.agents-page, .tools-page, .chat-toolbar, .vibe-sidebar, .chat-conversation, .connect-view, .quick-connect) button {
+  /* Press feel: the button gives a little under the pointer - in dialogs too. */
+  :root:not([data-reduced-motion="true"]) :is(.agents-page, .tools-page, .chat-toolbar, .vibe-sidebar, .chat-conversation, .connect-view, .quick-connect, .result-dialog) button {
     transition: scale 90ms ease-out, translate 140ms var(--motion-curve), background-color 140ms ease, border-color 140ms ease;
   }
-  :root:not([data-reduced-motion="true"]) :is(.agents-page, .tools-page, .chat-toolbar, .vibe-sidebar, .chat-conversation, .connect-view, .quick-connect) button:active:not(:disabled) {
+  :root:not([data-reduced-motion="true"]) :is(.agents-page, .tools-page, .chat-toolbar, .vibe-sidebar, .chat-conversation, .connect-view, .quick-connect, .result-dialog) button:active:not(:disabled) {
     scale: var(--motion-press);
   }
 
@@ -141,6 +141,21 @@
     animation: motion-fade-in var(--motion-enter) ease-out backwards;
   }
 
+  /*
+   * A dialog arrives rather than blinks in: opacity and a hair of scale, centred (a modal has
+   * no trigger to grow from), with the backdrop fading under it. The Add-connector dialog's
+   * step content rises whenever another chip is picked.
+   */
+  :root:not([data-reduced-motion="true"]) .result-dialog[open] {
+    animation: motion-dialog-in var(--motion-enter) var(--motion-curve) backwards;
+  }
+  :root:not([data-reduced-motion="true"]) .result-dialog[open]::backdrop {
+    animation: motion-backdrop-in var(--motion-enter) ease-out backwards;
+  }
+  :root:not([data-reduced-motion="true"]) .tools-add-connector [data-enter="step"]:not([hidden]) {
+    animation: motion-rise var(--motion-enter) var(--motion-curve) backwards;
+  }
+
   /* A meter that moves shows the change; one that jumps reads as a glitch. */
   :root:not([data-reduced-motion="true"]) .composer-meter-fill {
     transition: stroke-dashoffset 300ms cubic-bezier(0.23, 1, 0.32, 1), stroke 200ms ease;
@@ -165,6 +180,16 @@
 @keyframes motion-grow {
   from { opacity: 0; scale: .94; }
   to { opacity: 1; scale: 1; }
+}
+
+@keyframes motion-dialog-in {
+  from { opacity: 0; scale: .97; }
+  to { opacity: 1; scale: 1; }
+}
+
+@keyframes motion-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes motion-celebrate {

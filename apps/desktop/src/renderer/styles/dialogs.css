@@ -754,6 +754,14 @@
 .form-dialog-card { justify-items: stretch; text-align: left; gap: 12px; padding: 22px 24px 18px; max-height: calc(100vh - 64px); overflow: auto; }
 .form-dialog-form { display: grid; gap: 14px; }
 .form-dialog-form[hidden] { display: none; }
+/* Fields answer the pointer, and every control in a form dialog keeps the app's focus ring. */
+.form-dialog :is(.form-input, .form-select) { transition: border-color 140ms ease, background-color 140ms ease; }
+@media (hover: hover) and (pointer: fine) {
+  .form-dialog :is(.form-input, .form-select):hover:not(:disabled) { border-color: color-mix(in srgb, var(--text-primary) 32%, transparent); }
+}
+.form-dialog :is(input, select, textarea, button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Actions sit at the right, the way every other footer reads. */
+.form-dialog .confirm-buttons { justify-content: flex-end; }
 .form-field { display: grid; gap: 6px; min-width: 0; }
 .form-field-label { font-size: 12px; font-weight: 650; color: var(--text-secondary); }
 .form-field-hint { color: var(--text-tertiary); font-size: 11px; }

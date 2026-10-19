@@ -391,6 +391,8 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
       footer: [notifications, settings, deps.more, ...(feedback === null ? [] : [feedback]), ...(account === null ? [] : [account])],
     });
     // These controls originate in shared chrome; keep their behavior and badges intact.
+    // The account button is the one that must not be keyed to an icon id: this swap replaces
+    // its #account-glyph, so the account menu carries the photo state on the button itself.
     for (const [control, icon] of [[deps.more, WEB_ICON.more], [feedback, WEB_ICON.feedback], [account, WEB_ICON.account]] as const) {
       control?.querySelector("svg")?.replaceWith(createIcon(icon));
     }
