@@ -17,6 +17,9 @@
  */
 import { utcDay, utcDayBefore } from "./day.ts";
 import type { ModelOutcomeRow } from "./modelOutcomes.ts";
+import { includedProvider, modelProvider } from "./includedProviders.ts";
+import { parseTagflowConfig } from "./tagflowConfig.ts";
+import type { TagflowConfigRecord } from "./tagflowTypes.ts";
 
 export const STATUS_WINDOW_DAYS = 90;
 
@@ -308,6 +311,8 @@ export function assembleStatusView(args: {
   outcomes: readonly ModelOutcomeRow[];
   incidents: readonly StatusIncidentRecord[];
   updates: readonly StatusIncidentUpdateRecord[];
+  /** Included models' own names and upstreams, so a row reads as the model picker does. */
+  catalog?: StatusCatalog;
 }): StatusView {
   const windowDays = Math.min(STATUS_WINDOW_DAYS, Math.max(7, Math.floor(args.days)));
   const dayKeys: string[] = [];
@@ -366,11 +371,12 @@ export function assembleStatusView(args: {
     });
 
     if (turns === 0) continue; // a model nobody has used is not a status row
+    const own = args.catalog?.get(entry.model);
     models.push({
       provider: entry.provider,
-      providerName: providerDisplayName(entry.provider),
+      providerName: own?.providerName ?? providerDisplayName(entry.provider),
       model: entry.model,
-      name: modelDisplayName(entry.model),
+      name: own?.name ?? modelDisplayName(entry.model),
       state: lastDayLevel,
       turns,
       ok,
@@ -460,6 +466,8 @@ export function buildIncidentViews(
 /** The part of the store this module needs - the same minimal-port style as modelOutcomes. */
 export interface StatusStore {
   modelOutcomesSince(day: string): Promise<ModelOutcomeRow[]>;
+  /** The included-AI catalog, for which models this page reports and what they are called. */
+  getTagflowConfig?(): Promise<TagflowConfigRecord | null>;
   listStatusIncidents(): Promise<StatusIncidentRecord[]>;
   listStatusIncidentUpdates(): Promise<StatusIncidentUpdateRecord[]>;
   getStatusIncident(incidentId: string): Promise<StatusIncidentRecord | null>;
@@ -474,12 +482,40 @@ export async function readStatusView(
 ): Promise<StatusView> {
   const now = deps.clock.now();
   const windowDays = Math.min(STATUS_WINDOW_DAYS, Math.max(7, Math.floor(days)));
-  const [outcomes, incidents, updates] = await Promise.all([
+  const [outcomes, incidents, updates, catalog] = await Promise.all([
     deps.store.modelOutcomesSince(utcDayBefore(now, windowDays - 1)),
     deps.store.listStatusIncidents(),
     deps.store.listStatusIncidentUpdates(),
+    // The catalog only names and narrows; without it the page still reports by provider.
+    deps.store.getTagflowConfig?.().then(statusCatalog, () => null) ?? Promise.resolve(null),
   ]);
-  return assembleStatusView({ now, days: windowDays, outcomes, incidents, updates });
+  return assembleStatusView({ now, days: windowDays, outcomes: includedOutcomes(outcomes, catalog), incidents, updates, catalog });
+}
+
+/**
+ * The page reports ADCode's own included AI and nothing else. `model_outcomes` also counts
+ * every model people run on their own keys and on their own machines - an Ollama model that
+ * is not installed, an OpenRouter key out of credit - and those failures are theirs, not an
+ * ADCode outage: on 2026-10-20 they read "15 models are failing requests" above a catalog of
+ * four. With the catalog at hand, only its enabled models; without it, the included provider.
+ */
+export const STATUS_PROVIDER = "tagflow";
+
+/** The enabled included models, by id, with the names the model picker shows. */
+export type StatusCatalog = ReadonlyMap<string, { readonly name: string; readonly providerName: string }> | null;
+
+export function statusCatalog(saved: TagflowConfigRecord | null): StatusCatalog {
+  const config = saved === null ? null : parseTagflowConfig(saved.config);
+  if (config === null) return null;
+  return new Map(
+    config.models
+      .filter((model) => model.enabled !== false)
+      .map((model) => [model.id, { name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI" }]),
+  );
+}
+
+export function includedOutcomes(outcomes: readonly ModelOutcomeRow[], catalog: StatusCatalog): ModelOutcomeRow[] {
+  return outcomes.filter((row) => row.provider === STATUS_PROVIDER && (catalog === null || catalog.has(row.model)));
 }
 
 /** What the admin panel reads: every incident, resolved or not, same shapes as the public page. */

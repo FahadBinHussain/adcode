@@ -478,3 +478,28 @@ describe("the status view through a database outage", () => {
     expect(dark.overall).toMatchObject({ state: "outage", title: expect.stringContaining("database") });
   });
 });
+
+describe("which models the status page reports", () => {
+  it("counts only the included catalog, never people's own keys or local models", async () => {
+    const { readStatusView } = await import("../src/status.ts");
+    const { DEFAULT_TAGFLOW_CONFIG } = await import("../src/tagflowConfig.ts");
+    const model = { id: "", name: "", contextWindow: 131_072, maxOutput: 8192, inputPrice: 0, outputPrice: 0 };
+    const now = Date.parse("2026-10-20T12:00:00Z");
+    const today = "2026-10-20";
+    const failing = (provider: string, model: string) => ({ day: today, provider, model, outcome: "server", count: 20, totalMs: 0 });
+    const store = {
+      modelOutcomesSince: async () => [
+        { day: today, provider: "tagflow", model: "heabsy-qwen38", outcome: "ok", count: 20, totalMs: 20_000 },
+        failing("ollama", "qwen2.5-coder:7b"),
+        failing("openrouter", "openrouter/free"),
+        failing("tagflow", "retired-model"),
+      ],
+      listStatusIncidents: async () => [],
+      listStatusIncidentUpdates: async () => [],
+      getTagflowConfig: async () => ({ config: { ...DEFAULT_TAGFLOW_CONFIG, defaultModel: "heabsy-qwen38", models: [{ ...model, id: "heabsy-qwen38", name: "Qwen 3.8" }, { ...model, id: "off", name: "Off", enabled: false }] }, updatedAt: 0, updatedBy: "admin" }),
+    } as never;
+    const view = await readStatusView({ store, clock: { now: () => now } }, 7);
+    expect(view.models.map((model) => [model.model, model.name])).toEqual([["heabsy-qwen38", "Qwen 3.8"]]);
+    expect(view.overall.state).toBe("operational");
+  });
+});

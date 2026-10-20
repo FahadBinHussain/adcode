@@ -19,6 +19,19 @@
 .connect-view .connect-toolbar > .btn { min-height: 38px; }
 .connect-all-panel { min-height: 0; display: grid; grid-template-rows: auto auto auto auto auto minmax(0, 1fr); overflow: hidden; }
 .connect-all-panel[hidden], .connect-free-panel[hidden] { display: none; }
+/*
+ * With nothing connected, the free Gemini route sits above the catalogue. It is taller than
+ * the room the fixed dialog leaves, and it used to take all of it: the provider list shrank
+ * to a sliver nobody could use. The tab scrolls as one page instead, and the list keeps a
+ * height it can be read at.
+ */
+.connect-view .connect-quick { margin: 0; padding: 0 24px 20px; }
+.connect-all-panel:has(> .connect-quick:not([hidden])) {
+  overflow-y: auto;
+  grid-template-rows: auto auto auto auto auto minmax(380px, 1fr);
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
 .connect-tabs { display: flex; gap: 4px; margin: 0 28px; padding: 4px; justify-self: start; border: 1px solid var(--border-hairline); border-radius: 10px; background: var(--bg-app); }
 .connect-tab { flex: 0 1 auto; min-width: 0; border: 1px solid transparent; border-radius: 7px; padding: 8px 16px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
 .connect-tab:hover { background: var(--bg-hover); color: var(--text-primary); }

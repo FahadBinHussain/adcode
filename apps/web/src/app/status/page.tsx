@@ -37,9 +37,9 @@ export const metadata: Metadata = {
   ...pageMetadata({
     path: "/status",
     title: "Status",
-    socialTitle: "ADCode status — every model, live",
+    socialTitle: "ADCode status — included AI, live",
     description:
-      "Live operational status for every AI model in ADCode: uptime over the past 90 days, error rates, and the incident log with updates as they happen.",
+      "Live operational status for the AI models included with ADCode: uptime over the past 90 days, error rates, and the incident log with updates as they happen.",
   }),
   alternates: {
     canonical: url("/status"),
@@ -107,7 +107,7 @@ const dayTip = (day: StatusDay): string => {
 };
 
 const OVERALL_NOTES: Record<string, string> = {
-  operational: "No open incident. Every model with traffic is answering normally.",
+  operational: "No open incident. Every included model with traffic is answering normally.",
   degraded: "No incident is open, but some models are above their usual error rate.",
   outage: "No incident note is posted yet, but some models are failing requests.",
   maintenance: "Maintenance is scheduled or in progress.",
@@ -308,7 +308,7 @@ export default async function StatusPage() {
           <span className="glass-kicker">Live service health</span>
           <h1>ADCode status</h1>
           <p>
-            Uptime and error rates for every AI model in ADCode, measured from the assistant turns
+            Uptime and error rates for the AI models included with ADCode, measured from the assistant turns
             people actually ran. Incidents are posted here by hand, with updates as they happen.
           </p>
           <div className="status-hero-actions">

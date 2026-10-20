@@ -1,6 +1,6 @@
 # The status page
 
-`https://adcode.bluethenics.com/status` - what every AI model is doing, in public, with the
+`https://adcode.bluethenics.com/status` - what ADCode's included AI models are doing, in public, with the
 incident log beside it. Two halves with one rule: **model health is measured, incidents are
 written.**
 
@@ -22,6 +22,10 @@ written.**
 - **Subscribe to updates** copies the RSS feed URL, `/status/feed.xml`. One item per
   update, newest first.
 
+Only the included models appear - those enabled in the included-AI catalog, named as the
+model picker names them. A model someone runs on their own key or their own machine is
+recorded for the admin panel but is not ADCode's service, so its failures never colour this
+page (on 2026-10-20 they read "15 models are failing requests" above a catalog of four).
 Only models with turns in the window appear. No traffic is not the same as working, so
 there are no rows that say "operational" without numbers behind them.
 
