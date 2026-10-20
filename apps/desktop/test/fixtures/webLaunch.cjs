@@ -41,7 +41,7 @@ app.whenReady().then(async () => {
       const gate = document.querySelector('#web-gate');
       results.splashReplaced = !gate.querySelector('.web-splash') && !!gate.querySelector('.web-gate-card');
       results.publicHeadingRetained = gate.querySelector('h1')?.textContent === 'Build apps with AI in your browser';
-      results.publicDescriptionRetained = gate.querySelector('.web-gate-lead')?.textContent.includes('AI agents write code, run commands, and show live previews in a private Linux workspace');
+      results.publicDescriptionRetained = gate.querySelector('.web-gate-lead')?.textContent.includes('Chat with AI and connect GitHub to explore your code and prepare changes.');
       results.guideLinkRetained = !!gate.querySelector('a[href="https://adcode.bluethenics.com/online-ai-code-editor"]');
       results.realSignInControls = gate.querySelectorAll('.web-gate-provider').length === 2 && gate.querySelector('input[type="email"]') && gate.querySelector('input[type="password"]') ? true : false;
       results.noProductionBypass = !gate.querySelector('.web-gate-dev');

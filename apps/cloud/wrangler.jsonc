@@ -39,6 +39,7 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
+    "html_handling": "none",
     "run_worker_first": true
   },
 
@@ -60,12 +61,14 @@
   "durable_objects": {
     "bindings": [
       { "name": "USER", "class_name": "UserSession" },
+      { "name": "BROWSER", "class_name": "BrowserSession" },
       { "name": "BUDGET", "class_name": "BudgetObject" },
       { "name": "PREVIEW", "class_name": "PreviewRoute" }
     ]
   },
   "exports": {
     "UserSession": { "type": "durable-object", "storage": "sqlite" },
+    "BrowserSession": { "type": "durable-object", "storage": "sqlite" },
     "BudgetObject": { "type": "durable-object", "storage": "sqlite" },
     "PreviewRoute": { "type": "durable-object", "storage": "sqlite" }
   },
@@ -113,6 +116,7 @@
       "durable_objects": {
         "bindings": [
           { "name": "USER", "class_name": "UserSession" },
+          { "name": "BROWSER", "class_name": "BrowserSession" },
           { "name": "BUDGET", "class_name": "BudgetObject" },
           { "name": "PREVIEW", "class_name": "PreviewRoute" }
         ]

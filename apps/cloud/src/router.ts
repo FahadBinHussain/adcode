@@ -14,10 +14,10 @@
  * - Everything else is the web app's static files, with strict security headers.
  */
 import { tokenFromProtocols, verifyIdToken, type Verified } from "./auth.ts";
-import { forwardAccountApi } from "./accountApi.ts";
+import { forwardAccountApi, forwardAdAsset } from "./accountApi.ts";
 import type { Env } from "./env.ts";
 import { parsePreviewHost } from "./previewAuth.ts";
-import { INDEXABLE_LAUNCH_ROBOTS, LAUNCH_ROBOTS, publicAppHost, robots, sitemap, WEB_APP_SCHEMA_CSP } from "./seo.ts";
+import { INDEXABLE_LAUNCH_ROBOTS, LAUNCH_ROBOTS, LEGACY_WEB_APP_SCHEMA_CSP, publicAppHost, robots, sitemap, WEB_APP_SCHEMA_CSP } from "./seo.ts";
 
 export interface RouterDeps {
   readonly verify: (token: string) => Promise<Verified | null>;
@@ -66,12 +66,23 @@ function toUser(env: Env, request: Request, who: Verified, path: string): Promis
   return env.USER.getByName(who.uid).fetch(forwarded);
 }
 
-export function contentSecurityPolicy(env: Env): string {
+/** Normal chat and GitHub requests use storage, without reserving coding capacity. */
+function toBrowser(env: Env, request: Request, who: Verified): Promise<Response> {
+  const url = new URL(request.url);
+  url.hostname = "browser.session";
+  url.pathname = url.pathname.slice("/api".length);
+  const headers = new Headers(request.headers);
+  for (const name of ["cookie", "authorization", "x-adcode-uid", "x-adcode-email", "x-adcode-preview-port"]) headers.delete(name);
+  headers.set("x-adcode-uid", who.uid);
+  return env.BROWSER.getByName(who.uid).fetch(new Request(url, new Request(request, { headers })));
+}
+
+export function contentSecurityPolicy(env: Env, includeLegacySchema = false): string {
   const previews = `https://*${env.PREVIEW_SUFFIX}`;
   return [
     "default-src 'none'",
     // 'wasm-unsafe-eval' compiles the bundled syntax grammars; apis.google.com is Firebase's sign-in popup helper.
-    `script-src 'self' 'wasm-unsafe-eval' https://apis.google.com ${WEB_APP_SCHEMA_CSP}`,
+    `script-src 'self' 'wasm-unsafe-eval' https://apis.google.com ${WEB_APP_SCHEMA_CSP}${includeLegacySchema ? ` ${LEGACY_WEB_APP_SCHEMA_CSP}` : ""}`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' data: blob: https:",
@@ -86,8 +97,10 @@ export function contentSecurityPolicy(env: Env): string {
   ].join("; ");
 }
 
-async function servePage(request: Request, env: Env): Promise<Response> {
-  const response = await env.ASSETS.fetch(request);
+async function servePage(request: Request, env: Env, assetPath?: string): Promise<Response> {
+  const assetUrl = new URL(request.url);
+  if (assetPath !== undefined) assetUrl.pathname = assetPath;
+  const response = await env.ASSETS.fetch(assetPath === undefined ? request : new Request(assetUrl, request));
   const headers = new Headers(response.headers);
   const url = new URL(request.url);
   let body = response.body;
@@ -96,7 +109,7 @@ async function servePage(request: Request, env: Env): Promise<Response> {
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()");
   if ((headers.get("content-type") ?? "").includes("text/html")) {
-    headers.set("content-security-policy", contentSecurityPolicy(env));
+    headers.set("content-security-policy", contentSecurityPolicy(env, assetPath === "/legacy-workspace.html"));
     headers.set("cache-control", "no-cache");
     headers.set("x-robots-tag", "noindex, nofollow");
     const publicRoot = publicAppHost(url.hostname, env.APP_HOST, env.ALLOW_DEV_TOKEN) && url.pathname === "/" && url.search === "" && status === 200;
@@ -160,6 +173,12 @@ export async function route(request: Request, env: Env, deps: RouterDeps = defau
     const who = token === null ? null : await deps.verify(token);
     if (who === null) return json({ ok: false, error: "Sign in first" }, 401);
 
+    if (url.pathname.startsWith("/api/ad-assets/")) return forwardAdAsset(request, env, url.pathname.slice("/api/ad-assets/".length));
+
+    if (url.pathname === "/api/chats" || url.pathname.startsWith("/api/chats/") || url.pathname.startsWith("/api/github/")) {
+      return toBrowser(env, request, who);
+    }
+
     switch (url.pathname) {
       case "/api/session":
         return toUser(env, request, who, "/status");
@@ -178,5 +197,10 @@ export async function route(request: Request, env: Env, deps: RouterDeps = defau
     }
   }
 
+  // Releases can retain the prior execution UI while the browser-first entry changes.
+  // Fresh builds without this optional asset fall back to the normal SPA index.
+  if (url.pathname === "/" && url.searchParams.get("workspace") === "run") {
+    return servePage(request, env, "/legacy-workspace.html");
+  }
   return servePage(request, env);
 }

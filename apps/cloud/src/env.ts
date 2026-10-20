@@ -24,6 +24,8 @@ export interface PreviewRouteRpc extends Rpc.DurableObjectBranded {
 export interface Env {
   /** UserSession: reached only through `fetch`. */
   readonly USER: DurableObjectNamespace;
+  /** Lightweight chat history and GitHub access; never starts a container. */
+  readonly BROWSER: DurableObjectNamespace;
   readonly BUDGET: DurableObjectNamespace<BudgetRpc>;
   readonly PREVIEW: DurableObjectNamespace<PreviewRouteRpc>;
   readonly HOMES: R2Bucket;
@@ -53,6 +55,8 @@ export interface Env {
   readonly MAX_INSTANCES: string;
   /** Container instance type: "standard-1" unless measured otherwise. */
   readonly INSTANCE_TYPE: string;
+  /** Public GitHub OAuth app ID; defaults to ADCode's existing device-flow app. */
+  readonly GITHUB_CLIENT_ID?: string;
 
   /** Secret. Signs preview cookies. */
   readonly PREVIEW_COOKIE_KEY: string;

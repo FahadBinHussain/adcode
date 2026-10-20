@@ -1,8 +1,34 @@
 # ADCode on the web (web.bluethenics.com)
 
-ADCode's Vibe mode in a browser tab. Each signed-in person gets a private cloud sandbox that runs
-the **same main-process code as the desktop app**, and the browser runs **the same Vibe renderer**,
-talking to it over one WebSocket instead of Electron IPC.
+> **Status: paused in production.** We are not ready for a web release. Production builds
+> (`npm run cloud:build` / `npm run cloud:deploy`) ship a static "The web version is paused"
+> notice with a link to the desktop app; they no longer ship the app entry. Development
+> (`npm run web:vibe`, the browser smoke) still runs the real app. To resume, change
+> `webEntry(mode === "production")` to `webEntry(false)` in `apps/desktop/vite.web.config.ts`.
+
+ADCode opens a browser workspace for chat, saved conversations and GitHub projects. This entry
+uses normal authenticated HTTP requests and never reserves or starts a sandbox. A separate,
+optional cloud workspace runs the **same main-process code as the desktop app**, with the Vibe
+renderer talking to it over one WebSocket instead of Electron IPC.
+
+Browser chat streams through the existing included-AI API, with its existing account checks,
+credits and provider limits. Chat history and encrypted GitHub credentials live in a lightweight
+`BrowserSession` Durable Object with no container, alarms or capacity reservation. Repository
+files are read through GitHub's API at an immutable commit. The assistant can read files and
+stage text edits; only the person's Create pull request action writes them, on a fresh branch.
+It cannot run commands or claim checks passed in this mode. GitHub is storage and collaboration,
+not a replacement for the compute needed to execute a project.
+
+Choose Open cloud workspace to enter the separate execution UI (`?workspace=run`). That workspace
+retains its existing projects and credentials. Browser proposals are not automatically copied
+into it. The normal chat entry stays available when execution capacity or its monthly budget is
+exhausted. No always-running machine is charged simply for opening chat or browsing GitHub.
+
+History is bounded to 50 active chats with up to 200 messages and 512 KiB each. Delete frees a
+slot and offers Undo; the ten most recently deleted chats remain recoverable. GitHub context
+excludes credential files, binary files and symlinks. Proposed edits require review, and changes
+to GitHub workflow files must be made on GitHub separately. GitHub tokens remain encrypted on
+the server and never reach the browser or the model.
 
 ```
 browser ── web.bluethenics.com (Worker: apps/cloud) ──► UserSession DO (one per Firebase uid) ──► Container
@@ -68,6 +94,14 @@ containers. Account reads remain available without starting a sandbox. A paused 
 status stays `full` until the next UTC calendar month; they may then choose Try again. Raising
 the configured cap can also admit them again before then. Personal runtime remains unlimited
 while the shared budget and capacity are available.
+
+When all `MAX_INSTANCES` slots are occupied, the browser shows "Waiting for a free sandbox"
+and checks again automatically, first after about five seconds and then at intervals of up
+to fifteen seconds. There is no reserved queue position. Existing idle sessions release their
+slots after the configured idle timeout, including when a Durable Object restart lost the
+tab-close event. An active agent keeps its sandbox while it works. Failed startup health or
+restore checks stop the incomplete sandbox without replacing its saved home; a failed stop
+schedules another cleanup attempt.
 
 The cutoff RPC accepts both the new charge result and the prior budget object's void result.
 During a mixed-version rollout, a void result triggers the old object's exact admission check

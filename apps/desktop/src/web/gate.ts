@@ -21,6 +21,8 @@ export interface WebSession {
   /** A Firebase ID token; "dev" in development mode. */
   readonly token: string | null;
   readonly email: string | null;
+  /** Stable namespace for local drafts and queued receipts; never used for authorization. */
+  readonly uid?: string;
   /** A current token, forcing a refresh when asked. */
   refresh(force?: boolean): Promise<string | null>;
   signOut(): Promise<void>;
@@ -85,7 +87,7 @@ function stage(): HTMLElement {
   const lines = element("ol", "web-gate-lines");
   terminal.append(bar, lines);
   const proof = element("ul", "web-gate-proof");
-  for (const fact of ["Included AI, without usage quotas", "A real Linux workspace, saved for you", "Half of the ad revenue is yours"]) proof.append(element("li", undefined, fact));
+  for (const fact of ["Included AI, no subscription needed", "GitHub projects, with changes you review", "Half of the ad revenue is yours"]) proof.append(element("li", undefined, fact));
   root.append(grid, glow, brand, pitch, terminal, proof);
   play(lines);
   return root;
@@ -285,7 +287,7 @@ export async function gate(): Promise<WebSession> {
     const outcome = await signInCard();
     if (outcome === "dev") {
       // "dev" is accepted only by a local Worker started with ALLOW_DEV_TOKEN=1; adcode-host ignores it.
-      return { token: "dev", email: null, refresh: async () => "dev", signOut: async () => location.reload() };
+      return { token: "dev", email: null, uid: "web-dev-user", refresh: async () => "dev", signOut: async () => location.reload() };
     }
   }
   const token = await idToken();
@@ -293,7 +295,13 @@ export async function gate(): Promise<WebSession> {
   return {
     token,
     email: user?.email ?? null,
-    refresh: (force = false) => idToken(force),
+    ...(user === null ? {} : { uid: user.uid }),
+    refresh: async (force = false) => {
+      const fresh = await idToken(force);
+      const active = await currentUser();
+      if (active?.uid !== user?.uid) throw new Error("Your signed-in account changed. Reload ADCode before continuing.");
+      return fresh;
+    },
     signOut: async () => {
       await signOutHere();
       location.reload();

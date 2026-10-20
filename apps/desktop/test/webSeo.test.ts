@@ -22,28 +22,24 @@ async function launchHtml(): Promise<string> {
 }
 
 describe("browser launch HTML", () => {
-  it("ships a useful public introduction and links before any JavaScript runs", async () => {
+  it("ships the paused notice before any JavaScript runs", async () => {
     const html = await launchHtml();
-    expect(html).toContain("<h1>Build apps with AI in your browser</h1>");
-    expect(html).toContain("Sign in to open your workspace.");
-    expect(html).toContain('href="https://adcode.bluethenics.com/online-ai-code-editor"');
-    expect(html).toContain('href="https://adcode.bluethenics.com/docs"');
-    expect(html).toContain("JavaScript is required to sign in");
-    expect(html).toContain('<script type="module" src="/@web/boot.ts"></script>');
-    expect(html).not.toContain('<script type="module" src="./main.ts"></script>');
+    expect(html).toContain("<h1>The web version is paused</h1>");
+    expect(html).toContain("We're not ready for a web release yet.");
+    expect(html).toContain('href="https://adcode.bluethenics.com/#download"');
+    expect(html).toContain('href="https://adcode.bluethenics.com"');
+    expect(html).not.toContain('<script type="module"');
+    expect(html).not.toContain('id="workbench"');
   });
 
-  it("has its own canonical and share metadata while builds remain closed by default", async () => {
+  it("keeps the paused page out of search and shares the pause", async () => {
     const html = await launchHtml();
-    expect(html).toContain('<title>ADCode Web — AI Code Editor in Your Browser</title>');
-    expect(html).toContain('<link rel="canonical" href="https://web.bluethenics.com/" />');
-    expect(html).toContain('<meta name="robots" content="noindex, nofollow" data-adcode-public-launch />');
-    expect(html).toContain('<meta name="description" content="Build apps in your browser with AI agents');
+    expect(html).toContain("<title>ADCode Web is paused — try the desktop app</title>");
+    expect(html).toContain('<meta name="robots" content="noindex, nofollow" />');
+    expect(html).not.toContain("data-adcode-public-launch");
+    expect(html).toContain('<meta name="description" content="The ADCode web version is paused while we get it ready.');
     expect(html).toContain('<meta property="og:url" content="https://web.bluethenics.com/" />');
-    expect(html).toContain('content="https://adcode.bluethenics.com/opengraph-image.png"');
-    expect(html).toContain('<meta name="twitter:card" content="summary_large_image" />');
-    const schema = JSON.parse(/<script type="application\/ld\+json" id="adcode-web-app-schema">([^<]+)<\/script>/.exec(html)![1]!);
-    expect(schema).toMatchObject({ "@type": "WebApplication", "@id": "https://web.bluethenics.com/#app", name: "ADCode Web", operatingSystem: "Web browser", publisher: { "@id": "https://adcode.bluethenics.com/#organization" } });
+    expect(html).not.toContain('id="adcode-web-app-schema"');
   });
 
   it("allows exactly the published structured data under the app's strict CSP", () => {

@@ -3,49 +3,22 @@
  * picker, the connection bar, the time-left chip and toasts.
  *
  * Everything else on screen is the desktop renderer, styled by its own design system and, on
- * the web, by `shell.css`. These use the same tokens (`styles/tokens.css`, imported by
- * `boot.ts` before this file) so the front door and the room behind it look like one product.
+ * the web, by `renderer/styles/webFrame.css`. These use the same tokens (`styles/tokens.css`
+ * and `styles/webTheme.css`, both imported by `boot.ts` before this file) so the front door and
+ * the room behind it look like one product.
  *
  * Motion follows Emil Kowalski's rules (emilkowalski/skills): a strong ease-out for anything
  * entering, under 300ms for anything a person triggers, hover movement only for a real
  * pointer, and nothing that moves when reduced motion is asked for.
  */
 
-/* ── Type: the site's three faces, self-hosted (the CSP allows fonts from 'self' only) ─── */
-
-@font-face {
-  font-family: "Manrope";
-  src: url("/fonts/manrope.woff2") format("woff2");
-  font-weight: 200 800;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/space-grotesk.woff2") format("woff2");
-  font-weight: 300 700;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Geist Mono";
-  src: url("/fonts/geist-mono.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-:is(:root, body)[data-surface="web"] {
-  --font-ui: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Space Grotesk", "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
-  --web-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --web-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --web-money: var(--success, #6fb98f);
-  font-feature-settings: "cv11", "ss01";
-}
+/* The type and the shared tokens are in `renderer/styles/webTheme.css`, loaded before this
+   file by `boot.ts`: the gate below is the first thing a visitor sees, and it is set in the
+   same faces as the renderer behind it. */
 
 /* ── Gate: sign-in, waking, pauses ───────────────────────────────────────── */
+
+body[data-web-mode="browser"] > [data-web-desktop-root] { display: none !important; }
 
 .web-gate {
   position: fixed;

@@ -122,7 +122,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
   };
 
   socket.onStatus((state) => {
-    if (state === "reconnecting") {
+    if (state === "reconnecting" && last?.state !== "busy") {
       bar.textContent = "Reconnecting… your workspace keeps working";
       bar.hidden = false;
     } else {
@@ -139,6 +139,7 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
   });
 
   socket.onCloud((status) => {
+    const previousState = last?.state;
     last = status;
     lastAt = Date.now();
     switch (status.state) {
@@ -146,7 +147,9 @@ export function mountStatusBar(socket: HostSocket, session: WebSession): { statu
         showWaking();
         break;
       case "busy":
-        showWaking("Waiting for a free sandbox…", "Everyone's building right now. You're next - this page keeps trying.");
+        // Keep the waiting screen steady while the socket checks for available capacity.
+        bar.hidden = true;
+        if (previousState !== "busy") showWaking("Waiting for a free sandbox…", "All sandboxes are in use. This page retries automatically.");
         break;
       case "ready":
         lift();

@@ -14,6 +14,25 @@ function setup() {
 }
 const request = (path = "/balance", init: RequestInit = {}) => new Request(`https://web.example/v1${path}`, { ...init, headers: { authorization: "Bearer test-token", ...init.headers } });
 describe("account inside Vibe", () => {
+  it("streams included AI through the existing service without acquiring a sandbox", async () => {
+    const { env, api, sandbox } = setup();
+    let finish!: () => void;
+    const stream = new ReadableStream<Uint8Array>({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'));
+      finish = () => controller.close();
+    } });
+    api.mockResolvedValueOnce(new Response(stream, { headers: { "content-type": "text/event-stream", "x-adcode-request-id": "request_1", "retry-after": "10" } }));
+    const response = await route(request("/ai/tagflow/chat/completions", { method: "POST", body: JSON.stringify({ model: "included", messages: [] }), headers: { "content-type": "application/json", "x-adcode-ai-source": "chat", "x-adcode-platform": "forged" } }), env, deps);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    expect(response.headers.get("x-adcode-request-id")).toBe("request_1");
+    expect(response.headers.get("retry-after")).toBe("10");
+    const reader = response.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("Hello");
+    finish(); await reader.cancel();
+    expect(api.mock.calls[0]?.[0].headers.get("x-adcode-platform")).toBe("web");
+    expect(api.mock.calls[0]?.[0].headers.get("x-adcode-ai-source")).toBe("chat");
+    expect(sandbox).not.toHaveBeenCalled();
+  });
   it("forwards authenticated account reads without waking a sandbox or caching private data", async () => {
     const { env, api, sandbox } = setup();
     const response = await route(request("/ledger?limit=25&cursor=abc"), env, deps);
@@ -22,6 +41,28 @@ describe("account inside Vibe", () => {
     expect(api.mock.calls[0]?.[0].url).toBe("https://adcode.bluethenics.com/v1/ledger?limit=25&cursor=abc");
     expect(api.mock.calls[0]?.[0].headers.get("authorization")).toBe("Bearer test-token");
     expect(sandbox).not.toHaveBeenCalled();
+  });
+  it("serves only authenticated raster artwork through the first-party binding", async () => {
+    const { env, api, sandbox } = setup();
+    const incoming = (key: string, token = "test-token") => new Request(`https://web.example/api/ad-assets/${key}`, { headers: { authorization: `Bearer ${token}` } });
+    api.mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } }));
+    const artwork = await route(incoming("creative_123.png"), env, deps);
+    expect(artwork.status).toBe(200);
+    expect(artwork.headers.get("content-type")).toBe("image/png");
+    expect(api.mock.calls[0]?.[0].url).toBe("https://adcode.bluethenics.com/assets/creative_123.png");
+    expect(api.mock.calls[0]?.[0].headers.has("authorization")).toBe(false);
+    expect((await route(incoming("creative_123.png", "expired"), env, deps)).status).toBe(401);
+    expect((await route(incoming("nested/key.png"), env, deps)).status).toBe(404);
+    expect(api).toHaveBeenCalledOnce();
+    expect(sandbox).not.toHaveBeenCalled();
+  });
+  it("refuses scripted artwork and redirects rather than exposing them as first-party assets", async () => {
+    const { env, api } = setup();
+    const incoming = new Request("https://web.example/api/ad-assets/creative_123.png", { headers: { authorization: "Bearer test-token" } });
+    api.mockResolvedValueOnce(new Response("<svg/>", { headers: { "content-type": "image/svg+xml" } }));
+    expect((await route(incoming, env, deps)).status).toBe(404);
+    api.mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://other.example/track" } }));
+    expect((await route(incoming, env, deps)).status).toBe(404);
   });
   it("preserves writes and strips caller-controlled identity and cookies", async () => {
     const { env, api } = setup();

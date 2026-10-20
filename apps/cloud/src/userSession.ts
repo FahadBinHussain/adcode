@@ -271,6 +271,11 @@ export class UserSession extends DurableObject<Env> {
       } catch {
         // already closed
       }
+      // If startup failed before a container existed, there is no monitor to give its
+      // admission slot back. Running containers keep their slot until they stop.
+      if (this.ctx.container?.running !== true && (await this.ctx.storage.get<number>("runningSince")) === undefined) {
+        await this.onStopped(false);
+      }
     }
   }
 
@@ -346,13 +351,16 @@ export class UserSession extends DurableObject<Env> {
       this.watch();
     }
     await container.setInactivityTimeout(this.idleMs() + 2 * MINUTE).catch(() => undefined);
-    await this.waitForHost();
     try {
+      await this.waitForHost();
       await this.restoreOnce();
     } catch (error) {
       // Never expose or later archive an empty/partly restored home. The saved copy stays
       // authoritative, and a fresh container retries it when the person reconnects.
-      await container.destroy().catch(() => undefined);
+      await container.destroy().catch(async () => {
+        // A failed start must still have a path to idle cleanup if stopping fails.
+        await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+      });
       throw error;
     }
     await this.ctx.storage.delete(["budgetFullMonth", "pauseMessage"]);
@@ -369,10 +377,18 @@ export class UserSession extends DurableObject<Env> {
   }
 
   private async onStopped(crashed: boolean): Promise<void> {
-    const wasRunning = (await this.ctx.storage.get<number>("runningSince")) !== undefined;
-    await this.accountTime(Date.now());
-    await this.ctx.storage.delete(["runningSince", "lastTickAt", "hostSecret", "restoredFor"]);
-    await this.env.BUDGET.getByName("global").release(await this.uid());
+    let wasRunning = false;
+    try {
+      wasRunning = (await this.ctx.storage.get<number>("runningSince")) !== undefined;
+      await this.accountTime(Date.now());
+      await this.ctx.storage.delete(["runningSince", "lastTickAt", "hostSecret", "restoredFor"]);
+      await this.env.BUDGET.getByName("global").release(await this.uid());
+    } catch (error) {
+      // The monitor is not retried by the platform. Keep a stopped sandbox's slot
+      // recoverable when accounting or admission cleanup is temporarily unavailable.
+      await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+      throw error;
+    }
     if (crashed && wasRunning && this.tabs.size > 0) {
       this.restarted = true;
       for (const tab of this.tabs) {
@@ -513,7 +529,14 @@ export class UserSession extends DurableObject<Env> {
       // the host is busy or restarting; judge by the tabs alone this minute
     }
     const lastInputAt = Math.max(hostState.lastInputAt, (await this.ctx.storage.get<number>("lastInputAt")) ?? 0);
-    const idleSince = this.tabs.size === 0 ? ((await this.ctx.storage.get<number>("idleSince")) ?? now) : null;
+    let idleSince: number | null = null;
+    if (this.tabs.size === 0) {
+      const storedIdleSince = await this.ctx.storage.get<number>("idleSince");
+      idleSince = storedIdleSince ?? now;
+      // A reset can lose the in-memory tabs without receiving their close events.
+      // Keep the first observed idle time so each alarm advances toward sleep.
+      if (storedIdleSince === undefined) await this.ctx.storage.put("idleSince", idleSince);
+    }
     if (shouldSleep({ connections: this.tabs.size, busy: hostState.busy, lastInputAt, idleSince }, now, { idleMs: this.idleMs(), untouchedMs: this.untouchedMs() })) {
       await this.sleep("sleeping", 4408);
       return;

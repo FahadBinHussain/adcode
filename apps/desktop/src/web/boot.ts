@@ -1,5 +1,5 @@
 /**
- * The web version's entry point: sign in, connect to the sandbox, then load the renderer.
+ * The web version's entry point: open browser chat first; compute is an explicit action.
  *
  * The renderer is the desktop's, unchanged. What it needs from its surroundings is a
  * `window.adcode` that answers like the preload does, and that has to exist before the
@@ -7,12 +7,13 @@
  * and the sandbox has said hello.
  */
 import "../renderer/styles/tokens.css";
+import "../renderer/styles/webTheme.css";
 import "./web.css";
 import { CHANNELS, type PreviewStatus } from "../shared/api.ts";
 import { createPreviewResolver, primePreviewCookie, rewriteStatus } from "./previewUrl.ts";
 import { OPEN_WEB_ACCOUNT_EVENT, DESKTOP_DOWNLOAD_URL } from "../renderer/surface.ts";
 import { createAskHandler } from "./asks.ts";
-import { gate, showWaking } from "./gate.ts";
+import { gate, hideGate, showWaking } from "./gate.ts";
 import { connectGitHub, needsGitHub } from "./githubConnect.ts";
 import { importFromGitHub, uploadDialog } from "./projectActions.ts";
 import { pickProjectFolder, type ProjectSummary } from "./projectPicker.ts";
@@ -135,7 +136,6 @@ async function boot(): Promise<void> {
   if (location.hash.length > 0) history.replaceState(null, "", location.pathname + location.search);
 
   const session = await gate();
-  showWaking();
   const showAccount = (section: unknown = "overview"): void => {
     void import("./accountPanel.tsx").then(({ openAccountPanel }) => openAccountPanel(session, section))
       .catch(() => window.alert("Couldn't load your account. Please reload and try again."));
@@ -143,6 +143,38 @@ async function boot(): Promise<void> {
   document.addEventListener(OPEN_WEB_ACCOUNT_EVENT, (event) => showAccount((event as CustomEvent<unknown>).detail));
   const requestedAccount = new URL(location.href).searchParams.get("account");
   if (requestedAccount !== null) showAccount(requestedAccount);
+
+  const params = new URL(location.href).searchParams;
+  // Local host smoke tests keep their existing development workbench. Production opens
+  // chat without even constructing a socket, regardless of available runtime capacity.
+  const runtimeRequested = params.get("workspace") === "run" || (__ADCODE_WEB_DEV__ && params.get("browser") !== "1");
+  if (!runtimeRequested) {
+    for (const child of document.body.children) {
+      if (child instanceof HTMLElement && child.id !== "web-gate" && !["SCRIPT", "STYLE"].includes(child.tagName) && !child.classList.contains("web-account-dialog")) child.dataset["webDesktopRoot"] = "true";
+    }
+    document.body.dataset["webMode"] = "browser";
+    const { mountBrowserWorkspace } = await import("./browserWorkspace.ts");
+    const workspace = mountBrowserWorkspace({
+      session,
+      onAccount: showAccount,
+      onRunPreview: async () => {
+        const target = new URL(location.href);
+        target.searchParams.delete("account");
+        target.searchParams.set("workspace", "run");
+        location.assign(target.href);
+      },
+    });
+    let stopAds: (() => void) | undefined;
+    let leaving = false;
+    window.addEventListener("pagehide", () => { leaving = true; workspace.dispose(); stopAds?.(); }, { once: true });
+    void import("./browserAds.ts").then(({ mountBrowserAds }) => {
+      if (!leaving) stopAds = mountBrowserAds(session).dispose;
+    }).catch(() => undefined);
+    hideGate();
+    return;
+  }
+  document.body.dataset["webMode"] = "runtime";
+  showWaking();
 
   let token = session.token;
   const socket = createHostSocket(() => {
@@ -208,8 +240,9 @@ async function boot(): Promise<void> {
   }
 
   await import("../renderer/main.ts");
-  // After the renderer's own sheets, so the web shell's layout wins without fighting specificity.
-  await import("./shell.css");
+  // After the renderer's own sheets, so the frame's layout wins without fighting specificity.
+  // It is the same file the desktop's Vibe window loads - see `styles/webFrame.css`.
+  await import("../renderer/styles/webFrame.css");
   document.body.dataset["shell"] = "ready";
   bar.rendererLoaded();
 }

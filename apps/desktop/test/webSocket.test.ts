@@ -7,7 +7,7 @@
  * re-sending a commit could commit twice. These tests pin that difference, and that a refused
  * sign-in stops the reconnect loop instead of hammering the server.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHANNELS } from "../src/shared/api.ts";
 import { READ_CHANNELS, createHostSocket, type WebSocketLike } from "../src/web/socket.ts";
 import { createWebApi } from "../src/web/webApi.ts";
@@ -55,6 +55,11 @@ function harness() {
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("host socket", () => {
   it("waits for the host's greeting, then sends and resolves calls", async () => {
@@ -257,5 +262,51 @@ describe("pausing", () => {
     expect(socket.state()).toBe("reconnecting");
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(sockets.length).toBe(2);
+  });
+
+  it("checks busy capacity promptly, backs off with jitter, and resets after admission", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const sockets: FakeSocket[] = [];
+    const socket = createHostSocket(() => {
+      const fake = new FakeSocket();
+      sockets.push(fake);
+      return fake;
+    });
+    for (const delay of [4_500, 9_000, 13_500, 13_500]) {
+      const count = sockets.length;
+      sockets.at(-1)!.drop(4503);
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(sockets).toHaveLength(count);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sockets).toHaveLength(count + 1);
+    }
+    sockets.at(-1)!.open();
+    sockets.at(-1)!.drop(4503);
+    await vi.advanceTimersByTimeAsync(4_500);
+    expect(sockets).toHaveLength(6);
+    socket.close();
+  });
+
+  it("keeps startup calls queued through capacity retries and sends them once admitted", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeSocket[] = [];
+    const socket = createHostSocket(() => {
+      const fake = new FakeSocket();
+      sockets.push(fake);
+      return fake;
+    }, { busyRetryMs: 5 });
+    const answer = socket.invoke(CHANNELS.settingsRead, []);
+    for (let retry = 0; retry < 3; retry += 1) {
+      sockets.at(-1)!.drop(4503);
+      await vi.advanceTimersByTimeAsync(5);
+      expect(sockets.flatMap((fake) => fake.calls())).toEqual([]);
+    }
+    const admitted = sockets.at(-1)!;
+    admitted.open();
+    expect(admitted.calls()).toHaveLength(1);
+    admitted.deliver({ t: "ret", id: admitted.calls()[0]!.id, ok: true, value: { theme: "dark" } });
+    await expect(answer).resolves.toEqual({ theme: "dark" });
+    socket.close();
   });
 });

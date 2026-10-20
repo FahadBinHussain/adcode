@@ -67,6 +67,7 @@ export const PAUSE_CODES: ReadonlySet<number> = new Set([4408, 4429, 4402]);
 export const BUSY_CODE = 4503;
 
 const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000];
+const BUSY_BACKOFF_MS = [5_000, 10_000, 15_000];
 const PREVIEW_URL_TIMEOUT_MS = 5_000;
 
 /*
@@ -98,7 +99,7 @@ interface Pending {
 
 export function createHostSocket(open: () => WebSocketLike, options: { backoffMs?: readonly number[]; busyRetryMs?: number } = {}): HostSocket {
   const backoff = options.backoffMs ?? DEFAULT_BACKOFF_MS;
-  const busyRetryMs = options.busyRetryMs ?? 30_000;
+  const busyRetryMs = options.busyRetryMs;
   const pending = new Map<number, Pending>();
   const previewWaits = new Map<number, (url: string) => void>();
   const opWaits = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -113,6 +114,7 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
   let socket: WebSocketLike | null = null;
   let state: ConnectionState = "connecting";
   let attempt = 0;
+  let busyAttempt = 0;
   let nextId = 1;
   let stopped = false;
 
@@ -139,6 +141,7 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
   const onReady = (greeting: HostHello): void => {
     hello = greeting;
     attempt = 0;
+    busyAttempt = 0;
     setState("open");
     if (latestAuth !== null) transmit(latestAuth);
     for (const [id, entry] of pending) if (!entry.sent) sendCall(id, entry);
@@ -227,7 +230,12 @@ export function createHostSocket(open: () => WebSocketLike, options: { backoffMs
       return;
     }
     setState("reconnecting");
-    const delay = code === BUSY_CODE ? busyRetryMs : backoff[Math.min(attempt, backoff.length - 1)] ?? 1000;
+    // Retry newly available capacity promptly, without making every waiting tab retry together.
+    const busyDelay = BUSY_BACKOFF_MS[Math.min(busyAttempt, BUSY_BACKOFF_MS.length - 1)]!;
+    const delay = code === BUSY_CODE
+      ? busyRetryMs ?? Math.round(busyDelay * (0.8 + Math.random() * 0.2))
+      : backoff[Math.min(attempt, backoff.length - 1)] ?? 1000;
+    busyAttempt = code === BUSY_CODE ? busyAttempt + 1 : 0;
     attempt += 1;
     setTimeout(connect, delay);
   };

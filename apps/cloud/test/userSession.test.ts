@@ -24,13 +24,14 @@ afterEach(() => {
 
 const savedArchive = { key: "homes/person/saved.tar.gz", at: 1, bytes: 100 };
 
-function fixture(options: { saved?: boolean; missing?: boolean; restoreStatus?: number; restored?: boolean; budgetFull?: boolean; archiveFails?: boolean; crashDuringSave?: boolean } = {}) {
+function fixture(options: { saved?: boolean; missing?: boolean; restoreStatus?: number; restored?: boolean; budgetFull?: boolean; archiveFails?: boolean; crashDuringSave?: boolean; running?: boolean; busy?: boolean; monitorStops?: boolean } = {}) {
   const events: string[] = [];
   const values = new Map<string, unknown>([
     ["uid", "person"],
     ["hostSecret", "current-host"],
     ["archives", options.saved === false ? [] : [savedArchive]],
     ["lastTickAt", Date.now() - 60_000],
+    ...(options.running === false ? [] : [["runningSince", Date.now() - 60_000] as [string, unknown]]),
     ...(options.restored ? [["restoredFor", "current-host"] as [string, unknown]] : []),
   ]);
   const storage = {
@@ -53,14 +54,22 @@ function fixture(options: { saved?: boolean; missing?: boolean; restoreStatus?: 
       if (options.crashDuringSave) container.running = false;
       return new Response("current home", { status: options.archiveFails ? 500 : 200 });
     }
-    if (path === "/__adcode/state") return Response.json({ busy: true, lastInputAt: Date.now(), connections: 1 });
+    if (path === "/__adcode/state") return Response.json({ busy: options.busy ?? true, lastInputAt: Date.now(), connections: 1 });
     return new Response("unexpected host request", { status: 500 });
   });
+  let resolveStopped!: () => void;
+  const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
   const container = {
-    running: true,
+    running: options.running ?? true,
+    images: { adcode: "adcode-image" },
+    start: vi.fn(() => { container.running = true; }),
     setInactivityTimeout: vi.fn(async () => undefined),
-    monitor: vi.fn(() => new Promise<void>(() => undefined)),
-    destroy: vi.fn(async () => { events.push("destroy"); container.running = false; }),
+    monitor: vi.fn(() => stopped),
+    destroy: vi.fn(async () => {
+      events.push("destroy");
+      container.running = false;
+      if (options.monitorStops) resolveStopped();
+    }),
     getTcpPort: vi.fn(() => ({ fetch: hostFetch })),
   };
   const bucket = {
@@ -82,20 +91,22 @@ function fixture(options: { saved?: boolean; missing?: boolean; restoreStatus?: 
     IDLE_SLEEP_MIN: "5",
     BUDGET: { getByName: () => budget },
   } as unknown as Env;
+  const waitUntil = vi.fn((_promise: Promise<unknown>) => undefined);
   const ctx = {
     storage,
     container,
-    waitUntil: vi.fn(),
+    waitUntil,
     blockConcurrencyWhile: vi.fn(async (work: () => Promise<void>) => work()),
   } as unknown as DurableObjectState;
   const session = new UserSession(ctx, env);
-  const lifecycle = session as unknown as { start(): Promise<void>; archive(): Promise<void>; tabs: Set<WebSocket> };
+  const lifecycle = session as unknown as { start(): Promise<void>; attach(tab: WebSocket): Promise<void>; archive(): Promise<void>; tabs: Set<WebSocket> };
   const frames: { status?: { state: string; unlimited: boolean; message?: string } }[] = [];
   const tab = {
+    addEventListener: vi.fn(),
     send: vi.fn((text: string) => { frames.push(JSON.parse(text)); }),
     close: vi.fn(() => { events.push("closed"); }),
   };
-  return { session, lifecycle, values, storage, container, bucket, hostFetch, budget, frames, tab, events };
+  return { session, lifecycle, values, storage, container, bucket, hostFetch, budget, frames, tab, events, ctx, env, waitUntil };
 }
 
 describe("saved workspace restoration", () => {
@@ -153,6 +164,106 @@ describe("saved workspace restoration", () => {
     const preview = await session.fetch(new Request("https://preview.example/", { headers: { "x-adcode-preview-port": "5173" } }));
     expect(preview.status).toBe(503);
     expect(hostFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("sandbox capacity cleanup", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("saves and stops an abandoned sandbox after an object reset without tab close events", async () => {
+    const { session, values, container, storage, events, ctx, env } = fixture({ restored: true, busy: false });
+    const firstIdleAt = Date.now();
+    await session.alarm();
+    expect(values.get("idleSince")).toBe(firstIdleAt);
+    expect(container.destroy).not.toHaveBeenCalled();
+
+    vi.setSystemTime(firstIdleAt + 4 * 60_000);
+    const recreated = new UserSession(ctx, env);
+    await recreated.alarm();
+    expect(values.get("idleSince")).toBe(firstIdleAt);
+    expect(container.destroy).not.toHaveBeenCalled();
+
+    storage.setAlarm.mockClear();
+    vi.setSystemTime(firstIdleAt + 5 * 60_000);
+    await recreated.alarm();
+    expect(events).toEqual(["archive", "saved", "destroy"]);
+    expect(container.running).toBe(false);
+    expect(storage.setAlarm).not.toHaveBeenCalled();
+  });
+
+  it("keeps an agent running without tabs and sleeps after its work finishes", async () => {
+    const { session, values, container, hostFetch } = fixture({ restored: true });
+    const firstIdleAt = Date.now();
+    await session.alarm();
+    vi.setSystemTime(firstIdleAt + 6 * 60_000);
+    await session.alarm();
+    expect(values.get("idleSince")).toBe(firstIdleAt);
+    expect(container.destroy).not.toHaveBeenCalled();
+
+    hostFetch.mockResolvedValueOnce(Response.json({ busy: false, lastInputAt: firstIdleAt, connections: 0 }));
+    await session.alarm();
+    expect(container.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("stops a sandbox that never becomes healthy without overwriting its saved home", async () => {
+    const { lifecycle, container, hostFetch, values, bucket, storage, budget, waitUntil } = fixture({ monitorStops: true });
+    hostFetch.mockImplementation(async () => new Response("starting", { status: 503 }));
+    const failedStart = expect(lifecycle.start()).rejects.toThrow("did not start in time");
+    await vi.advanceTimersByTimeAsync(91_000);
+    await failedStart;
+    await waitUntil.mock.calls[0]?.[0];
+    expect(container.destroy).toHaveBeenCalledOnce();
+    expect(values.get("archives")).toEqual([savedArchive]);
+    expect(bucket.createMultipartUpload).not.toHaveBeenCalled();
+    expect(storage.setAlarm).not.toHaveBeenCalled();
+    expect(budget.release).toHaveBeenCalledExactlyOnceWith("person");
+  });
+
+  it("retries stopped-container bookkeeping after an accounting outage so admission is returned", async () => {
+    const { session, values, container, budget, storage, waitUntil } = fixture({ monitorStops: true });
+    const previousTick = values.get("lastTickAt");
+    budget.charge.mockRejectedValueOnce(new Error("accounting unavailable"));
+    const failedStop = expect(waitUntil.mock.calls[0]?.[0]).rejects.toThrow("accounting unavailable");
+    await container.destroy();
+    await failedStop;
+    expect(values.get("lastTickAt")).toBe(previousTick);
+    expect(budget.release).not.toHaveBeenCalled();
+    expect(storage.setAlarm).toHaveBeenCalledWith(Date.now() + 60_000);
+
+    await session.alarm();
+    expect(budget.release).toHaveBeenCalledExactlyOnceWith("person");
+    expect(values.has("runningSince")).toBe(false);
+  });
+
+  it("schedules idle cleanup when a failed startup cannot be stopped", async () => {
+    const { lifecycle, container, storage, values } = fixture({ restoreStatus: 500 });
+    container.destroy.mockRejectedValueOnce(new Error("stop unavailable"));
+    await expect(lifecycle.start()).rejects.toThrow("Restoring");
+    expect(container.running).toBe(true);
+    expect(values.has("restoredFor")).toBe(false);
+    expect(storage.setAlarm).toHaveBeenCalledWith(Date.now() + 60_000);
+  });
+
+  it("returns admission when launching the container fails before monitoring starts", async () => {
+    const { lifecycle, container, budget, tab, storage } = fixture({ running: false });
+    container.start.mockImplementationOnce(() => { throw new Error("launch unavailable"); });
+    await lifecycle.attach(tab as unknown as WebSocket);
+    expect(budget.release).toHaveBeenCalledExactlyOnceWith("person");
+    expect(tab.close).toHaveBeenCalledWith(1011, "Could not start");
+    expect(storage.setAlarm).not.toHaveBeenCalled();
+  });
+
+  it("keeps an existing sandbox's admission when a tab fails to attach", async () => {
+    const { lifecycle, container, budget, tab } = fixture({ restored: true });
+    await lifecycle.attach(tab as unknown as WebSocket);
+    expect(container.running).toBe(true);
+    expect(container.destroy).not.toHaveBeenCalled();
+    expect(budget.release).not.toHaveBeenCalled();
+    expect(tab.close).toHaveBeenCalledWith(1011, "Could not start");
   });
 });
 

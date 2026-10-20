@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { alias } from "./electron.vite.config.ts";
-import { webAppHead, WEB_APP_SPLASH } from "./src/web/seo.ts";
+import { webAppHead, webPausedHead, WEB_APP_PAUSED_SPLASH, WEB_APP_SPLASH } from "./src/web/seo.ts";
 
 const DESKTOP = import.meta.dirname;
 const REPO = resolve(DESKTOP, "../..");
@@ -74,6 +74,10 @@ const CRITICAL_CSS = [
   ".web-splash p{margin:0;color:#8f8c85;font-size:14px;line-height:1.6;text-wrap:pretty}",
   ".web-splash nav{display:flex;flex-wrap:wrap;justify-content:center;gap:18px;font-size:13.5px}",
   ".web-splash a{color:#b2d8bd;text-underline-offset:4px}",
+  // The paused page's one action, in the same palette as the launch page.
+  ".web-paused-actions{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:14px;margin-top:6px}",
+  ".web-splash .web-paused-primary{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 20px;border-radius:11px;background:#6fb98f;color:#10140f;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 8px 24px rgb(111 185 143 / .22)}",
+  ".web-splash .web-paused-link{color:#b2d8bd;font-size:13.5px;text-underline-offset:4px}",
   ".web-splash-loading{display:grid;justify-items:center;gap:10px;margin-top:4px}",
   ".web-splash-loading [role=status]{font-size:13px;font-weight:500;color:#8f8c85}",
   ".web-splash-bar{width:160px;height:2px;border-radius:2px;overflow:hidden;background:#2d2b28}",
@@ -89,17 +93,31 @@ const FONT_PRELOADS = ["manrope", "space-grotesk", "geist-mono"]
   .map((name) => `    <link rel="preload" href="/fonts/${name}.woff2" as="font" type="font/woff2" crossorigin />`)
   .join("\n");
 
-/** Swap the Electron renderer's entry for the web one; everything else in the page stays. */
-function webEntry(): Plugin {
+/**
+ * Swap the Electron renderer's entry for the web one; everything else in the page stays.
+ *
+ * Production is paused until the release is ready: it ships a static notice instead of the
+ * app and its workbench markup. Development (`npm run web:vibe`, the browser smoke) keeps the
+ * real entry so the app can still be worked on locally.
+ */
+function webEntry(paused: boolean): Plugin {
   return {
     name: "adcode-web-entry",
     transformIndexHtml: {
       order: "pre",
       handler(html) {
-        const swapped = html.replace('<script type="module" src="./main.ts"></script>', '<script type="module" src="/@web/boot.ts"></script>');
-        if (swapped === html) throw new Error("adcode-web-entry: the renderer's module script moved; update vite.web.config.ts");
-        return swapped
-          .replace("<title>ADCode</title>", `${webAppHead()}\n    <meta name="theme-color" content="#111110" />\n    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />\n${FONT_PRELOADS}\n    <style id="web-critical">${CRITICAL_CSS}</style>`)
+        const script = '<script type="module" src="./main.ts"></script>';
+        if (!html.includes(script)) throw new Error("adcode-web-entry: the renderer's module script moved; update vite.web.config.ts");
+        const head = `${paused ? webPausedHead() : webAppHead()}\n    <meta name="theme-color" content="#111110" />\n    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />\n${FONT_PRELOADS}\n    <style id="web-critical">${CRITICAL_CSS}</style>`;
+        if (paused) {
+          // The paused notice is the whole document: no entry, no workbench, no scripts.
+          return html
+            .replace("<title>ADCode</title>", head)
+            .replace(/<body>[\s\S]*<\/body>/, `<body data-surface="web">\n    <div id="web-gate" class="web-gate web-gate-splash">${WEB_APP_PAUSED_SPLASH}</div>\n  </body>`);
+        }
+        return html
+          .replace(script, '<script type="module" src="/@web/boot.ts"></script>')
+          .replace("<title>ADCode</title>", head)
           .replace("<body>", `<body data-surface="web">\n    <div id="web-gate" class="web-gate web-gate-splash">${SPLASH}</div>`);
       },
     },
@@ -111,7 +129,7 @@ export default defineConfig(({ mode }) => ({
   publicDir: resolve(DESKTOP, "src/renderer/public"),
   // Its own cache, so this dev server never fights the desktop's electron-vite over one folder.
   cacheDir: resolve(DESKTOP, "out/.vite-web"),
-  plugins: [webEntry()],
+  plugins: [webEntry(mode === "production")],
   esbuild: { jsx: "automatic" },
   optimizeDeps: {
     // The scanner reads the page's raw HTML, which still names the desktop's `./main.ts`; the web

@@ -10,12 +10,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { route, type RouterDeps } from "../src/router.ts";
 import type { Env } from "../src/env.ts";
-import { INDEXABLE_LAUNCH_ROBOTS, LAUNCH_ROBOTS, WEB_APP_SCHEMA_CSP } from "../src/seo.ts";
+import { INDEXABLE_LAUNCH_ROBOTS, LAUNCH_ROBOTS, LEGACY_WEB_APP_SCHEMA_CSP, WEB_APP_SCHEMA_CSP } from "../src/seo.ts";
 
 function fakeEnv(): { env: Env; userFetch: ReturnType<typeof vi.fn>; assetsFetch: ReturnType<typeof vi.fn>; names: string[] } {
   const names: string[] = [];
   const userFetch = vi.fn(async (request: Request) => new Response(`user:${request.headers.get("x-adcode-uid")}`));
-  const assetsFetch = vi.fn(async () => new Response("<!doctype html><title>ADCode</title>", { headers: { "content-type": "text/html; charset=utf-8" } }));
+  const assetsFetch = vi.fn(async (_request: Request) => new Response("<!doctype html><title>ADCode</title>", { headers: { "content-type": "text/html; charset=utf-8" } }));
   const env = {
     APP_HOST: "web.bluethenics.com",
     PREVIEW_SUFFIX: ".web.bluethenics.com",
@@ -74,6 +74,24 @@ describe("socket", () => {
 });
 
 describe("api", () => {
+  it("uses separate lightweight storage for chats and GitHub without touching sandbox capacity", async () => {
+    const { env, userFetch, names } = fakeEnv();
+    const browserFetch = vi.fn(async (_request: Request) => Response.json({ chats: [] }));
+    const browserNames: string[] = [];
+    Object.assign(env, { BROWSER: { getByName: (name: string) => { browserNames.push(name); return { fetch: browserFetch }; } } });
+    for (const path of ["/api/chats", "/api/chats/chat_1", "/api/github/status"]) {
+      expect((await route(new Request(`https://web.bluethenics.com${path}`, {
+        headers: { authorization: "Bearer good-token", "x-adcode-uid": "someone-else", "x-adcode-preview-port": "5173", cookie: "private=1" },
+      }), env, deps)).status).toBe(200);
+    }
+    expect(browserNames).toEqual(["user-123", "user-123", "user-123"]);
+    expect(userFetch).not.toHaveBeenCalled();
+    expect(names).toEqual([]);
+    const forwarded = browserFetch.mock.calls[0]![0] as unknown as Request;
+    expect(new URL(forwarded.url).pathname).toBe("/chats");
+    expect(forwarded.headers.get("x-adcode-uid")).toBe("user-123");
+    for (const header of ["authorization", "cookie", "x-adcode-preview-port"]) expect(forwarded.headers.has(header)).toBe(false);
+  });
   it("needs a bearer token", async () => {
     const { env, names } = fakeEnv();
     expect((await route(new Request("https://web.bluethenics.com/api/session"), env, deps)).status).toBe(401);
@@ -115,6 +133,15 @@ describe("api", () => {
 });
 
 describe("the page", () => {
+  it("keeps the existing execution entry available only when explicitly requested", async () => {
+    const { env, assetsFetch, names } = fakeEnv();
+    const response = await route(new Request("https://web.bluethenics.com/?workspace=run"), env, deps);
+    expect(response.status).toBe(200);
+    expect(new URL((assetsFetch.mock.calls[0]![0] as unknown as Request).url).pathname).toBe("/legacy-workspace.html");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    expect(response.headers.get("content-security-policy")).toContain(LEGACY_WEB_APP_SCHEMA_CSP);
+    expect(names).toEqual([]);
+  });
   it("serves the app with a strict content security policy", async () => {
     const { env } = fakeEnv();
     const response = await route(new Request("https://web.bluethenics.com/"), env, deps);
@@ -123,6 +150,7 @@ describe("the page", () => {
     expect(csp).toContain("frame-src https://*.web.bluethenics.com https://adcode-test.firebaseapp.com");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain(WEB_APP_SCHEMA_CSP);
+    expect(csp).not.toContain(LEGACY_WEB_APP_SCHEMA_CSP);
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 

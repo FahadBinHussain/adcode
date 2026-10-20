@@ -13,6 +13,7 @@ import { defaultDeps, route } from "./router.ts";
 export { BudgetObject } from "./budgetObject.ts";
 export { PreviewRoute } from "./previewRoute.ts";
 export { UserSession } from "./userSession.ts";
+export { BrowserSession } from "./browserSession.ts";
 
 export default {
   async fetch(request, env): Promise<Response> {
