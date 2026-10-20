@@ -3,6 +3,18 @@
 All notable changes to ADCode. Dates are the date the version was prepared; a version is
 only public once its installers are attached to a GitHub release.
 
+## 2.4.0 — 2026-10-20
+
+- **A new look for the Vibe window.** An icon rail on the left for Chat, Agents, Tools, Changes, Preview and Automations; a sidebar card with your project and chats; and a tab for each open chat along the top. New type throughout (Manrope, Space Grotesk, Geist Mono), quieter borders, and small, quick motion that stays still when you ask for reduced motion. The app's menus open from the button beside the ADCode name. The IDE window is unchanged.
+- **Chats keep working in the background**, several at once. A spinner in the chat list (and on its tab) shows which are working, and a dot marks one that finished while you were elsewhere.
+- **Each answer is a timeline**: what the assistant read, ran and changed, step by step, folded once it is done.
+- **Helpers.** The assistant can split a big job across up to four helper agents that work at the same time, each with a fresh context: explore helpers read, build helpers change files. Their progress shows in the conversation, Undo covers their edits and Stop stops them all. Ask with `/helpers`.
+- **AGENTS.md.** The assistant follows your project's `AGENTS.md` (and `CLAUDE.md`, `GEMINI.md`, Copilot instructions, and your own `~/.adcode/AGENTS.md`). `/init` writes one for your project.
+- **Rules and hooks for agents.** Allow, ask or deny tools per command and path, and run your own hooks before and after tool calls, from `.adcode/settings.json`.
+- **Prompt caching** keeps long agent runs cheaper and faster on providers that support it; cached tokens show in AI usage.
+- **Connectors**: MCP servers, Claude Desktop extensions, Claude Code plugins and OpenAI-style actions can be added from Tools → Connectors.
+- **Included AI** has no ADCode usage limit, and the model menu lists every included model rather than the first three.
+
 ## 2.3.2 — 2026-10-14
 
 - A dropped connection no longer ends a free AI task. The request is retried inside the same turn for about two minutes, with a status line and Stop, and completed tool steps are not repeated. If the connection stays down, the message names the network error.

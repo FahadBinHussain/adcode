@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FAQ } from "../src/lib/schema";
 import { SOURCE } from "../src/lib/site";
 import { GET as llms } from "../src/app/llms.txt/route";
@@ -32,11 +32,17 @@ describe("the site says ADCode is open source", () => {
   });
 
   it("tells language models too, in both files", async () => {
+    // Offline: the routes also list posts and releases from the API, and this is about the
+    // licence lines, not about whether production answered today.
+    vi.stubGlobal("fetch", async () => { throw new TypeError("offline in tests"); });
+    vi.stubEnv("SUPABASE_URL", "");
     for (const route of [llms, llmsFull]) {
       const text = await (await route()).text();
       expect(text).toContain("Apache-2.0");
       expect(text).toContain(SOURCE.repo);
     }
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });
 
