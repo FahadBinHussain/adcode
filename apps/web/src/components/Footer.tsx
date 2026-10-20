@@ -28,6 +28,7 @@ export function Footer() {
           <Link href="/">Overview</Link>
           <Link href="/versions">Download</Link>
           <Link href="/docs">Documentation</Link>
+          <Link href="/status">Status</Link>
           <a href={SOURCE.repo}>Source code</a>
           <Link href="/#advertise">Advertise</Link>
         </nav>

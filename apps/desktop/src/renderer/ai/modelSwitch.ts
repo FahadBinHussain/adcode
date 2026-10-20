@@ -24,6 +24,12 @@ export interface ModelChoice {
 /** Shown at most, so the menu stays a menu. */
 const MAX_CHOICES = 12;
 const PER_PROVIDER = 3;
+/**
+ * Included AI's list is short and chosen by ADCode, and it is the list people open the menu to
+ * see: every free model is offered, not the three a busy provider is trimmed to.
+ */
+const INCLUDED_PROVIDER = "tagflow";
+const INCLUDED_SHOWN = 8;
 const RECENT_KEPT = 6;
 
 /** A provider that would answer a message sent now. */
@@ -49,12 +55,13 @@ export function modelChoices(status: AiStatus, recent: readonly string[]): Model
     if (provider.id === status.activeProvider && status.activeModel.length > 0) ids.push(status.activeModel);
     const recommended = provider.models.find((model) => model.recommended === true)?.id ?? provider.models[0]?.id;
     if (recommended !== undefined) ids.push(recommended);
+    if (provider.id === INCLUDED_PROVIDER) ids.push(...provider.models.map((model) => model.id));
     for (const entry of recent) {
       const [recentProvider, recentModel] = entry.split("\u0000");
       if (recentProvider === provider.id && recentModel !== undefined) ids.push(recentModel);
     }
 
-    for (const id of [...new Set(ids)].slice(0, PER_PROVIDER)) {
+    for (const id of [...new Set(ids)].slice(0, provider.id === INCLUDED_PROVIDER ? INCLUDED_SHOWN : PER_PROVIDER)) {
       const model = provider.models.find((one) => one.id === id);
       choices.push({
         provider: provider.id,

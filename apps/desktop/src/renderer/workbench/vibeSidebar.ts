@@ -22,10 +22,11 @@ import { createIcon as createWorkbenchIcon, ICON, type IconSource } from "./icon
 import { attachContextMenuDismissal, createContextMenu, type ContextMenu, type ContextMenuNode } from "./contextMenu.ts";
 import { describeVibeProject, projectName, recentProjectsFor, summarizeVibeChanges, VIBE_PAGES, type VibePage } from "./vibeSidebarModel.ts";
 import { GIT_CHANGED_EVENT } from "./changesView.ts";
-import { isWebSurface } from "../surface.ts";
+import { isWebSurface, usesWebFrame } from "../surface.ts";
 import { brandMark } from "./brandMark.ts";
 import { WEB_ICON } from "./webIcons.ts";
 import { createChatTabs, createWebRail, type WebRail } from "./webShell.ts";
+import type { AppMenu } from "./appMenu.ts";
 
 /** Below this width the rail would squeeze the conversation, so it becomes a drawer. */
 export const VIBE_DOCK_MIN_WIDTH = 1120;
@@ -58,12 +59,13 @@ const PATH = {
   sidebar: "M2.5 3h11v10h-11zM6.5 3v10",
 } as const;
 
-// Desktop keeps its existing icon set; browser navigation uses official Lucide nodes.
+// The desktop chrome keeps its existing icon set; a window wearing the web frame uses official
+// Lucide nodes, so the frame reads the same on both surfaces and one icon name means one glyph.
 const webPaths = new Map<string, IconSource>(Object.entries(PATH).map(([key, path]) => [path, WEB_ICON[key as keyof typeof PATH]]));
 webPaths.set(ICON.earnings, WEB_ICON.earnings);
 webPaths.set(ICON.close, WEB_ICON.close);
 function createIcon(source: IconSource): SVGSVGElement {
-  return createWorkbenchIcon(isWebSurface() && typeof source === "string" ? webPaths.get(source) ?? source : source);
+  return createWorkbenchIcon(usesWebFrame() && typeof source === "string" ? webPaths.get(source) ?? source : source);
 }
 
 export interface VibeSidebarDeps {
@@ -74,6 +76,14 @@ export interface VibeSidebarDeps {
   readonly search: HTMLElement | null;
   /** The shared "More" button (`.project-tools`); its menu belongs to the dock. */
   readonly more: HTMLButtonElement;
+  /**
+   * The app's own menus behind the frame's button (`appMenu.ts`).
+   *
+   * Null when this window shows the menus its own way - the Code window, which has a title bar
+   * to put them in, and macOS, where the system draws the menu bar - and the brand row leaves
+   * the button out rather than pointing at nothing.
+   */
+  readonly appMenu: AppMenu | null;
   readonly toggleContext: (tab: Exclude<ContextTab, "project">) => void;
   readonly showContext: (tab: ContextTab) => void;
   readonly togglePreview: () => void;
@@ -112,9 +122,11 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   element.setAttribute("aria-label", "Vibe sidebar");
 
   let collapsed = false;
-  /** The web frame's rail, when this is the web version; built once the rows exist. */
+  /** The frame's rail, when this window wears the frame; built once the rows exist. */
   let webRail: WebRail | null = null;
   let webTabsTrailing: HTMLElement | null = null;
+  /** The status bar's Run slot, which rides with the frame's tabs row instead (see `applyLayout`). */
+  let webRunSlot: HTMLElement | null = null;
   let webTabChanges: HTMLButtonElement | null = null;
   let webTabPreview: HTMLButtonElement | null = null;
   try { collapsed = localStorage.getItem(COLLAPSED_KEY) === "true"; } catch { /* Optional preference. */ }
@@ -259,6 +271,9 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
 
   // On the web there is no second window: the same button offers the desktop app, which has the full IDE.
   const web = isWebSurface();
+  // The frame is worn by the web and by the desktop app's Vibe window alike (surface.ts); the
+  // `web` flag above is only about which product this is, which is what the frame's words say.
+  const frame = usesWebFrame();
   const workspaceControls = createWorkspaceControls({ run: deps.run, changes: () => deps.showContext("changes"), project: () => deps.showContext("project"), browser: () => deps.run("workspace.browser"), web });
   const ide = document.createElement("button");
   ide.type = "button";
@@ -305,7 +320,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
 
   const main = document.createElement("div");
   main.className = "vibe-rail-main";
-  if (web) {
+  if (frame) {
     webRail = buildWebFrame();
     webRail.setCurrent("chat");
   } else {
@@ -314,9 +329,16 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   }
 
   /*
-   * The web version's frame (webShell.ts): an icon rail with the places and panels, a sidebar
-   * that reads like a plan - credits, earnings, the project, the chats - and tabs along the
-   * top. Every control here calls the same action as its desktop row above.
+   * The frame (webShell.ts): an icon rail with the places and panels, a sidebar that reads like
+   * a plan - credits, earnings, the project, the chats - and tabs along the top. Every control
+   * here calls the same action as its desktop row above.
+   *
+   * On the web that is the whole window. On the desktop it is the whole window too, which means
+   * the frame has to carry what the title bar and the status bar carried there: the app's own
+   * menus (in a card of their own - `appMenu.ts`), the account, feedback, the More menu, the
+   * update, the live session, Run. Where each of those sits is the frame stylesheet's business;
+   * what this function does is move them, keeping the action each one calls - so a door that
+   * moved is still the door.
    */
   function buildWebFrame(): WebRail {
     // One search icon, as Freebuff has, opening the same universal search the box did.
@@ -326,13 +348,27 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     const wordmark = document.createElement("span");
     wordmark.className = "web-sidebar-wordmark";
     wordmark.textContent = "ADCode";
+    // The menus have no row of their own outside the Code window's title bar, so their button
+    // sits beside the wordmark, where a window's own menus would be. Absent on macOS, where the
+    // system draws the menu bar and there is nothing for the card to hold.
+    const menuButton = deps.appMenu?.element ?? null;
     const dismiss = button("web-sidebar-search web-sidebar-close", "Close navigation", ICON.close, () => closeDrawer());
-    brand.append(brandMark({ size: 24, plate: true, accent: true }), wordmark, searchButton, dismiss);
+    brand.append(brandMark({ size: 24, plate: true, accent: true }), wordmark, ...(menuButton === null ? [] : [menuButton]), searchButton, dismiss);
     newConversation.control.querySelector("svg")?.replaceWith(createIcon(WEB_ICON.newChat));
 
     const credits = navItem("Included AI", PATH.spark, "web-credits-row", () => { deps.run("ai.showCredits"); closeDrawer(); });
-    const earningsRow = navItem("Earnings", ICON.earnings, "web-earnings-row", () => { openWebAccount("earnings"); closeDrawer(); });
-    const invite = navItem("Invite friends, earn more", PATH.gift, "web-invite-row", () => { openWebAccount("invites"); closeDrawer(); });
+    // On the web these rows open its account dialog, which is where a browser keeps earnings and
+    // invites. The desktop has real panels for both, so they open those instead.
+    const earningsRow = navItem("Earnings", ICON.earnings, "web-earnings-row", () => {
+      if (web) openWebAccount("earnings");
+      else deps.run("view.earnings");
+      closeDrawer();
+    });
+    const invite = navItem("Invite friends, earn more", PATH.gift, "web-invite-row", () => {
+      if (web) openWebAccount("invites");
+      else deps.run("invite.open");
+      closeDrawer();
+    });
     const usage = document.createElement("div");
     usage.className = "vibe-nav web-usage";
     usage.append(credits.control, earningsRow.control, invite.control);
@@ -358,14 +394,18 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     const links = document.createElement("div");
     links.className = "vibe-nav web-links";
     links.append(
-      link("Desktop app", PATH.monitor, () => deps.run("workspace.openIde")),
+      // Where the web offers the desktop app, the desktop offers what its menu bar used to put
+      // on screen: the shortcuts, now that the menus live behind a button.
+      web ? link("Desktop app", PATH.monitor, () => deps.run("workspace.openIde")) : link("Keyboard shortcuts", WEB_ICON.keyboard, () => deps.run("help.shortcuts")),
       link("Docs", PATH.book, () => window.open("https://adcode.bluethenics.com/docs", "_blank", "noopener")),
       link("All features", PATH.grid, () => document.getElementById("open-features")?.click()),
     );
     const promo = document.createElement("div");
     promo.className = "web-promo";
     const promoText = document.createElement("p");
-    promoText.textContent = "For local projects and local models, use ADCode on desktop.";
+    promoText.textContent = web
+      ? "For local projects and local models, use ADCode on desktop."
+      : "The IDE window has the editor, terminals, local projects and your own models.";
     promo.append(promoText, ide);
 
     const panel = document.createElement("div");
@@ -376,27 +416,71 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     panelFooter.append(links, promo);
     panel.append(main, panelFooter);
 
-    // Controls that lived in the desktop title bar and footer move to the rail.
+    // Controls that lived in the desktop title bar and status bar move to the rail: the account
+    // and feedback buttons, the update (whose label becomes a tooltip - the icon carries the
+    // state), and the live session, which takes the slot the web spends on its account item.
     const account = document.getElementById("account-toggle");
     const feedback = document.getElementById("report-toggle");
+    const update = document.getElementById("status-update");
+    const share = document.getElementById("status-collab");
+    /*
+     * The status bar drew the live session as a sparse 16px glyph, sized for a row with words
+     * beside it. In the rail it stands alone among Lucide nodes, where that drawing read as a
+     * faint mark; the same meaning, drawn at the weight of its neighbours. The button is
+     * unchanged - the accent fill while hosting, its label and its panel are still its own -
+     * so only the glyph inside it is swapped.
+     */
+    if (share !== null) share.querySelector("svg")?.replaceWith(createIcon(WEB_ICON.share));
+    /* The first panel item. The web spends this slot on its account row - the account dialog is
+       where a browser keeps everything account-shaped. The desktop's account button is already in
+       the rail's footer, so on the desktop the slot goes to the live session instead, and it is
+       the real button that moves: the accent fill that says "hosting" is its own state. */
+    const accountPanel = web || share === null
+      ? { id: "account", label: "Account", icon: WEB_ICON.account, run: () => { openWebAccount(); closeDrawer(); } }
+      : { id: "share", control: share };
     const rail = createWebRail({
       home: () => { deps.showPage("chat"); closeDrawer(); },
       places: VIBE_PAGES.map((page) => ({ id: page.id, label: page.label, icon: WEB_ICON[page.id], run: () => { deps.showPage(page.id); closeDrawer(); } })),
       panels: [
-        { id: "account", label: "Account", icon: WEB_ICON.account, run: () => { openWebAccount(); closeDrawer(); } },
+        accountPanel,
         { id: "changes", label: "Changes", icon: WEB_ICON.changes, run: () => { deps.toggleContext("changes"); closeDrawer(); } },
         { id: "preview", label: "Preview", icon: WEB_ICON.preview, run: () => { deps.togglePreview(); closeDrawer(); } },
         { id: "automations", label: "Automations", shortLabel: "Schedule", icon: WEB_ICON.automations, run: () => { chat.openScheduleComposer(); closeDrawer(); } },
       ],
-      footer: [notifications, settings, deps.more, ...(feedback === null ? [] : [feedback]), ...(account === null ? [] : [account])],
+      footer: [
+        notifications,
+        ...(update === null ? [] : [update]),
+        settings,
+        deps.more,
+        ...(feedback === null ? [] : [feedback]),
+        ...(account === null ? [] : [account]),
+      ],
     });
     // These controls originate in shared chrome; keep their behavior and badges intact.
     // The account button is the one that must not be keyed to an icon id: this swap replaces
     // its #account-glyph, so the account menu carries the photo state on the button itself.
+    // More is the exception the other way - the toolbar drew it as a "⋯" character, not an svg,
+    // so on the rail its text is what the icon replaces.
     for (const [control, icon] of [[deps.more, WEB_ICON.more], [feedback, WEB_ICON.feedback], [account, WEB_ICON.account]] as const) {
-      control?.querySelector("svg")?.replaceWith(createIcon(icon));
+      if (control === null) continue;
+      const glyph = control.querySelector("svg");
+      if (glyph !== null) glyph.replaceWith(createIcon(icon));
+      else if (control.childElementCount === 0) control.replaceChildren(createIcon(icon));
     }
     element.append(rail.element, panel);
+
+    /*
+     * With no title bar left to grab, the frame carries the places the window can be dragged by.
+     * Two of them are built here - the strip above the rail's mark, and the free space between
+     * the tabs and the actions - and the wordmark between them is the third (webFrame.css).
+     * None of them overlaps a control: the OS claims a press inside a drag rect before the
+     * renderer ever sees it, so a rect laid over a button is a button that has stopped working.
+     */
+    if (!web) {
+      const railDrag = document.createElement("div");
+      railDrag.className = "web-rail-drag";
+      rail.element.prepend(railDrag);
+    }
 
     const tabToggle = button("web-tabs-button", "Hide sidebar (Ctrl+B)", PATH.sidebar, () => toggle());
     const tabChanges = button("web-tabs-button", "Changes", WEB_ICON.changes, () => deps.toggleContext("changes"));
@@ -409,6 +493,16 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
       trailing: [tabChanges, tabPreview, workspaceControls.element],
     });
     webTabsTrailing = tabs.element.querySelector(".web-tabs-trailing");
+    if (!web) {
+      const tabsDrag = document.createElement("div");
+      tabsDrag.className = "web-tabs-drag";
+      webTabsTrailing?.before(tabsDrag);
+    }
+    // Run was a status bar control; the tabs row is the only row the frame has. `applyLayout`
+    // sends it to the compact actions with the workspace switcher when the rail is a drawer.
+    // The web has no run button, which is why this is read from the DOM rather than assumed.
+    const runSlot = document.getElementById("status-run-slot");
+    if (runSlot !== null && runSlot.firstElementChild !== null) webRunSlot = runSlot;
     webTabChanges = tabChanges;
     webTabPreview = tabPreview;
     tabChanges.setAttribute("aria-pressed", "false");
@@ -458,7 +552,9 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   topChanges.setAttribute("aria-pressed", "false");
   const compactActions = document.createElement("div");
   compactActions.className = "web-compact-actions";
-  if (web) {
+  // The frame's compact top bar: what the rail holds as loose icons - a new chat, Changes,
+  // Preview, the workspace switcher, Run - stacked where a narrow window can still reach it.
+  if (frame) {
     const newChat = button("vibe-topbar-button web-new-chat", "New chat", WEB_ICON.newChat, () => { deps.showPage("chat"); deps.run("ai.newConversation"); });
     newChat.append(document.createTextNode("New chat"));
     const workspaceButton = workspaceControls.element.querySelector("button")!;
@@ -592,9 +688,10 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
     document.body.dataset["vibeRail"] = next;
     if (isDocked && drawerOpen) closeDrawer(false);
     if (deps.search !== null) (isDocked ? searchHost : topSearchHost).append(deps.search);
-    if (web) {
+    if (frame) {
       const host = isDocked ? webTabsTrailing : compactActions;
       if (host && workspaceControls.element.parentElement !== host) host.append(workspaceControls.element);
+      if (host && webRunSlot !== null && webRunSlot.parentElement !== host) host.append(webRunSlot);
     }
     menuToggle.title = isDocked ? "Hide sidebar (Ctrl+B)" : "Show sidebar (Ctrl+B)";
     menuToggle.setAttribute("aria-label", menuToggle.title);

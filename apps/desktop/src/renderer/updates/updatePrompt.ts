@@ -65,6 +65,17 @@ export function createUpdatePrompt(deps: UpdatePromptDeps): UpdatePrompt {
     deps.statusItem.textContent = view.label ?? "";
     deps.statusItem.title = view.title;
     deps.statusItem.disabled = !view.canRestart;
+    /*
+     * The same sentence, for the rail.
+     *
+     * `title` serves the status bar, where this button is a word you read. In the frame it is a
+     * 40px square with the label gone, and a native `title` tooltip under a square arrives late
+     * and in the wrong place - the rail draws its own from `data-tip`. An update outlives the
+     * rail that was built before it, so the tip is rewritten here on every draw rather than
+     * copied once when the rail is built.
+     */
+    if (view.title === "") delete deps.statusItem.dataset["tip"];
+    else deps.statusItem.dataset["tip"] = view.title;
   };
 
   const offer = async (): Promise<void> => {

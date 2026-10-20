@@ -1,0 +1,19 @@
+/*
+ * The status page's admin section. Only the pieces the generic admin classes do not
+ * already cover: the per-incident update composer.
+ */
+.admin-status-compose summary {
+  padding: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.admin-status-compose summary:hover {
+  color: var(--text);
+}
+
+.admin-status-compose[open] summary {
+  margin-bottom: 6px;
+  color: var(--text);
+}

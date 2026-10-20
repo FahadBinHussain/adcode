@@ -60,6 +60,7 @@ import type {
   Store,
   UserRecord,
 } from "../src/store.ts";
+import type { StatusIncidentRecord, StatusIncidentUpdateRecord } from "../src/status.ts";
 
 type Firestore = import("firebase-admin/firestore").Firestore;
 
@@ -1366,6 +1367,51 @@ export function createFirestoreStore(injected?: Firestore, injectedPayoutKey?: s
       return snap.docs
         .map((d) => d.data() as NoticeRecord)
         .sort((a, b) => b.createdAt - a.createdAt);
+    },
+
+    async listStatusIncidents() {
+      const snap = await (await lazy()).collection("statusIncidents").get();
+      return snap.docs
+        .map((d) => d.data() as StatusIncidentRecord)
+        .sort((a, b) => b.createdAt - a.createdAt);
+    },
+
+    async listStatusIncidentUpdates() {
+      const snap = await (await lazy()).collection("statusIncidentUpdates").get();
+      return snap.docs
+        .map((d) => d.data() as StatusIncidentUpdateRecord)
+        .sort((a, b) => b.createdAt - a.createdAt);
+    },
+
+    async getStatusIncident(incidentId) {
+      const snap = await (await lazy()).collection("statusIncidents").doc(incidentId).get();
+      return snap.exists ? (snap.data() as StatusIncidentRecord) : null;
+    },
+
+    // The incident and its first update are two writes that must land together.
+    async createStatusIncident(incident, firstUpdate) {
+      const database = await lazy();
+      await database.runTransaction(async (tx) => {
+        tx.set(database.collection("statusIncidents").doc(incident.incidentId), incident);
+        tx.set(database.collection("statusIncidentUpdates").doc(firstUpdate.updateId), firstUpdate);
+      });
+    },
+
+    async addStatusIncidentUpdate(incidentId, update) {
+      const database = await lazy();
+      return database.runTransaction(async (tx) => {
+        const ref = database.collection("statusIncidents").doc(incidentId);
+        const snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        // Same rule as status_add_incident_update: a reopen clears the resolution time.
+        tx.update(ref, {
+          status: update.status,
+          updatedAt: update.createdAt,
+          resolvedAt: update.status === "resolved" ? update.createdAt : null,
+        });
+        tx.set(database.collection("statusIncidentUpdates").doc(update.updateId), update);
+        return true;
+      });
     },
 
     async creativesByStatus(status) {

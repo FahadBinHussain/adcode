@@ -25,6 +25,19 @@ export interface RailItem {
   readonly run: () => void;
 }
 
+/**
+ * A rail panel that is a control the app already owns, moved into the rail rather than rebuilt.
+ *
+ * The live session is the reason: its button carries state the app writes onto it - the accent
+ * fill while hosting, its label, the expanded state of its panel - and a copy in the rail would
+ * be a second thing to keep in step with the first. Moved, it is the same button, and every
+ * state it already had comes with it.
+ */
+export interface MovedPanel {
+  readonly id: string;
+  readonly control: HTMLElement;
+}
+
 export interface WebRail {
   readonly element: HTMLElement;
   /** Mark which place is showing; `null` for none. */
@@ -60,7 +73,7 @@ function railButton(item: RailItem): HTMLButtonElement {
 export function createWebRail(options: {
   readonly home: () => void;
   readonly places: readonly RailItem[];
-  readonly panels: readonly RailItem[];
+  readonly panels: readonly (RailItem | MovedPanel)[];
   /** Controls that already exist elsewhere and move here: notifications, settings, account. */
   readonly footer: readonly HTMLElement[];
 }): WebRail {
@@ -78,7 +91,7 @@ export function createWebRail(options: {
 
   const places = document.createElement("div");
   places.className = "web-rail-group";
-  const buttons = new Map<string, HTMLButtonElement>();
+  const buttons = new Map<string, HTMLElement>();
   for (const item of options.places) {
     const button = railButton(item);
     buttons.set(item.id, button);
@@ -87,6 +100,22 @@ export function createWebRail(options: {
   const panels = document.createElement("div");
   panels.className = "web-rail-group";
   for (const item of options.panels) {
+    // A control the app already built (the live session): moved into the rail, not copied, so
+    // its own state styling and its own handlers are the ones on screen.
+    if ("control" in item) {
+      const control = item.control;
+      control.classList.add("web-rail-item");
+      // The same marker a built button carries, so compact mode treats it as a rail item and
+      // the tests can find it by place rather than by which module made it.
+      control.dataset["rail"] = item.id;
+      if (!control.dataset["tip"]) {
+        const label = control.getAttribute("aria-label") ?? control.title;
+        if (label) control.dataset["tip"] = label;
+      }
+      buttons.set(item.id, control);
+      panels.append(control);
+      continue;
+    }
     const button = railButton(item);
     button.setAttribute("aria-pressed", "false");
     buttons.set(item.id, button);

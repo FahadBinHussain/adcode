@@ -134,10 +134,27 @@ export function createAccountMenu(
 
   function place(): void {
     const rect = button.getBoundingClientRect();
-    panel.style.top = `${Math.round(rect.bottom + 6)}px`;
-    // Right-aligned to the button, then clamped so it cannot hang off a narrow window.
-    const right = Math.max(8, Math.round(window.innerWidth - rect.right));
+    /*
+     * Right-aligned to the button, then pulled back inside the window.
+     *
+     * The button is in the title bar in the Code window and in the frame's rail in Vibe, where it
+     * sits against the window's left edge: "right of the button" there would be most of the width
+     * of the window away, and the panel would open against the far right of the screen it was
+     * asked from. Clamped both ways, so the button can be anywhere and the panel stays on screen.
+     */
+    const right = Math.min(
+      Math.max(Math.round(window.innerWidth - rect.right), 8),
+      Math.max(8, window.innerWidth - panel.offsetWidth - 8),
+    );
     panel.style.right = `${right}px`;
+
+    // Below the button, unless there is no room - the rail's button is at the bottom of the
+    // window, so there usually is not.
+    const below = Math.round(rect.bottom + 6);
+    const top = below + panel.offsetHeight > window.innerHeight - 8
+      ? Math.round(rect.top - panel.offsetHeight - 6)
+      : below;
+    panel.style.top = `${Math.max(8, top)}px`;
   }
 
   function render(): void {

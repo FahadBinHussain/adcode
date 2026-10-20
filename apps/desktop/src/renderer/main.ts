@@ -5,6 +5,9 @@ import { createAgentBrowserPane } from "./preview/agentBrowserPane.ts";
  * Everything except the text-editing surface itself is ours (brief §2).
  */
 import "./styles/tokens.css";
+// The web look's type and tokens, shared by the web version and the desktop Vibe window
+// (surface.ts). Before everything else so a window wearing the frame has its fonts at once.
+import "./styles/webTheme.css";
 import "./styles/workbench.css";
 import "./styles/notifications.css";
 import "./styles/settings.css";
@@ -45,6 +48,15 @@ import "./styles/composer.css";
 // Last: its reduced-motion-guarded rules refine the entrances the sheets above declare.
 import "./styles/motion.css";
 import "./styles/workspacePolish.css";
+/*
+ * The frame itself, and it has to be last.
+ *
+ * A frame rule and a desktop rule can land on the same specificity (`.web-rail-footer > *`
+ * against `.project-toolbar-action`), and the frame is the one that has to win - so it comes
+ * after every sheet it is allowed to overrule. `boot.ts` loads the same file in the same
+ * position on the web.
+ */
+import "./styles/webFrame.css";
 import { createFrameTask } from "./frameTask.ts";
 import {
   MOTION_SETTING,
@@ -70,6 +82,7 @@ import { createDebugView } from "./debug/debugView.ts";
 import { createStyleHints } from "./panels/styleHints.ts";
 import { createCommandRegistry } from "./workbench/commands.ts";
 import { createMenuBar } from "./workbench/menuBar.ts";
+import { createAppMenu } from "./workbench/appMenu.ts";
 import { sameWorkspacePath, shortenPath } from "./workbench/pathLabel.ts";
 import { createAltMenuActivation } from "./workbench/altMenuActivation.ts";
 import { createCommandCentre } from "./workbench/commandCentre.ts";
@@ -176,7 +189,7 @@ import {
 } from "../shared/keybindings.ts";
 import type { BindingOverrides } from "../shared/keybindings.ts";
 import { webShortcutOverrides } from "../shared/webShortcuts.ts";
-import { isWebSurface } from "./surface.ts";
+import { isWebSurface, usesWebFrame } from "./surface.ts";
 import { scaffoldFor, todoMarksIn } from "@adcode/structure";
 import { createAccountMenu } from "./workbench/accountMenu.ts";
 import { createOnboardingSheet } from "./onboarding/onboardingSheet.ts";
@@ -3212,6 +3225,18 @@ function localVersionLabel(savedAt: string): string {
 let sessionReady = false;
 const isIdeWindow = window.location.hash === "#/ide";
 
+/**
+ * Which frame this window wears.
+ *
+ * The web version's frame - the icon rail, the sidebar card, the chat tabs - is worn by the
+ * desktop app's Vibe window as well; the Code window keeps the desktop chrome it has always
+ * had. `<html data-frame="web">` is the one place that decides: `usesWebFrame()` answers from
+ * it, `styles/webFrame.css` keys every rule on it, and it is set here, before anything is
+ * built, so the DOM made for the frame and the CSS drawn for it cannot disagree. The web sets
+ * the same attribute for itself when it boots (`boot.ts`); setting it twice is setting it once.
+ */
+if (!isIdeWindow) document.documentElement.dataset["frame"] = "web";
+
 /** Record the folder and the open editors, so the next launch can reopen them. */
 function rememberSession(): void {
   if (!sessionReady) return;
@@ -5090,6 +5115,18 @@ window.adcode.collab.onStatus((status) => {
   }
 
   el("status-collab").dataset["state"] = status.mode;
+  /*
+   * The same words, in the second place they are needed.
+   *
+   * The status bar had room for them beside the icon; the frame's rail is a 40px square with
+   * room for the icon alone, so there the same sentence becomes the tooltip and the accessible
+   * name. Written on every status rather than on mode changes, because the number of people in
+   * the session moves without the mode moving.
+   */
+  const control = el("status-collab");
+  const spoken = label.textContent ?? "Share";
+  control.dataset["tip"] = `Live session - ${spoken}`;
+  control.setAttribute("aria-label", `Live session: ${spoken}`);
 });
 
 window.adcode.collab.onDocUpdate((path, update) =>
@@ -5331,6 +5368,16 @@ async function boot(): Promise<void> {
 /* ── Commands, shortcuts, and the menu bar (§3) ───────────────────────── */
 
 const platform = navigator.userAgent.includes("Mac") ? "darwin" : "win32";
+
+/*
+ * The window's corners belong to different tools per platform, and CSS cannot ask which: Windows
+ * draws its caption buttons over the top-right of the window, macOS puts the traffic lights over
+ * the top-left. `webFrame.css` leaves room on whichever side needs it, reading this attribute.
+ *
+ * Not on the web: a browser tab has no caption buttons and no traffic lights, and its own
+ * `platform` string would only tell the frame to leave room for someone else's furniture.
+ */
+if (!isWebSurface()) document.documentElement.dataset["platform"] = platform;
 
 let untitledCount = 0;
 
@@ -6386,6 +6433,17 @@ const menuBar =
       });
 
 /**
+ * The app's own menus, in the windows that show the frame.
+ *
+ * `menuBar.ts` draws a row of menus along the title bar's left edge, which is where the Code
+ * window still wants them. A window with no title bar has nowhere to put that row, so the bar
+ * moves into a card that opens from a button in the sidebar's brand row - the same bar, the same
+ * commands, the same Alt chords (`appMenu.ts`). The web has no menus of its own to show and macOS
+ * draws the menu bar itself, so neither gets a card or a button.
+ */
+const appMenu = menuBar === null || isWebSurface() || !usesWebFrame() ? null : createAppMenu({ bar: menuBar });
+
+/**
  * Clone a repository, then open it.
  *
  * Two questions rather than a form, because they are genuinely sequential: the folder name
@@ -6503,7 +6561,9 @@ const welcome = createWelcomeView({
 
 void welcome.refresh();
 
-if (menuBar !== null) el("menubar-slot").append(menuBar.element);
+// Into the title bar's own slot in the Code window; into the app-menu card everywhere the
+// frame is worn, where `appMenu.ts` has already taken it.
+if (menuBar !== null && appMenu === null) el("menubar-slot").append(menuBar.element);
 
 /* ── Title bar: the assistant on the left, the command centre in the middle ─ */
 
@@ -6601,6 +6661,7 @@ assistantDock = createAssistantDock({
   onUnreadNotifications: listener => { notifications.onUnreadChanged(listener); },
   // A cached mirror of the server's figure, like the status bar's; never computed here.
   onEarnings: listener => { window.adcode.ads.onEarnings(earnings => listener(earnings.hasServerBalance ? earnings.availableLabel : "")); },
+  appMenu,
 });
 
 // Vibe's Agents page. The IDE window shows the same board in a popup instead (see agentsShell).
@@ -6740,7 +6801,11 @@ window.addEventListener(
     // Focus, not open. Windows has always put the bar into a waiting state on Alt and let
     // the next key decide; opening File immediately - which this used to do - cost you a
     // dropdown every time you reached for the bar to press a letter.
-    menuBar.focusBar();
+    //
+    // Where the bar lives in a card (the frame), the card has to come out first and be focused
+    // with it, and a second Alt puts both away again (`appMenu.ts`).
+    if (appMenu === null) menuBar.focusBar();
+    else appMenu.toggle();
   },
   true,
 );
@@ -6773,7 +6838,13 @@ window.addEventListener(
     // captured - and the shortcuts worth changing are exactly the ones already bound.
     if (shortcutsDialog.isRecording()) return;
 
-    if (menuBar.openByMnemonic(event.key)) event.preventDefault();
+    // In the windows that wear the frame the bar is inside a card: show the card, then let the
+    // letter open its menu inside a bar that has a position to lay that menu out from. A letter
+    // no menu claims puts the card away and leaves the press as if it had never happened.
+    let claimed = false;
+    if (appMenu === null) claimed = menuBar.openByMnemonic(event.key);
+    else appMenu.reveal(() => (claimed = menuBar.openByMnemonic(event.key)));
+    if (claimed) event.preventDefault();
   },
   true,
 );

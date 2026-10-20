@@ -43,6 +43,7 @@ import type {
   UserRecord,
   WithdrawalRecord,
 } from "../src/store.ts";
+import type { StatusIncidentRecord, StatusImpact, StatusIncidentUpdateRecord, StatusState } from "../src/status.ts";
 
 /**
  * Parse a money column.
@@ -206,6 +207,26 @@ export interface NoticeRow {
   created_at: number;
 }
 
+export interface StatusIncidentRow {
+  incident_id: string;
+  title: string;
+  impact: string;
+  status: string;
+  author_uid: string;
+  created_at: number;
+  updated_at: number;
+  resolved_at: number | null;
+}
+
+export interface StatusIncidentUpdateRow {
+  update_id: string;
+  incident_id: string;
+  status: string;
+  body: string;
+  author_uid: string;
+  created_at: number;
+}
+
 export interface PostRow {
   slug: string;
   title: string;
@@ -284,6 +305,8 @@ export const CREDIT_ORDER_COLS =
 export const REPORT_COLS =
   "report_id,uid,kind,title,body,app_version,platform,status,created_at";
 export const NOTICE_COLS = "notice_id,severity,title,body,active,author_uid,created_at";
+export const STATUS_INCIDENT_COLS = "incident_id,title,impact,status,author_uid,created_at,updated_at,resolved_at";
+export const STATUS_INCIDENT_UPDATE_COLS = "update_id,incident_id,status,body,author_uid,created_at";
 export const POST_COLS =
   "slug,title,description,body,status,surface,section,order_index,related,author_uid,published_at,updated_at";
 export const RELEASE_COLS =
@@ -600,6 +623,39 @@ export function fromNotice(n: NoticeRecord): NoticeRow {
     active: n.active,
     author_uid: n.authorUid,
     created_at: n.createdAt,
+  };
+}
+
+/*
+ * Stored values are read back through a set rather than trusted. The table's own check
+ * constraints make an unknown value impossible; the coercions exist so a row written by
+ * some future migration reaches the page as something it can colour rather than as `true`
+ * cast to a union type.
+ */
+const STATUS_IMPACTS: ReadonlySet<string> = new Set(["none", "minor", "major", "critical", "maintenance"]);
+const STATUS_STATES: ReadonlySet<string> = new Set(["investigating", "identified", "monitoring", "resolved"]);
+
+export function toStatusIncident(row: StatusIncidentRow): StatusIncidentRecord {
+  return {
+    incidentId: row.incident_id,
+    title: row.title,
+    impact: STATUS_IMPACTS.has(row.impact) ? (row.impact as StatusImpact) : "none",
+    status: STATUS_STATES.has(row.status) ? (row.status as StatusState) : "investigating",
+    authorUid: row.author_uid,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    resolvedAt: row.resolved_at,
+  };
+}
+
+export function toStatusIncidentUpdate(row: StatusIncidentUpdateRow): StatusIncidentUpdateRecord {
+  return {
+    updateId: row.update_id,
+    incidentId: row.incident_id,
+    status: STATUS_STATES.has(row.status) ? (row.status as StatusState) : "investigating",
+    body: row.body,
+    authorUid: row.author_uid,
+    createdAt: row.created_at,
   };
 }
 

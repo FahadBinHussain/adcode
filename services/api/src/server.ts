@@ -115,6 +115,16 @@ import { growthToWire } from "./growth.ts";
 import { parseModelCatalog, readModelCatalog, saveModelCatalog } from "./modelCatalog.ts";
 import { parseModelOutcomes, readModelHealth, recordModelOutcomes } from "./modelOutcomes.ts";
 import {
+  STATUS_WINDOW_DAYS,
+  handleAddStatusIncidentUpdate,
+  handleCreateStatusIncident,
+  handleListStatus,
+  parseIncidentDraft,
+  parseIncidentUpdate,
+  readStatusView,
+  readStatusViewResilient,
+} from "./status.ts";
+import {
   ReferralsUnavailable,
   attributeAdvertiser,
   awardReport,
@@ -441,6 +451,24 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
     if (path === "/v1/stats" && req.method === "GET") {
       const stats = await store.publicStats(clock.now());
       send(res, 200, { ...stats, asOf: clock.now() }, {
+        ...cors,
+        "cache-control": "public, max-age=60, stale-while-revalidate=30",
+      });
+      return;
+    }
+
+    /*
+     * GET /v1/status - the public status page's data: per-model health and the incident log.
+     *
+     * Unauthenticated on purpose. A status page nobody can reach while signed out is useless
+     * exactly when it matters, and it says only what every editor already reports
+     * anonymously - daily per-model outcome counts, nothing account-shaped - plus the
+     * incidents an administrator wrote to be read. Cached for a minute at the edge like the
+     * other public reads, so a refresh during an incident is not a database poll.
+     */
+    if (path === "/v1/status" && req.method === "GET") {
+      const days = Math.min(STATUS_WINDOW_DAYS, Math.max(7, daysFrom(url, STATUS_WINDOW_DAYS)));
+      send(res, 200, await readStatusViewResilient({ store, clock }, days), {
         ...cors,
         "cache-control": "public, max-age=60, stale-while-revalidate=30",
       });
@@ -1251,6 +1279,54 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
         { store, clock },
         auth.uid,
         decodeURIComponent(retractNotice[1] ?? ""),
+      );
+      if (updated === null) {
+        send(res, 404, { error: "not-found" }, cors);
+        return;
+      }
+      send(res, 200, updated, cors);
+      return;
+    }
+
+    /*
+     * The status page's incident log, written from the admin panel.
+     *
+     * `GET` returns every incident, resolved ones included - the panel is the record, and
+     * an incident that vanished on resolution would be a record of nothing. `POST` opens
+     * one with its first update; later updates append to an existing incident. The public
+     * page reads the same rows through `/v1/status`.
+     */
+    if (path === "/v1/admin/status" && req.method === "GET") {
+      send(res, 200, await handleListStatus({ store, clock }, auth.uid), { ...cors, "cache-control": "no-store" });
+      return;
+    }
+
+    if (path === "/v1/admin/status/incidents" && req.method === "POST") {
+      const raw = await jsonBodyOr400();
+      if (raw === undefined) return;
+      const input = parseIncidentDraft(raw);
+      if (input === null) {
+        send(res, 400, { error: "malformed incident" }, cors);
+        return;
+      }
+      send(res, 200, await handleCreateStatusIncident({ store, clock, ids }, auth.uid, input), cors);
+      return;
+    }
+
+    const statusUpdate = /^\/v1\/admin\/status\/incidents\/([^/]+)\/updates$/.exec(path);
+    if (statusUpdate !== null && req.method === "POST") {
+      const raw = await jsonBodyOr400();
+      if (raw === undefined) return;
+      const input = parseIncidentUpdate(raw);
+      if (input === null) {
+        send(res, 400, { error: "malformed status update" }, cors);
+        return;
+      }
+      const updated = await handleAddStatusIncidentUpdate(
+        { store, clock, ids },
+        auth.uid,
+        decodeURIComponent(statusUpdate[1] ?? ""),
+        input,
       );
       if (updated === null) {
         send(res, 404, { error: "not-found" }, cors);

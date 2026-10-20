@@ -54,6 +54,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       { href: "/admin/analytics", label: "Analytics", hint: "Website traffic and conversions", icon: "globe" },
       { href: "/admin/models", label: "BYOK models", hint: "New models, recommendations and visibility", icon: "list" },
       { href: "/admin/tagflow", label: "Free models", hint: "Server connections, models, allowances and usage", icon: "bubble" },
+      { href: "/admin/status", label: "Status page", hint: "Incidents and model health, in public", icon: "chart" },
     ],
   },
   {
@@ -204,7 +205,7 @@ export function AdminShell({
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const { user, loading, configured, isAdmin, adminLoading, token } = useAuth();
+  const { user, loading, configured, isAdmin, adminLoading, adminError, retryAdmin, token } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -270,6 +271,39 @@ export function AdminShell({
       <section className="auth-screen">
         <div className="wrap">
           <SignInCard heading="Sign in to the admin panel" />
+        </div>
+      </section>
+    );
+  }
+
+  /*
+   * Signed in, but the server never answered whether this account is an administrator.
+   *
+   * This is not a refusal, and saying so was the bug: when the database or the API was
+   * down, `/v1/me` failed, the failure was read as "isAdmin: false", and the founding
+   * administrator was shown "Not an admin account" while every admin endpoint would
+   * still have accepted her. Offer the question again instead.
+   */
+  if (adminError !== null) {
+    return (
+      <section className="band">
+        <div className="wrap">
+          <div className="empty" role="alert">
+            <h3>Couldn&apos;t check your access</h3>
+            <p>
+              You&apos;re signed in as <strong>{user.email ?? user.uid}</strong>, but the
+              server didn&apos;t answer when we asked whether this account is an
+              administrator.{" "}
+              {adminError === "offline"
+                ? "The request never reached it, so check your connection and try again."
+                : adminError === "unauthenticated"
+                  ? "It didn't accept the session token. Try again, or sign out and back in."
+                  : "The error is on our side, and trying again is usually enough."}
+            </p>
+            <button type="button" className="btn btn-outline btn-small" onClick={retryAdmin}>
+              Try again
+            </button>
+          </div>
         </div>
       </section>
     );

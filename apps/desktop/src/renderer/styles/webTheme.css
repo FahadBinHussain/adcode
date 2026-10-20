@@ -1,0 +1,46 @@
+/*
+ * The type and the handful of tokens the web look is built from.
+ *
+ * Two surfaces wear it: the web version itself (`web.css` inherits the rest of the front door
+ * from it), and the desktop app's Vibe window, whose frame is `webFrame.css`. Kept apart from
+ * the frame's layout so both entries can load it *early* - the web's sign-in gate is drawn
+ * before the renderer has loaded at all, and it is set in exactly this type - while the layout
+ * still loads last and wins the cascade.
+ *
+ * Keyed on the two attributes rather than on the file, so one copy serves both: `data-surface`
+ * is the web build, `data-frame` is any window wearing the frame (see `surface.ts`).
+ */
+
+/* ── Type: the site's three faces, self-hosted (the CSP allows fonts from 'self' only) ─── */
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/space-grotesk.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/geist-mono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:is(:root, body):is([data-surface="web"], [data-frame="web"]) {
+  --font-ui: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  --web-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --web-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --web-money: var(--success, #6fb98f);
+  font-feature-settings: "cv11", "ss01";
+}

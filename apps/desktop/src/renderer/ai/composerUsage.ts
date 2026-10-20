@@ -42,6 +42,12 @@ export function composerUsageModels(view: AiUsageView | null, allowance: Tagflow
       const blocked: ComposerMeterModel = { percent: null, value: "!", detail: "Disabled", tone: "full", tooltip: "Included AI is disabled for this account. Open AI usage for details." };
       return [blocked, blocked];
     }
+    // The server sets no allowance for included AI: say so rather than draw a meter that never fills.
+    if (allowance.unlimited === true) {
+      const free: ComposerMeterModel = { label: "Included AI", percent: null, value: "∞", detail: "Unlimited", tone: "ok", tooltip: "Included AI has no ADCode usage limit. A busy provider can still ask you to wait a moment. Open AI usage for details." };
+      const used: ComposerMeterModel = { label: "Today", percent: null, value: String(count(allowance.usage.requests)), detail: `${count(allowance.usage.requests).toLocaleString()} requests`, tone: "ok", tooltip: `${count(allowance.usage.requests).toLocaleString()} included AI requests today, across your devices.` };
+      return [free, used];
+    }
     if (allowance.credits !== undefined) {
       const now = Date.now();
       return [creditMeter("Session", allowance.credits.session, allowance.credits, modelId, now), creditMeter("Weekly", allowance.credits.weekly, allowance.credits, modelId, now)];

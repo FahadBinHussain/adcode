@@ -27,6 +27,7 @@ import {
 } from "./store.ts";
 import type { ModelCatalogRecord } from "./modelCatalog.ts";
 import type { ModelOutcomeRow } from "./modelOutcomes.ts";
+import type { StatusIncidentRecord, StatusIncidentUpdateRecord } from "./status.ts";
 import type {
   ActivityDay,
   AdminRecord,
@@ -120,6 +121,8 @@ export function createMemoryStore(): Store & { reset(): void } {
   let posts = new Map<string, PostRecord>();
   let releases = new Map<string, ReleaseRecord>();
   let notices = new Map<string, NoticeRecord>();
+  let statusIncidents = new Map<string, StatusIncidentRecord>();
+  let statusIncidentUpdates = new Map<string, StatusIncidentUpdateRecord>();
   let testServes = new Map<string, string>();
   let audit: AuditRecord[] = [];
   let admins = new Map<string, AdminRecord>();
@@ -169,6 +172,8 @@ export function createMemoryStore(): Store & { reset(): void } {
       posts = new Map();
       releases = new Map();
       notices = new Map();
+      statusIncidents = new Map();
+      statusIncidentUpdates = new Map();
       testServes = new Map();
       audit = [];
       admins = new Map();
@@ -800,6 +805,37 @@ export function createMemoryStore(): Store & { reset(): void } {
       return [...notices.values()]
         .filter((n) => !options.activeOnly || n.active)
         .sort((a, b) => b.createdAt - a.createdAt);
+    },
+
+    async listStatusIncidents() {
+      return [...statusIncidents.values()].sort((a, b) => b.createdAt - a.createdAt);
+    },
+
+    async listStatusIncidentUpdates() {
+      return [...statusIncidentUpdates.values()].sort((a, b) => b.createdAt - a.createdAt);
+    },
+
+    async getStatusIncident(incidentId) {
+      return statusIncidents.get(incidentId) ?? null;
+    },
+
+    async createStatusIncident(incident, firstUpdate) {
+      statusIncidents.set(incident.incidentId, incident);
+      statusIncidentUpdates.set(firstUpdate.updateId, firstUpdate);
+    },
+
+    async addStatusIncidentUpdate(incidentId, update) {
+      const incident = statusIncidents.get(incidentId);
+      if (incident === undefined) return false;
+      // Same rule as status_add_incident_update: a reopen clears the resolution time.
+      statusIncidents.set(incidentId, {
+        ...incident,
+        status: update.status,
+        updatedAt: update.createdAt,
+        resolvedAt: update.status === "resolved" ? update.createdAt : null,
+      });
+      statusIncidentUpdates.set(update.updateId, update);
+      return true;
     },
 
     async creativesByStatus(status) {

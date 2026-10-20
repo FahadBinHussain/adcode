@@ -105,6 +105,7 @@ ad server are in one repository: ${SOURCE.repo}
 - [Advertise](${url("/#advertise")}): targeting, pricing, and verification for advertisers.
 - [Documentation](${url("/docs")}): every feature, plus the explanations of how the system works.
 - [Full text for machines](${url("/llms-full.txt")}): the complete text of every page in one file.
+- [Status](${url("/status")}): live per-model uptime and error rates, with the incident log (machine-readable: ${url("/status/feed.xml")}).
 - [Privacy](${url("/privacy")}): what is collected and what is not.
 - [Terms](${url("/terms")}): the terms of use.
 

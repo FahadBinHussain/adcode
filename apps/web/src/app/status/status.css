@@ -1,0 +1,679 @@
+/*
+ * The public status page.
+ *
+ * ADCode's neutral surfaces and type, with four colour roles for status beside them. The
+ * colours map onto tokens the rest of the site already uses - green is the money green,
+ * amber and red are the warning and danger tones - so the page reads as this site rather
+ * than as a dashboard bolted onto it.
+ *
+ * Motion rules follow the desktop app's: animations move transform and opacity only, every
+ * hover effect is gated to a real pointer, and everything lives behind
+ * `prefers-reduced-motion: no-preference`. Nothing here needs JavaScript.
+ */
+
+.status-page {
+  --status-ok: var(--success);
+  --status-warn: var(--warn);
+  --status-bad: var(--danger);
+  --status-info: light-dark(#3a63b8, #8fb3f5);
+  --status-empty: color-mix(in srgb, var(--faint) 24%, transparent);
+}
+
+.status-hero {
+  max-width: 780px;
+}
+
+.status-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.status-subscribe-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--text);
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--surface);
+  font: 500 13px/1.6 var(--font-body);
+  text-decoration: none;
+  overflow: hidden;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.status-subscribe-button > span {
+  transition: transform .18s ease;
+}
+
+.status-subscribe-button::after {
+  content: "";
+  position: absolute;
+  inset: -40% -12%;
+  background: linear-gradient(
+    100deg,
+    transparent 32%,
+    color-mix(in srgb, var(--surface) 24%, transparent) 50%,
+    transparent 68%
+  );
+  transform: translateX(-135%) skewX(-10deg);
+  transition: transform .55s ease;
+  pointer-events: none;
+}
+
+/* ── Banners ─────────────────────────────────────────────────────────────── */
+
+.status-banners {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 46px;
+}
+
+.status-banner {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.status-banner::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--status-ok);
+}
+
+.status-banner[data-state="degraded"]::before { background: var(--status-warn); }
+.status-banner[data-state="outage"]::before { background: var(--status-bad); }
+.status-banner[data-state="maintenance"]::before { background: var(--status-info); }
+
+.status-banner[data-state="outage"] {
+  border-color: color-mix(in srgb, var(--status-bad) 34%, var(--hairline));
+}
+
+.status-banner[data-state="degraded"] {
+  border-color: color-mix(in srgb, var(--status-warn) 34%, var(--hairline));
+}
+
+.status-pulse {
+  position: relative;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+
+.status-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  opacity: 0;
+}
+
+.status-banner[data-state="degraded"] .status-pulse { background: var(--status-warn); }
+.status-banner[data-state="outage"] .status-pulse { background: var(--status-bad); }
+.status-banner[data-state="maintenance"] .status-pulse { background: var(--status-info); }
+
+.status-banner-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.status-banner-copy > strong {
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: -.01em;
+  line-height: 1.5;
+}
+
+.status-banner-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.status-banner-note b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.status-banner-time {
+  flex: none;
+  margin-left: auto;
+  color: var(--faint);
+  font: 400 11px/1.7 var(--font-mono);
+  text-align: right;
+}
+
+/* ── Sections and model rows ─────────────────────────────────────────────── */
+
+.status-section {
+  margin-top: 48px;
+  /* The header is sticky; a deep link to #models must not land under it. */
+  scroll-margin-top: 100px;
+}
+
+.status-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.status-section-head h2 {
+  font-size: 20px;
+  font-weight: 550;
+  letter-spacing: -.02em;
+}
+
+.status-window {
+  color: var(--faint);
+  font: 400 11px/1.7 var(--font-mono);
+  letter-spacing: .04em;
+}
+
+.status-rows {
+  display: grid;
+  gap: 12px;
+}
+
+.status-row {
+  padding: 18px 20px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.status-row[data-state="degraded"] {
+  border-color: color-mix(in srgb, var(--status-warn) 30%, var(--hairline));
+}
+
+.status-row[data-state="outage"] {
+  border-color: color-mix(in srgb, var(--status-bad) 34%, var(--hairline));
+}
+
+.status-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.status-row-name {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.status-row-name > strong {
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.status-row-meta {
+  color: var(--faint);
+  font: 400 11px/1.6 var(--font-mono);
+}
+
+/* Which provider served it - one model id can arrive through two of them. */
+.status-row-provider {
+  color: var(--muted);
+}
+
+.status-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font: 500 11px/1.5 var(--font-body);
+}
+
+.status-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+
+.status-state[data-state="degraded"] .status-state-dot { background: var(--status-warn); }
+.status-state[data-state="outage"] .status-state-dot { background: var(--status-bad); }
+.status-state[data-state="quiet"] .status-state-dot { background: var(--faint); }
+
+.status-bars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(2px, 1fr);
+  gap: 2px;
+  align-items: end;
+  height: 34px;
+}
+
+.status-day {
+  position: relative;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--status-empty);
+  transform-origin: bottom;
+  transition: transform .16s ease, filter .16s ease, opacity .16s ease;
+}
+
+.status-day[data-level="operational"] { background: color-mix(in srgb, var(--status-ok) 78%, transparent); }
+.status-day[data-level="degraded"] { background: var(--status-warn); }
+.status-day[data-level="outage"] { background: var(--status-bad); }
+.status-day[data-level="maintenance"] { background: var(--status-info); }
+
+/* Highlights the rest of the strip away so one day reads out of ninety. */
+.status-bars:has(.status-day:hover) .status-day:not(:hover) {
+  opacity: .45;
+}
+
+.status-day-tip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 5;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  font: 400 11px/1.5 var(--font-mono);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.status-day:first-child .status-day-tip {
+  left: 0;
+  transform: translate(0, 4px);
+}
+
+.status-day:last-child .status-day-tip {
+  right: 0;
+  left: auto;
+  transform: translate(0, 4px);
+}
+
+.status-row-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.status-uptime {
+  color: var(--muted);
+  font: 400 11px/1.6 var(--font-mono);
+  letter-spacing: .02em;
+}
+
+.status-uptime strong {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.status-uptime em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ── Incident log ────────────────────────────────────────────────────────── */
+
+.status-day-group {
+  margin-top: 26px;
+}
+
+.status-day-group h3 {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-none {
+  padding: 14px 0 2px;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.status-incidents {
+  display: grid;
+  gap: 12px;
+}
+
+.status-incident {
+  padding: 18px 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--card);
+  transition: transform .18s ease, border-color .18s ease;
+}
+
+.status-incident-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.status-incident-head h4 {
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: -.01em;
+}
+
+.status-impact {
+  flex: none;
+  padding: 4px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 500 10px/1.5 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.status-impact[data-impact="critical"],
+.status-impact[data-impact="major"] {
+  color: var(--status-bad);
+  border-color: color-mix(in srgb, var(--status-bad) 45%, var(--hairline));
+}
+
+.status-impact[data-impact="minor"] {
+  color: var(--status-warn);
+  border-color: color-mix(in srgb, var(--status-warn) 45%, var(--hairline));
+}
+
+.status-impact[data-impact="maintenance"] {
+  color: var(--status-info);
+  border-color: color-mix(in srgb, var(--status-info) 45%, var(--hairline));
+}
+
+.status-updates {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  list-style: none;
+}
+
+.status-updates li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+}
+
+/* The thread between updates, so a long incident reads as one story. */
+.status-updates li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 18px;
+  bottom: -18px;
+  width: 1px;
+  background: var(--hairline);
+}
+
+.status-update-pin {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+
+.status-update-pin::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  opacity: 0;
+}
+
+.status-updates li[data-status="investigating"] .status-update-pin { background: var(--status-bad); }
+.status-updates li[data-status="identified"] .status-update-pin { background: var(--status-warn); }
+.status-updates li[data-status="monitoring"] .status-update-pin { background: var(--status-info); }
+
+.status-update-body p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.status-update-body p strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.status-update-body time {
+  display: block;
+  margin-top: 4px;
+  color: var(--faint);
+  font: 400 11px/1.6 var(--font-mono);
+}
+
+/* ── Subscribe ───────────────────────────────────────────────────────────── */
+
+.status-subscribe {
+  display: grid;
+  gap: 18px;
+  margin-top: 56px;
+  padding: clamp(20px, 3vw, 30px);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.status-subscribe-copy > strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 16px;
+  font-weight: 550;
+}
+
+.status-subscribe-copy p {
+  max-width: 58ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.status-subscribe small {
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes status-rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes status-grow {
+    from { opacity: 0; transform: scaleY(.1); }
+    to { opacity: 1; transform: scaleY(1); }
+  }
+
+  @keyframes status-ping {
+    0% { transform: scale(1); opacity: .5; }
+    70%, 100% { transform: scale(2.6); opacity: 0; }
+  }
+
+  @keyframes status-breathe {
+    0%, 100% { opacity: .3; transform: translateX(-2%); }
+    50% { opacity: .7; transform: translateX(2%); }
+  }
+
+  @keyframes status-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .35; }
+  }
+
+  /* `backwards`, not `both`: once the animation ends it must stop filling, or the hover
+     transforms below would never apply. */
+  .status-banner {
+    animation: status-rise .5s cubic-bezier(.2, .8, .2, 1) backwards;
+  }
+
+  .status-row {
+    animation: status-rise .5s cubic-bezier(.2, .8, .2, 1) backwards;
+  }
+
+  .status-incident {
+    animation: status-rise .45s ease backwards;
+  }
+
+  .status-day {
+    animation: status-grow .55s cubic-bezier(.2, .8, .2, 1) backwards;
+  }
+
+  .status-pulse::after {
+    animation: status-ping 2.6s cubic-bezier(.4, 0, .2, 1) infinite;
+  }
+
+  .status-banner[data-state="outage"] .status-pulse::after {
+    animation-duration: 1.5s;
+    opacity: .5;
+  }
+
+  .status-banner[data-state="degraded"] .status-pulse::after,
+  .status-banner[data-state="maintenance"] .status-pulse::after {
+    opacity: .45;
+  }
+
+  /* A slow glow on the banners that mean something is wrong. */
+  .status-banner[data-state="outage"]::after,
+  .status-banner[data-state="degraded"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      62% 130% at 0% 0%,
+      color-mix(in srgb, var(--status-bad) 9%, transparent),
+      transparent 70%
+    );
+    animation: status-breathe 6s ease-in-out infinite;
+  }
+
+  .status-banner[data-state="degraded"]::after {
+    background: radial-gradient(
+      62% 130% at 0% 0%,
+      color-mix(in srgb, var(--status-warn) 10%, transparent),
+      transparent 70%
+    );
+  }
+
+  .status-incident:not([data-status="resolved"]) .status-updates li:first-child .status-update-pin::after {
+    animation: status-ping 2.4s cubic-bezier(.4, 0, .2, 1) infinite;
+  }
+
+  .status-state[data-state="degraded"] .status-state-dot,
+  .status-state[data-state="outage"] .status-state-dot {
+    animation: status-blink 1.9s ease-in-out infinite;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .status-subscribe-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px -18px var(--text);
+  }
+
+  .status-subscribe-button:hover > span {
+    transform: translateY(3px);
+  }
+
+  .status-subscribe-button:hover::after {
+    transform: translateX(135%) skewX(-10deg);
+  }
+
+  .status-row:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: 0 20px 40px -32px var(--text);
+  }
+
+  .status-incident:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+  }
+
+  .status-day:hover {
+    transform: scaleY(1.14) scaleX(1.06);
+    filter: brightness(1.15);
+    z-index: 2;
+    opacity: 1;
+  }
+
+  .status-day:hover .status-day-tip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  .status-day:first-child:hover .status-day-tip,
+  .status-day:last-child:hover .status-day-tip {
+    transform: translate(0, 0);
+  }
+}
+
+/* ── Narrow screens ──────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .status-banner {
+    flex-wrap: wrap;
+  }
+
+  .status-banner-time {
+    width: 100%;
+    margin-left: 24px;
+    text-align: left;
+  }
+
+  .status-row-head,
+  .status-section-head {
+    flex-wrap: wrap;
+  }
+
+  .status-bars {
+    height: 28px;
+  }
+}

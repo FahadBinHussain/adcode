@@ -350,7 +350,7 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
       const heading = document.createElement("div"); heading.className = "connect-free-group-copy";
       const title = document.createElement("h2"); title.textContent = local ? "On this computer" : "Included with ADCode";
       const description = document.createElement("p"); description.className = "connect-free-note";
-      description.textContent = local ? "Ollama · runs locally" : "Your account’s daily allowance";
+      description.textContent = local ? "Ollama · runs locally" : "Free with your ADCode account";
       heading.append(title, description);
       const badge = document.createElement("span"); badge.className = "connect-source-badge";
       badge.textContent = local ? "Local" : "No key";
@@ -402,7 +402,7 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
       const privacy = document.createElement("p");
       privacy.textContent = local
         ? "Requests stay on this computer. Speed depends on your hardware."
-        : "Sign in with a verified account to use your daily allowance. Messages and project context pass through ADCode to the chosen provider.";
+        : "Sign in with a verified account to use them, free. Messages and project context pass through ADCode to the chosen provider.";
       details.append(summary, privacy);
       for (const model of provider.models) {
         if (!model.note) continue;
@@ -693,7 +693,7 @@ export function createConnectView(deps: ConnectViewDeps): ConnectView {
     const description = document.createElement("p");
     description.className = "connect-detail-description";
     description.textContent = provider.id === "tagflow"
-      ? "Included AI for your verified account, with a daily allowance. No API key needed. Prompts and project context pass through ADCode's server to the selected provider. View your allowance in AI usage. Sign in in Account before your first message."
+      ? "Included AI for your verified account, free and with no ADCode usage limit. No API key needed. Prompts and project context pass through ADCode's server to the selected provider. Sign in in Account before your first message."
       : provider.transport === "unsupported"
       ? "Add an API connection with this provider's endpoint to get started."
       : provider.local !== undefined

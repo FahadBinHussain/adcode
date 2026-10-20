@@ -109,6 +109,8 @@ Facts, stated once:
   AI requests and browser cloud workspaces process project data separately; see the privacy policy.
 - Earnings are recorded on an append-only ledger. Entries are never edited or deleted;
   corrections are separate reversals that reference the original.
+- Live status is published per AI model at ${url("/status")} - uptime, error rates and the
+  incident log - with an RSS feed of incident updates at ${url("/status/feed.xml")}.
 - ${SITE.name} is published by ${PARENT.name} (${PARENT.url}), an independent software
   studio. The studio's page about this product is ${PARENT.productUrl}.
 - ${SITE.name} is open source under the ${SOURCE.licence} licence. The editor, the website and

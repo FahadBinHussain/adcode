@@ -10,6 +10,7 @@
  */
 import type { Balance, LedgerEntry } from "./ledger.ts";
 import type { ModelCatalogRecord } from "./modelCatalogTypes.ts";
+import type { StatusIncidentRecord, StatusIncidentUpdateRecord } from "./status.ts";
 import type { TagflowStore } from "./tagflowTypes.ts";
 
 export interface Clock {
@@ -842,6 +843,22 @@ export interface Store extends TagflowStore {
   getNotice(noticeId: string): Promise<NoticeRecord | null>;
   /** Active only when `activeOnly`; the admin view wants retracted ones too. */
   listNotices(options: { activeOnly: boolean }): Promise<NoticeRecord[]>;
+
+  /** Incidents for the public status page, newest first. */
+  listStatusIncidents(): Promise<StatusIncidentRecord[]>;
+  /** Every update for every incident, so the page and the panel can group in one pass. */
+  listStatusIncidentUpdates(): Promise<StatusIncidentUpdateRecord[]>;
+  getStatusIncident(incidentId: string): Promise<StatusIncidentRecord | null>;
+  /** Opens the incident and its first update together; a half-written incident must not exist. */
+  createStatusIncident(
+    incident: StatusIncidentRecord,
+    firstUpdate: StatusIncidentUpdateRecord,
+  ): Promise<void>;
+  /** True when the incident existed and was moved. Also clears `resolvedAt` on a reopen. */
+  addStatusIncidentUpdate(
+    incidentId: string,
+    update: StatusIncidentUpdateRecord,
+  ): Promise<boolean>;
   creativesByStatus(status: CreativeRecord["status"]): Promise<CreativeRecord[]>;
 
   putPost(post: PostRecord): Promise<void>;

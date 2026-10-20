@@ -259,6 +259,19 @@ while (Date.now() < startupDeadline) {
 
 // The IDE is a second OS window. Keep Vibe open and attach to the new renderer.
 const vibeModeBefore = await evaluate("document.body.dataset.workspaceMode");
+/*
+ * The sidebar paints its project line as "Loading…" and lights the Changes badge from the same
+ * git answer, which lands a beat after the editor does. Wait for that line: the frame checks are
+ * about what the frame looks like once the app has its data, not about how it looks mid-boot.
+ */
+for (let attempt = 0; attempt < 80; attempt++) {
+  const painted = await evaluate(`(() => {
+    const meta = document.querySelector('.vibe-project-card .vibe-project-meta')?.textContent ?? '';
+    return meta !== '' && !meta.includes('Loading');
+  })()`);
+  if (painted === true) break;
+  await sleep(100);
+}
 const vibeNavigation = await evaluate(`(() => {
   const visible = selector => {
     const element = document.querySelector(selector);
@@ -279,22 +292,50 @@ const vibeNavigation = await evaluate(`(() => {
   const inboxOpened = !document.querySelector('.notification-inbox')?.hidden;
   document.querySelector('.notification-inbox-close')?.click();
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-  // The everyday workflows are sidebar rows, not entries in an overflow menu.
-  const changesLabel = document.querySelector('.vibe-changes-button')?.getAttribute('aria-label') ?? '';
+  // The everyday workflows are rail items in the frame, not rows in the sidebar, and the count
+  // of waiting changes is the rail's badge rather than a sentence in the row's label.
+  const changesBadge = document.querySelector('[data-rail="changes"] .web-rail-badge');
   const card = document.querySelector('.vibe-project-card');
+  const rail = document.querySelector('.web-rail');
+  const railBox = rail?.getBoundingClientRect();
+  const tabs = document.querySelector('.web-tabs');
+  // The app's own menus, in a card behind the brand row's button (workbench/appMenu.ts).
+  const menuButton = document.querySelector('.web-sidebar-menu');
+  const menuCard = document.querySelector('.app-menu');
+  menuButton?.click();
+  const appMenuOpens = menuButton === null
+    ? menuCard === null // macOS keeps its menus in the system bar: no button and no card.
+    : !!menuCard && !menuCard.hidden && !!menuCard.querySelector('.menubar-item');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  const appMenuCloses = menuCard === null ? true : menuCard.hidden;
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   return {
     docked: document.body.dataset.vibeRail === 'docked',
-    automations: visible('.vibe-automations-button'),
-    // Chat, Agents and Tools are pages; Chat is the one showing at launch.
-    pages: visible('.vibe-page-item.vibe-page-agents') && visible('.vibe-page-item.vibe-page-tools') &&
-      document.querySelector('.vibe-page-item.vibe-page-chat')?.getAttribute('aria-current') === 'page',
+    /* The web's frame, in the desktop window: the icon rail on the window's left edge, its tabs
+       along the top, and neither of the two desktop chrome bars underneath. */
+    frame: document.documentElement.dataset.frame === 'web',
+    railAtLeft: !!railBox && Math.round(railBox.left) === 0 && Math.round(railBox.width) === 60,
+    tabsOnTop: !!tabs && Math.round(tabs.getBoundingClientRect().top) === 0,
+    noTitleOrStatusBar: getComputedStyle(document.getElementById('titlebar')).visibility === 'hidden' &&
+      getComputedStyle(document.getElementById('statusbar')).visibility === 'hidden',
+    /* Every door the two bars held is still in the window: the rail took the account, feedback,
+       the More menu and the live session; the tabs row took Run. */
+    doorsMoved: ['account-toggle', 'report-toggle', 'status-collab'].every((id) => !!rail?.querySelector('#' + id)) &&
+      !!document.querySelector('.web-tabs-trailing #status-run-slot') &&
+      !!document.querySelector('.web-rail .project-tools'),
+    appMenuOpens,
+    appMenuCloses,
+    automations: visible('[data-rail="automations"]'),
+    // Chat, Agents and Tools are places; Chat is the one showing at launch.
+    pages: visible('[data-rail="agents"]') && visible('[data-rail="tools"]') &&
+      document.querySelector('[data-rail="chat"]')?.getAttribute('aria-current') === 'page',
     tools: visible('.project-tools'),
     noTasksRow: document.querySelector('.vibe-tasks-button') === null,
-    changes: visible('.vibe-changes-button') && changesLabel.startsWith('Changes - '),
+    changes: visible('[data-rail="changes"]') && !!changesBadge && !changesBadge.hidden && (changesBadge.textContent ?? '') !== '',
     // Edits land as the assistant works unless the user chose Review.
     approvalAuto: document.querySelector('.chat-approval')?.textContent === 'Auto',
     noReviewNag: !(document.querySelector('.chat-disclaimer')?.textContent ?? '').includes('Review'),
-    preview: visible('.vibe-preview-nav'),
+    preview: visible('[data-rail="preview"]'),
     team: toolsMenu.includes('Set up AI team'),
     projectCard: visible('.vibe-project-card') && card?.querySelector('.vibe-project-name')?.textContent === ${JSON.stringify(REPO.split(/[\\/]/).pop())},
     openIde: visible('.vibe-ide-button') && document.querySelector('.vibe-header-ide-button') === null,
@@ -302,7 +343,11 @@ const vibeNavigation = await evaluate(`(() => {
     noSidebarAdSlot: document.getElementById('vibe-sponsored-slot') === null,
     history: !!hostedHistory,
     historyOptions: !historyRow || !!historyOptions && historyMenu.includes('Rename conversation') && historyMenu.includes('Delete conversation'),
-    readableTitles: !titleStyle || titleStyle.whiteSpace === 'normal' && titleStyle.webkitLineClamp === '2',
+    // The frame's list is one line per conversation, like the web's: a long title ends in an
+    // ellipsis, and the whole of it is on the button for the tooltip. (The two-line clamp the
+    // desktop list used to have made a row grow the moment its spinner appeared.)
+    readableTitles: !titleStyle || titleStyle.whiteSpace === 'nowrap' && titleStyle.textOverflow === 'ellipsis' &&
+      (historyRow?.querySelector('.chat-history-open')?.title ?? '') !== '',
     inboxOpened,
     inboxClosed: document.querySelector('.notification-inbox')?.hidden === true,
   };
@@ -400,7 +445,7 @@ const chatControls = await evaluate(`(async () => {
 
 // The Changes panel, read only: this smoke runs against the real repository, so nothing is
 // clicked that would stage, revert or commit.
-await evaluate("document.querySelector('.vibe-changes-button')?.click()");
+await evaluate("document.querySelector('[data-rail=\"changes\"]')?.click()");
 let changesPanel = null;
 for (let attempt = 0; attempt < 60 && changesPanel === null; attempt++) {
   changesPanel = await evaluate(`(() => {
@@ -419,67 +464,90 @@ for (let attempt = 0; attempt < 60 && changesPanel === null; attempt++) {
   })()`);
   if (changesPanel === null) await sleep(150);
 }
-// Nothing docks on the right: Changes floats over the page, and the page keeps the width.
+/*
+ * Nothing permanent docks on the right. The one panel that can sit beside the page is the
+ * review column (Changes, Preview): it opens only while one of those panels is open, only on a
+ * window wide enough for two columns, and it is still the dialog the rail toggles - a choice, not
+ * chrome. Close it and the page takes the whole width of the frame's card back, which itself
+ * sits the frame's gap in from the window's edge.
+ */
 const vibeNoRightSidebar = await evaluate(`(() => {
   const panel = document.getElementById('floating-context');
-  const workspace = document.getElementById('vibe-workspace')?.getBoundingClientRect();
+  const open = !!panel && !panel.hidden && getComputedStyle(panel).display !== 'none';
+  const docked = document.body.classList.contains('workspace-review-open');
   return {
-    changesFloats: !!panel && !panel.hidden && getComputedStyle(panel).position === 'fixed' &&
-      panel.getAttribute('role') === 'dialog' && panel.getAttribute('aria-modal') === 'false',
-    workspaceReachesRightEdge: !!workspace && workspace.right >= window.innerWidth - 2,
+    changesFloats: open && panel.getAttribute('role') === 'dialog' && panel.getAttribute('aria-modal') === 'false' &&
+      panel.classList.contains('workspace-panel-docked') === docked &&
+      document.querySelector('[data-rail="changes"]')?.getAttribute('aria-pressed') === 'true',
     noDock: document.getElementById('assistant-dock') === null && document.getElementById('splitter-assistant') === null,
   };
 })()`);
-await evaluate("document.querySelector('.vibe-changes-button')?.click()");
+await evaluate("document.querySelector('[data-rail=\"changes\"]')?.click()");
+// The column is closing; the width comes back within a beat.
+let workspaceFillsTheCard = false;
+for (let attempt = 0; attempt < 40 && !workspaceFillsTheCard; attempt++) {
+  workspaceFillsTheCard = await evaluate(`(() => {
+    if (document.body.classList.contains('workspace-review-open')) return false;
+    const workspace = document.getElementById('vibe-workspace')?.getBoundingClientRect();
+    const workbench = document.getElementById('workbench')?.getBoundingClientRect();
+    return !!workspace && !!workbench && workspace.right >= workbench.right - 1 &&
+      workbench.right >= window.innerWidth - 10;
+  })()`) === true;
+  if (!workspaceFillsTheCard) await sleep(100);
+}
 // Agents and Tools are pages of their own; the board and the tool cards render for real.
 const vibePages = await evaluate(`(async () => {
   const wait = async (test) => { for (let i = 0; i < 60 && !test(); i++) await new Promise((r) => setTimeout(r, 100)); };
-  document.querySelector('.vibe-page-item.vibe-page-agents')?.click();
+  document.querySelector('[data-rail="agents"]')?.click();
   await wait(() => document.querySelectorAll('#vibe-page-agents .agent-card').length > 1);
   const agents = document.getElementById('vibe-page-agents');
   const board = agents?.querySelector('.agents-page');
   const result = {
     agentsShown: !!agents && !agents.hidden && document.getElementById('vibe-page-chat')?.hidden === true,
-    agentsCurrent: document.querySelector('.vibe-page-item.vibe-page-agents')?.getAttribute('aria-current') === 'page',
+    agentsCurrent: document.querySelector('[data-rail="agents"]')?.getAttribute('aria-current') === 'page',
     threeColumns: agents?.querySelectorAll('.agents-column [role=list]').length === 3,
     startersAndNew: (agents?.querySelectorAll('.agent-card').length ?? 0) >= 2,
     mascotsDrawn: (agents?.querySelectorAll('.agent-card .agent-mascot-body').length ?? 0) >= 1,
-    agentsFullWidth: (agents?.getBoundingClientRect().right ?? 0) >= window.innerWidth - 2,
+    // The page fills the frame's card, which sits eight pixels in from the window's edge.
+    agentsFullWidth: (agents?.getBoundingClientRect().right ?? 0) >=
+      (document.getElementById('workbench')?.getBoundingClientRect().right ?? window.innerWidth) - 1,
     agentsNoOverflow: !!board && board.scrollWidth <= board.clientWidth + 1,
   };
-  document.querySelector('.vibe-page-item.vibe-page-tools')?.click();
+  document.querySelector('[data-rail="tools"]')?.click();
   await wait(() => document.querySelectorAll('#tools-panel-built-in .tool-card').length > 0);
   const tools = document.getElementById('vibe-page-tools');
   result.toolsShown = !!tools && !tools.hidden;
   result.toolsTabs = tools?.querySelectorAll('[role=tab]').length === 4;
   // One card per row of BUILT_IN_TOOLS_INFO (renderer/tools/builtInTools.ts).
   result.builtInCards = tools?.querySelectorAll('#tools-panel-built-in .tool-card').length === 23;
-  document.querySelector('.vibe-page-item.vibe-page-chat')?.click();
+  document.querySelector('[data-rail="chat"]')?.click();
   await wait(() => document.getElementById('vibe-page-chat')?.hidden === false);
   result.backToChat = document.getElementById('vibe-page-chat')?.hidden === false && !!document.querySelector('#vibe-page-chat .chat-card');
   return result;
 })()`);
 /*
- * Long chat memory and motion, in the real Vibe window: the composer shows how full the
- * model's context is, its menu offers Compact now and View summary, /compact on a new
- * conversation says there is nothing to compact instead of sending anything, and Vibe runs
- * the lively motion personality.
+ * Long chat memory and motion, in the real Vibe window: the composer carries the conversation
+ * control, whose menu offers Compact now and View summary, /compact on a new conversation says
+ * there is nothing to compact instead of sending anything, and Vibe runs the lively motion
+ * personality.
+ *
+ * The percentage ring this check used to read was replaced by that control - the decision that
+ * long-chat upkeep belongs in a menu rather than in a permanent meter - so what is asserted is
+ * that the upkeep is still reachable from the composer, not the shape of the old meter.
  */
 const memoryAndMotion = await evaluate(`(async () => {
   const wait = async (test) => { for (let i = 0; i < 40 && !test(); i++) await new Promise((r) => setTimeout(r, 100)); };
   const chat = document.getElementById('vibe-page-chat');
-  const meter = chat?.querySelector('.chat-context-meter');
-  await wait(() => /^\\d{1,3}%$/.test(meter?.querySelector('.composer-meter-value')?.textContent ?? '') && (meter?.title ?? '').length > 0);
+  const control = chat?.querySelector('.chat-conversation-controls');
   const result = {
     motionLively: document.documentElement.dataset.motion === 'lively',
-    meterInComposer: !!meter && !!meter.closest('.chat-composer-footer'),
-    meterReads: /^\\d{1,3}%$/.test(meter?.querySelector('.composer-meter-value')?.textContent ?? '') && meter?.querySelector('.composer-meter-label')?.textContent === 'Context',
-    meterExplains: / tokens\\. /.test(meter?.title ?? ''),
+    conversationInComposer: !!control && !!control.closest('.chat-composer-footer'),
+    conversationNamed: control?.textContent === 'Conversation' && (control?.title ?? '').length > 0,
   };
-  meter?.click();
+  control?.click();
   await wait(() => !!document.querySelector('.menu-panel'));
   const labels = [...document.querySelectorAll('.menu-panel .menu-item')].map((node) => node.textContent ?? '');
-  result.meterMenu = labels.some((label) => label.includes('Compact now')) && labels.some((label) => label.includes('View summary'));
+  result.conversationMenu = labels.some((label) => label.includes('Compact now')) && labels.some((label) => label.includes('View summary'));
   document.querySelector('.menu-panel')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await wait(() => !document.querySelector('.menu-panel'));
   const input = chat?.querySelector('.chat-input');
@@ -498,6 +566,15 @@ const memoryAndMotion = await evaluate(`(async () => {
 })()`);
 const windowScreenshotPaths = [];
 if (process.argv.includes("--visual-only")) {
+  /*
+   * The tour opens over the window at first launch and dims everything behind it, so a picture
+   * taken now is a picture of the tour. Close it for the picture - the onboarding check below
+   * opens it again on purpose before inspecting it - and let the dismissal settle.
+   */
+  await evaluate(
+    `(() => { const tour = document.querySelector('dialog.onboarding'); if (tour?.open === true) tour.close(); return true; })()`,
+  );
+  await sleep(500);
   const response = await send("Page.captureScreenshot", { format: "png", fromSurface: true });
   if (typeof response.result?.data === "string") {
     const path = join(tmpdir(), "adcode-vibe-window.png");
@@ -570,11 +647,13 @@ async function openExpandedAssistant() {
 const checks = {
   separateWindows: vibeModeBefore === "vibe" && vibeModeAfter === "vibe" && ideMode === "code" && rendererCount === 2,
   vibeNavigation: Object.values(vibeNavigation).every(Boolean),
+  vibeNavigationEvidence: vibeNavigation,
   chatControls: typeof chatControls === "object" && chatControls !== null &&
     Object.entries(chatControls).filter(([key]) => key !== "evidence").every(([, value]) => value === true),
   chatControlsEvidence: chatControls,
-  vibeNoRightSidebar: typeof vibeNoRightSidebar === "object" && vibeNoRightSidebar !== null && Object.values(vibeNoRightSidebar).every(Boolean),
-  vibeNoRightSidebarEvidence: vibeNoRightSidebar,
+  vibeNoRightSidebar: typeof vibeNoRightSidebar === "object" && vibeNoRightSidebar !== null &&
+    Object.values(vibeNoRightSidebar).every(Boolean) && workspaceFillsTheCard === true,
+  vibeNoRightSidebarEvidence: { ...(typeof vibeNoRightSidebar === "object" && vibeNoRightSidebar !== null ? vibeNoRightSidebar : {}), workspaceFillsTheCard },
   vibeAgentsAndToolsPages: typeof vibePages === "object" && vibePages !== null && Object.values(vibePages).every(Boolean),
   vibeAgentsAndToolsPagesEvidence: vibePages,
   chatMemoryAndMotion: typeof memoryAndMotion === "object" && memoryAndMotion !== null && Object.values(memoryAndMotion).every(Boolean),
@@ -616,9 +695,38 @@ const checks = {
   ),
 
   // §4 search over the real tree.
-  searchFindsSomething: await evaluate(
-    "window.adcode.search.run({ pattern: 'findConflicts', include: '*.ts' }).then((h) => h.length > 2)",
-  ),
+  /*
+   * The answer comes back after a real walk of the project, and the walk starts cold in this
+   * window: the first search after the Code window opens is the slowest one there is. A single
+   * `Runtime.evaluate` with the harness's 15s ceiling turned that cold start into a failed check
+   * while the same search answers in under a second once warm, so the promise is left to settle on
+   * its own terms and the result is read when it lands. What is asserted has not changed: the
+   * search must find more than two hits in the tree.
+   */
+  searchFindsSomething: await (async () => {
+    await evaluate(`(() => {
+      window.__smokeSearch = null;
+      window.adcode.search.run({ pattern: 'findConflicts', include: '*.ts' })
+        .then((hits) => { window.__smokeSearch = { count: hits.length }; })
+        .catch((error) => { window.__smokeSearch = { error: String(error) }; });
+      return true;
+    })()`);
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      const state = await evaluate("window.__smokeSearch === null ? '' : JSON.stringify(window.__smokeSearch)");
+      /*
+       * The harness's 15s ceiling is not the search's answer: a single slow evaluate used to
+       * come back as the string "THREW: ..." and the JSON.parse below killed the whole run.
+       * Keep waiting; the 60s deadline is what decides.
+       */
+      if (typeof state === "string" && state !== "" && !state.startsWith("THREW:")) {
+        const answer = JSON.parse(state);
+        return answer.error ?? answer.count > 2;
+      }
+      await sleep(500);
+    }
+    return "the search never answered (60s)";
+  })(),
   quickOpenRanks: await evaluate(
     "window.adcode.search.quickOpen('conflicts').then((h) => h[0]?.path ?? '(none)')",
   ),
@@ -1624,20 +1732,43 @@ async function chooseMenu(topLabel, itemLabel) {
   if (top === null) throw new Error(`no ${topLabel} menu`);
 
   await clickAt(top.x, top.y);
-  await sleep(300);
 
-  const chosen = await evaluate(
-    `(() => {
-       const item = [...document.querySelectorAll('.menu-panel .menu-item')]
-         .find((i) => i.querySelector('.menu-item-label')?.textContent === ${JSON.stringify(itemLabel)});
-       if (!item) throw new Error('no such row');
-       item.click();
-       return true;
-     })()`,
-  );
+  /*
+   * The panel is drawn after the press, and that press can land while the overlay before it is
+   * still closing - the search checks above end with Escape and the next click follows at once.
+   * Reading for the row 300 ms later then found a menu that had not opened, and the helper threw
+   * out of the whole run. Wait for the row itself; press the menu again only while it is still
+   * shut, never while it is open. A row that really is missing still fails, as before.
+   */
+  let chosen = false;
+  for (let attempt = 0; attempt < 25 && chosen === false; attempt += 1) {
+    await sleep(120);
+    const state = await evaluate(
+      `(() => {
+         const button = [...document.querySelectorAll('.menubar-item')]
+           .find((b) => b.textContent === ${JSON.stringify(topLabel)});
+         const open = button?.getAttribute('aria-expanded') === 'true';
+         const item = [...document.querySelectorAll('.menu-panel .menu-item')]
+           .find((i) => i.querySelector('.menu-item-label')?.textContent === ${JSON.stringify(itemLabel)});
+         return { open, hasItem: item !== undefined };
+       })()`,
+    );
+    if (state.hasItem) {
+      chosen = await evaluate(
+        `(() => {
+           const item = [...document.querySelectorAll('.menu-panel .menu-item')]
+             .find((i) => i.querySelector('.menu-item-label')?.textContent === ${JSON.stringify(itemLabel)});
+           item?.click();
+           return item !== undefined;
+         })()`,
+      );
+      break;
+    }
+    if (state.open !== true && attempt % 5 === 1) await clickAt(top.x, top.y);
+  }
 
   if (chosen !== true)
-    throw new Error(`${topLabel} > ${itemLabel}: ${String(chosen)}`);
+    throw new Error(`${topLabel} > ${itemLabel}: no such row`);
 
   await sleep(500);
 }
@@ -1731,10 +1862,26 @@ async function waitForPopupsClosed(selectors) {
  * the menu failed to open or simply lacked the entry.
  */
 async function contextItemPoint(label) {
+  /*
+   * Wait for the menu to stop growing before measuring a row.
+   *
+   * `.menu-panel[data-context]` animates in for 150 ms (motion.css), and `rightClickAt` returns
+   * as soon as the first row exists - which is the first frame of that animation. A rect read
+   * then belongs to the middle of the movement; by the time the click lands, the row has moved,
+   * so the click can fall on a neighbour or outside the menu. That is how a Delete went nowhere
+   * and the row survived while the same Delete works by hand.
+   */
   const found = await evaluate(
-    `(() => {
+    `(async () => {
        const panel = document.querySelector('.menu-panel[data-context]');
        if (!panel) return { error: 'no context menu is open' };
+       for (let attempt = 0; attempt < 40; attempt += 1) {
+         const moving = panel.getAnimations({ subtree: true }).some(
+           (animation) => animation.playState === 'running' || animation.playState === 'pending',
+         );
+         if (!moving) break;
+         await new Promise((resolve) => setTimeout(resolve, 25));
+       }
        const item = [...panel.querySelectorAll('.menu-item')]
          .find((i) => i.querySelector('.menu-item-label')?.textContent === ${JSON.stringify(label)});
        if (!item) {
@@ -2682,6 +2829,10 @@ checks.terminalProfileLauncher = await (async () => {
      })()`,
   );
 
+  // A timed-out evaluate comes back as a string too, but it is not a reading of the strip.
+  if (typeof after !== "string" || after.startsWith("THREW:")) {
+    return `could not read the terminal strip (${after})`;
+  }
   const { count, titles } = JSON.parse(after);
   if (count <= before)
     return `picking ${shells[0]} started nothing (${before} -> ${count})`;
@@ -3008,18 +3159,44 @@ try {
    * click then opens the *file* menu - which has no "New File" - and the failure reads as
    * "no context menu is open" rather than as a stale coordinate.
    */
+  /*
+   * A point on the tree's own blank surface, which is where the root menu lives.
+   *
+   * The tree's padding is the target; the rows take everything else. Clamping to the sidebar's
+   * bottom could land past the tree - after a delete had moved the rows, the press went to the
+   * status bar, opened no menu, and the name typed after "New File" went nowhere. Every
+   * candidate here stays inside the tree's box and is confirmed by the hit test to be the tree
+   * and not a row, so a caller that presses here really is pressing empty tree.
+   */
   const emptyTreeSpace = () =>
     evaluate(
       `(() => {
          const tree = document.getElementById('filetree');
-         const box = tree.getBoundingClientRect();
-         const rows = tree.querySelectorAll('.tree-row');
-         const last = rows[rows.length - 1]?.getBoundingClientRect();
-         const visible = document.getElementById('sidebar-content').getBoundingClientRect();
-         const y = Math.max(visible.top + 8, Math.min(last ? last.bottom + 40 : box.top + 40, visible.bottom - 12));
-         // The tree's padding stays a root-level context target even when rows fill
-         // the viewport. Its full scroll height can extend well below the window.
-         return { x: Math.round(box.left + 2), y: Math.round(y) };
+         const x = () => Math.round(tree.getBoundingClientRect().left + 6);
+         const blank = () => {
+           const box = tree.getBoundingClientRect();
+           const rows = [...tree.querySelectorAll('.tree-row')].map((row) => row.getBoundingClientRect());
+           const spots = [];
+           if (rows.length > 0) spots.push(rows[rows.length - 1].bottom + 12, rows[0].top - 12);
+           spots.push(box.top + 24, box.bottom - 24);
+           for (const spot of spots) {
+             const y = Math.round(Math.max(box.top + 4, Math.min(box.bottom - 8, spot)));
+             const hit = document.elementFromPoint(x(), y);
+             if (hit !== null && tree.contains(hit) && hit.closest('.tree-row') === null) {
+               return { x: x(), y };
+             }
+           }
+           return null;
+         };
+
+         const found = blank();
+         if (found !== null) return found;
+         // The rows fill the tree: its bottom padding is the blank line, once scrolled to.
+         tree.scrollTop = tree.scrollHeight;
+         const scrolled = blank();
+         if (scrolled !== null) return scrolled;
+         tree.scrollTop = 0;
+         return blank() ?? { x: x(), y: Math.round(tree.getBoundingClientRect().top + 4) };
        })()`,
     );
 
@@ -3379,16 +3556,29 @@ try {
   point = await contextItemPoint("Delete");
   await clickAt(point.x, point.y);
 
+  /*
+   * Wait for the question to arrive.
+   *
+   * The confirmation is built from the main process's answer - what will be deleted, and how -
+   * so it appears a beat after the menu item is pressed, never during it. Reading for its button
+   * in the same tick was reading too early: on a loaded run the check saw no dialog, counted no
+   * confirmations and moved on while the question was still on its way. That failed this check
+   * and the one below it, and left the confirmation standing over the checks that followed.
+   */
   let asked = 0;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const button = await evaluate(
-      `(() => {
-         const b = document.querySelector('.confirm-dialog[open] .result-close');
-         if (!b) return null;
-         const r = b.getBoundingClientRect();
-         return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) };
-       })()`,
-    );
+    let button = null;
+    for (let wait = 0; wait < 25 && button === null; wait += 1) {
+      button = await evaluate(
+        `(() => {
+           const b = document.querySelector('.confirm-dialog[open] .result-close');
+           if (!b) return null;
+           const r = b.getBoundingClientRect();
+           return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) };
+         })()`,
+      );
+      if (button === null) await sleep(200);
+    }
     if (button === null) break;
     asked++;
     await clickAt(button.x, button.y);
@@ -3396,12 +3586,99 @@ try {
   }
 
   checks.deleteAsksFirst = asked > 0 ? true : "deleted without asking";
-  checks.deleteRemovesRow = await evaluate(
-    `(() => ({
-       goneFromTree: ![...document.querySelectorAll('#filetree .tree-row')].some(r => r.dataset.path?.endsWith(${JSON.stringify(SCRATCH)})),
-       tabMarkedStale: [...document.querySelectorAll('.tab .tab-label')].some(l => l.textContent === 'smoke-renamed.md (deleted)'),
-     }))()`,
-  );
+  /*
+   * The row leaves when the main process has answered, not when the button is pressed, so wait
+   * for it as well: the assertion is that it goes, not that it goes within one round trip.
+   */
+  checks.deleteRemovesRow = await (async () => {
+    let state = { goneFromTree: false, tabMarkedStale: false };
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      state = await evaluate(
+        `(() => ({
+           goneFromTree: ![...document.querySelectorAll('#filetree .tree-row')].some(r => r.dataset.path?.endsWith(${JSON.stringify(SCRATCH)})),
+           tabMarkedStale: [...document.querySelectorAll('.tab .tab-label')].some(l => l.textContent === 'smoke-renamed.md (deleted)'),
+         }))()`,
+      );
+      if (state.goneFromTree) break;
+      await sleep(200);
+    }
+    return state;
+  })();
+
+  /*
+   * Create a file at the workspace root and wait until its tab is open.
+   *
+   * The tree's inline name field is transient UI, and this window refreshes the tree in the
+   * background (the delete just before this, plus a repository with dozens of changed files).
+   * A refresh can replace the field between the name being typed and Enter arriving, which
+   * leaves no file and no tab - the run used to discover that three checks later, as a hidden
+   * badge. Check the field is still the one that was typed into, and try once more if it was
+   * taken away; the assertion - a real file, created through the real menu and opened - stands.
+   */
+  async function createFileAtRoot(name) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (attempt > 0) {
+        // Dismiss whatever the failed attempt left behind before asking the tree again.
+        await pressEscape();
+        await sleep(300);
+      }
+      const space = await emptyTreeSpace();
+      await rightClickAt(space.x, space.y);
+      const newFile = await contextItemPoint("New File");
+      await clickAt(newFile.x, newFile.y);
+
+      let ready = false;
+      for (let settle = 0; settle < 30 && !ready; settle += 1) {
+        ready =
+          (await evaluate(
+            `(() => {
+               const input = document.querySelector('.tree-edit-input');
+               if (input === null) return false;
+               input.focus();
+               input.value = '';
+               return document.activeElement === input;
+             })()`,
+          )) === true;
+        if (!ready) await sleep(100);
+      }
+      if (!ready) continue;
+
+      await typeText(name);
+      const intact =
+        (await evaluate(
+          `(() => {
+             const input = document.querySelector('.tree-edit-input');
+             return input !== null && input.value === ${JSON.stringify(name)} &&
+               document.activeElement === input;
+           })()`,
+        )) === true;
+      if (!intact) continue;
+
+      await pressEnter();
+      for (let wait = 0; wait < 100; wait += 1) {
+        const opened =
+          (await evaluate(
+            `[...document.querySelectorAll('.tab .tab-label')]
+               .some((label) => label.textContent?.startsWith(${JSON.stringify(name)}))`,
+          )) === true;
+        if (opened) return true;
+        await sleep(100);
+      }
+    }
+    const state = await evaluate(
+      `(() => ({
+         input: document.querySelector('.tree-edit-input')?.value ?? null,
+         rows: [...document.querySelectorAll('#filetree .tree-row')]
+           .filter((row) => row.dataset.path?.endsWith(${JSON.stringify(name)})).length,
+         tabs: [...document.querySelectorAll('.tab .tab-label')]
+           .filter((label) => label.textContent?.startsWith(${JSON.stringify(name)})).length,
+         active: document.activeElement === null
+           ? null
+           : document.activeElement.tagName + '.' + document.activeElement.className,
+       }))()`,
+    );
+    throw new Error(`New File created no ${name} tab (${JSON.stringify(state)})`);
+  }
 
   /*
    * The Problems panel, end to end.
@@ -3411,17 +3688,19 @@ try {
    * hand-built `Diagnostic`; none of them can tell whether a marker ever reaches the
    * panel, which is the only thing a user experiences.
    */
-  const brokenSpace = await emptyTreeSpace();
-  await rightClickAt(brokenSpace.x, brokenSpace.y);
-  point = await contextItemPoint("New File");
-  await clickAt(point.x, point.y);
-  await evaluate("document.querySelector('.tree-edit-input').value = ''; true");
   // Created at the workspace root, like every other file this flow makes, so the cleanup
   // below has to name it. A smoke run that leaves a stray `.ts` behind has modified the
   // repository, which is the one thing this whole block promises not to do.
-  await typeText("smoke-broken.ts");
-  await pressEnter();
-  await sleep(1000);
+  await createFileAtRoot("smoke-broken.ts");
+  await evaluate(
+    `(() => {
+       const tab = [...document.querySelectorAll('.tab')]
+         .find((t) => (t.querySelector('.tab-label')?.textContent ?? '').startsWith('smoke-broken.ts'));
+       tab?.click();
+       return true;
+     })()`,
+  );
+  await sleep(400);
 
   async function focusActiveEditor() {
     const point = await evaluate(`(() => {
@@ -4183,7 +4462,18 @@ try {
     const ran = await runCommand("peek definition");
     if (ran !== true) return false;
 
-    await sleep(1800);
+    /*
+     * Wait for the peek rather than for 1.8 seconds to pass.
+     *
+     * The answer is a real search over the project - and, on a machine with a language server,
+     * an LSP round trip before it - so its duration belongs to the machine, not to the check.
+     * Polling `.peek` keeps every assertion below identical and stops a loaded run from failing
+     * a check the editor was still answering.
+     */
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if ((await evaluate("document.querySelector('.peek') !== null")) === true) break;
+      await sleep(200);
+    }
 
     {
       const shot = await send("Page.captureScreenshot", { format: "png" });
@@ -4578,22 +4868,33 @@ try {
        return true;
      })()`,
   );
-  await sleep(2500);
+  /*
+   * The answer comes from a project-wide search, so wait for it rather than for a guessed
+   * number of seconds. A fixed 2.5 s passed on a warm run and failed on a loaded one, and
+   * "still looking" is a failure either way. The assertion - that the drawer stops saying
+   * "Looking" and names a section - is unchanged.
+   */
+  checks.structureRelationsAnswer = await (async () => {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const answer = await evaluate(
+        `(() => {
+           const drawer = document.querySelector('.structure-popup .structure-drawer');
+           if (drawer === null) return 'no drawer opened';
 
-  checks.structureRelationsAnswer = await evaluate(
-    `(() => {
-       const drawer = document.querySelector('.structure-popup .structure-drawer');
-       if (drawer === null) return 'no drawer opened';
+           const text = drawer.textContent ?? '';
+           if (text.includes('Looking')) return null;
 
-       const text = drawer.textContent ?? '';
-       if (text.includes('Looking')) return 'still loading after 2.5s';
-
-       return {
-         hasSection: drawer.querySelector('.structure-section-title') !== null,
-         says: drawer.querySelector('.structure-section-title')?.textContent,
-       };
-     })()`,
-  );
+           return {
+             hasSection: drawer.querySelector('.structure-section-title') !== null,
+             says: drawer.querySelector('.structure-section-title')?.textContent,
+           };
+         })()`,
+      );
+      if (answer !== null) return answer;
+      await sleep(200);
+    }
+    return 'still loading after 10s';
+  })();
 
   /*
    * "What does this rule actually style?" - the question a stylesheet cannot answer about
@@ -7152,6 +7453,34 @@ await send("Emulation.setDeviceMetricsOverride", {
   mobile: false,
 });
 await sleep(250);
+
+/*
+ * The guide and the shortcuts sheet below promise to put focus back in the editor when they
+ * close. The welcome-screen check earlier closed every tab on purpose, so by now there may be
+ * no editor left to return to: the audit would then be measuring that promise in a window that
+ * has nothing to return to, and failing it for the state rather than the behaviour. Put a file
+ * back on screen first, the way a person would, and let the promise be measured where it holds.
+ */
+if ((await evaluate("Boolean(document.querySelector('#editor-host .monaco-editor'))")) !== true) {
+  await pressChord("p");
+  let quickOpenReady = false;
+  for (let attempt = 0; attempt < 20 && !quickOpenReady; attempt += 1) {
+    quickOpenReady =
+      (await evaluate(
+        `document.querySelector('.quickopen-input[aria-label="Go to file"]')?.closest('.quickopen')?.hidden === false`,
+      )) === true;
+    if (!quickOpenReady) await sleep(100);
+  }
+  if (quickOpenReady) {
+    await typeText("package.json");
+    await sleep(800);
+    await pressEnter();
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if ((await evaluate("Boolean(document.querySelector('#editor-host .monaco-editor'))")) === true) break;
+      await sleep(150);
+    }
+  }
+}
 
 checks.dialogCloseAudit = {};
 checks.dialogCloseAudit.structure = await auditRequiredClose(

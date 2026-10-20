@@ -1,0 +1,425 @@
+/*
+ * The live model control in the public header.
+ *
+ * Loaded after `site-pages.css` because that file owns the shared header breakpoints,
+ * and this control changes when the desktop links give way to the sheet. Motion follows
+ * the site's existing rules: only opacity and transform animate, the popover grows from
+ * the trigger, hover effects sit behind a fine pointer, and everything stops for
+ * `prefers-reduced-motion`.
+ */
+
+.header-status {
+  position: relative;
+  flex: none;
+  --header-status-info: light-dark(#3a63b8, #8fb3f5);
+}
+
+.header-status-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font: 500 11.5px/1 var(--font-body), sans-serif;
+  letter-spacing: -.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms cubic-bezier(.23, 1, .32, 1);
+}
+
+.header-status-trigger:active { transform: scale(.98); }
+.header-status-trigger:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.header-status-trigger[aria-expanded="true"] { color: var(--text); background: var(--control); border-color: var(--border-strong); }
+
+.header-status-dot,
+.header-status-state i {
+  flex: none;
+  border-radius: 50%;
+  background: var(--header-status-color, var(--faint));
+}
+
+.header-status-dot {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--header-status-color, var(--faint)) 13%, transparent);
+}
+
+.header-status-trigger[data-state="operational"],
+.header-status-state[data-state="operational"] { --header-status-color: var(--success); }
+.header-status-trigger[data-state="degraded"],
+.header-status-state[data-state="degraded"] { --header-status-color: var(--warn); }
+.header-status-trigger[data-state="outage"],
+.header-status-state[data-state="outage"] { --header-status-color: var(--danger); }
+.header-status-trigger[data-state="loading"],
+.header-status-state[data-state="loading"] { --header-status-color: var(--faint); }
+.header-status-trigger[data-state="error"],
+.header-status-state[data-state="error"],
+.header-status-trigger[data-state="paused"],
+.header-status-state[data-state="paused"],
+.header-status-trigger[data-state="unknown"],
+.header-status-state[data-state="unknown"],
+.header-status-state[data-state="empty"] { --header-status-color: var(--faint); }
+
+.header-status-trigger[data-state="loading"] .header-status-dot {
+  animation: header-status-breathe 1.5s ease-in-out infinite;
+}
+
+@keyframes header-status-breathe {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+
+.header-status-chevron {
+  flex: none;
+  color: var(--faint);
+  transition: transform 160ms cubic-bezier(.23, 1, .32, 1);
+}
+
+.header-status-trigger[aria-expanded="true"] .header-status-chevron { transform: rotate(180deg); }
+
+/* ── The panel ──────────────────────────────────────────────────────────── */
+
+.header-status-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 12px);
+  right: -58px;
+  display: flex;
+  flex-direction: column;
+  width: 364px;
+  max-height: min(560px, calc(100dvh - 104px));
+  border: 1px solid var(--hairline);
+  border-radius: 15px;
+  /*
+   * Opaque on purpose. 2% transparency is invisible as a material but not as a
+   * problem: the hero's 100px heading showed through this panel as grey ghost text
+   * directly behind the model list. A surface that carries numbers has to be solid.
+   */
+  background: var(--card);
+  color: var(--text);
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / .08),
+    0 12px 28px -12px rgb(0 0 0 / .22),
+    0 32px 64px -24px rgb(0 0 0 / .3);
+  transform-origin: 72% 0;
+  animation: header-status-in 170ms cubic-bezier(.23, 1, .32, 1) both;
+  overflow: hidden;
+}
+
+:root[data-theme="dark"] .header-status-popover {
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / .4),
+    0 12px 28px -8px rgb(0 0 0 / .55),
+    0 30px 72px -18px rgb(0 0 0 / .72);
+}
+
+@keyframes header-status-in {
+  from { opacity: 0; transform: translateY(-5px) scale(.965); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.header-status-head {
+  padding: 15px 16px 13px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.header-status-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header-status-kicker > span:first-child {
+  color: var(--faint);
+  font: 500 9.5px/1.4 var(--font-mono), monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.header-status-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--header-status-color, var(--faint));
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-status-state i {
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--header-status-color, var(--faint)) 12%, transparent);
+}
+
+.header-status-title {
+  margin: 8px 0 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -.035em;
+  line-height: 1.2;
+}
+
+.header-status-sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+/* ── Models ────────────────────────────────────────────────────────────── */
+
+.header-status-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.header-status-model {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: inherit;
+  transition: background-color 120ms ease;
+}
+
+.header-status-model:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+
+.header-status-model-dot {
+  width: 5px;
+  height: 5px;
+  margin-inline: auto;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--success) 11%, transparent);
+}
+
+.header-status-model-dot[data-state="degraded"] {
+  background: var(--warn);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.header-status-model-dot[data-state="outage"] {
+  background: var(--danger);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.header-status-model-dot[data-state="maintenance"] {
+  background: var(--header-status-info);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--header-status-info) 12%, transparent);
+}
+
+.header-status-model-dot[data-state="quiet"],
+.header-status-model-dot[data-state="unknown"] {
+  background: var(--faint);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--faint) 11%, transparent);
+}
+
+.header-status-model-copy { min-width: 0; }
+
+.header-status-model-name {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -.005em;
+}
+
+.header-status-model-meta {
+  display: block;
+  margin-top: 1px;
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-status-model-meta b { font-weight: 600; }
+.header-status-model-meta b[data-state="degraded"] { color: var(--warn); }
+.header-status-model-meta b[data-state="outage"] { color: var(--danger); }
+.header-status-model-meta b[data-state="maintenance"] { color: var(--header-status-info); }
+
+.header-status-model-rate {
+  color: var(--muted);
+  font: 400 9.5px/1.5 var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.header-status-model-rate b { color: var(--text); font-weight: 500; }
+
+/* ── Loading, empty and failure states ─────────────────────────────────── */
+
+.header-status-skeletons { padding: 8px 10px 12px; }
+
+.header-status-skeleton {
+  display: grid;
+  gap: 6px;
+  padding: 9px 6px;
+}
+
+.header-status-skeleton span {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--control);
+}
+
+.header-status-skeleton span:first-child { width: 44%; }
+.header-status-skeleton span:last-child { width: 68%; height: 7px; opacity: .7; }
+
+.header-status-message {
+  padding: 18px 16px 16px;
+}
+
+.header-status-message p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+.header-status-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  margin-top: 12px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--control);
+  font: 600 11.5px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms cubic-bezier(.23, 1, .32, 1);
+}
+
+.header-status-retry:active { transform: scale(.97); }
+.header-status-retry:disabled { opacity: .55; cursor: wait; }
+
+.header-status-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--control) 55%, transparent);
+}
+
+.header-status-foot small {
+  color: var(--faint);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.header-status-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-status-link > span:last-child { transition: transform 160ms cubic-bezier(.23, 1, .32, 1); }
+.header-status-link:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+
+/* ── Pointer-only finish ───────────────────────────────────────────────── */
+
+@media (hover: hover) and (pointer: fine) {
+  .header-status-trigger:hover { color: var(--text); background: var(--control); border-color: var(--border-strong); }
+  .header-status-model:hover { background: var(--control); }
+  .header-status-retry:hover:not(:disabled) { background: var(--control-hover); border-color: var(--border-strong); }
+  .header-status-link:hover > span:last-child { transform: translateX(2px); }
+}
+
+/* ── Header breakpoints ─────────────────────────────────────────────────── */
+
+/*
+ * The shared header used to hide every desktop link at 1200px, and the home page had
+ * its own 1100px rule with more specificity. Two destinations that matter for search
+ * and for help disappeared at laptop widths. One breakpoint now owns both.
+ */
+@media (min-width: 1024px) {
+  .marketplace-nav .glass-nav-secondary,
+  .marketplace-nav[data-home="true"] .glass-nav-secondary { display: flex; }
+  .marketplace-nav .glass-nav-mobile,
+  .marketplace-nav[data-home="true"] .glass-nav-mobile { display: none; }
+}
+
+@media (max-width: 1023px) {
+  .marketplace-nav .glass-nav-secondary,
+  .marketplace-nav[data-home="true"] .glass-nav-secondary { display: none; }
+  .marketplace-nav .glass-nav-mobile,
+  .marketplace-nav[data-home="true"] .glass-nav-mobile { display: block; }
+}
+
+/* The short label keeps the primary action visible on a phone beside the status. */
+.marketplace-nav .nav-download-short { display: none; }
+
+@media (max-width: 560px) {
+  .marketplace-nav .nav-download-full { display: none; }
+  .marketplace-nav .nav-download-short { display: inline; }
+}
+
+@media (max-width: 760px) {
+  .header-status-trigger {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    gap: 4px;
+  }
+
+  .header-status-label { display: none; }
+
+  .header-status-popover {
+    position: fixed;
+    top: 76px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100dvh - 88px);
+    transform-origin: 92% 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .header-status-popover { left: 8px; right: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-status-trigger,
+  .header-status-chevron,
+  .header-status-model,
+  .header-status-retry,
+  .header-status-link > span:last-child { transition: none; }
+  .header-status-popover,
+  .header-status-trigger[data-state="loading"] .header-status-dot { animation: none; }
+  .header-status-trigger:active,
+  .header-status-retry:active { transform: none; }
+}

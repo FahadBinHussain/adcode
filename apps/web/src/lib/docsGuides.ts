@@ -917,7 +917,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "ai-team": {
     steps: [
       "Connect the models your agents will use in Connect a model.",
-      "Open Agents from the Vibe sidebar. Under Your agents, use the starter agents or choose New agent and give it a name, look, instructions, connection, model and the tools it may use.",
+      "Open Agents from the Vibe window's rail. Under Your agents, use the starter agents or choose New agent and give it a name, look, instructions, connection, model and the tools it may use.",
       "Starter agents follow your currently connected model and appear immediately, even before a model is available. In the agent editor, Use the currently connected model follows changes in Connect a model; turn it off to choose a fixed connection and model.",
       "Make sure you have at least two agents. For example, give one implementation instructions and another review instructions. Enable Run after teammates for the reviewer so it receives the builder's handoff first.",
       "Choose Select for a Team, tick two to four agents, press Set up Team and describe the shared task.",
@@ -1313,7 +1313,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "git-stage-commit-ui": {
     steps: [
       "First commit on this machine? Open the terminal and tell git who you are once - git config --global user.name \"Your Name\" and git config --global user.email \"you@example.com\" - then come back and commit as normal.",
-      "Open Changes in the Vibe sidebar for the Cursor-style view: an uncommitted +added −removed total, one row per file with its count, and the diff one click away.",
+      "Open Changes on the Vibe window's rail for the Cursor-style view: an uncommitted +added −removed total, one row per file with its count, and the diff one click away.",
       "Untick a file to leave it out of this commit - until you do, every file is included.",
       "Press Commit & Push once: ADCode commits the included files and pushes them, writing the message from the files if you leave it empty, and reports the result under the bar.",
       "Prefer the full panel? Open Source Control from the activity bar for the same list with side-by-side diffs, staging, and a separate push.",
@@ -1505,7 +1505,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "workbench-open-ide": {
     steps: [
       "Start in Vibe, the default: a centered prompt reading Plan, Build, / for skills, @ for context.",
-      "Choose Open IDE at the bottom of the Vibe sidebar, or in the top bar when the window is narrow.",
+      "Choose Open IDE at the bottom of the Vibe sidebar - in a narrow window, open the drawer with the top bar's menu button or Ctrl+B first.",
       "The new window always lands editor-first on the same folder; the launcher stays conversation-first.",
       "Work both sides at once: ask and review in Vibe, edit and run in the IDE window.",
       "Close the IDE window when done - the conversation, files, and tasks stay exactly where they were.",
@@ -1557,7 +1557,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   "workbench-changes": {
     steps: [
-      "Choose Changes in the Vibe sidebar. The panel opens as a floating window over your work - move it, resize it, or double-click its title to fill the window - with every file changed since your last commit.",
+      "Choose Changes on the Vibe window's rail. The panel opens as a floating window over your work - move it, resize it, or double-click its title to fill the window - with every file changed since your last commit.",
       "Read the bar at the top: the uncommitted +added −removed total, your branch, and Commit & Push. The line under it says which files the next commit takes.",
       "Select a file to see its diff, coloured line by line. A new file shows its whole contents.",
       "Untick a file to leave it out of the next commit. While every box is ticked, Commit & Push takes all of them.",
@@ -1579,44 +1579,44 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   "workbench-vibe-sidebar": {
     steps: [
-      "Open ADCode - the Vibe window's sidebar is on the left. Choose New conversation, or press Ctrl+Shift+N, to start fresh.",
-      "Select the project card under the search box to switch to a recent project, open a folder, clone a repository, or see the project overview. The card shows the branch and how many files have changed.",
-      "Watch the Changes badge: it counts the files you have not committed yet, and turns blue when something is waiting for you, such as a conflict.",
-      "Switch the middle of the window with Chat, Agents and Tools: the conversation, the board of agents working in parallel, and the tools, MCP servers, skills and memory they use.",
-      "Select Changes to open the Changes panel as a floating window - every changed file, its diff, and Commit & Push; select it again to close it.",
-      "Use Preview to see the running app in a floating window, and Automations to schedule messages.",
-      "Pick up an earlier conversation from the Conversations list, grouped by day; type in its search box to find one by anything said in it.",
+      "Open ADCode - the Vibe window's rail and sidebar are on the left. Choose New conversation at the top of the sidebar, or press Ctrl+Shift+N, to start fresh.",
+      "Select the project card above the Chats list to switch to a recent project, open a folder, clone a repository, or see the project overview. The card shows the branch and how many files have changed.",
+      "Watch the Changes button on the rail: it counts the files you have not committed yet, and turns blue when something is waiting for you, such as a conflict.",
+      "Switch the middle of the window with Chat, Agents and Tools on the rail: the conversation, the board of agents working in parallel, and the tools, MCP servers, skills and memory they use.",
+      "Select Changes on the rail to open the Changes panel as a floating window - every changed file, its diff, and Commit & Push; select it again to close it.",
+      "Use Preview to see the running app in a floating window, and Automations to schedule messages. Notifications, settings, More, feedback, your account and the live-session button are along the foot of the rail.",
+      "Pick up an earlier conversation from the Chats list, grouped by day; type in its search box to find one by anything said in it. Every open conversation also gets a tab along the top of the window.",
       "Drag the sidebar's right edge to resize it, or press Ctrl+B to hide it. On a narrow window it becomes a drawer: open it with the menu button at the top left or Ctrl+B, and close it with Escape.",
     ],
     benefits: [
       "You find out an agent finished, or what changed, without opening a panel to check.",
-      "Every everyday workflow has one visible row - nothing important hides in an overflow menu.",
+      "Every everyday workflow has one visible button - nothing important hides in an overflow menu.",
       "Switching between projects is two clicks, with the branch and change count in view before you switch.",
-      "The same sidebar works at any window size, from a full monitor to half a laptop screen.",
+      "The same rail and sidebar work at any window size, from a full monitor to half a laptop screen.",
     ],
     betterThan:
-      "Chat-first coding tools tend to show a list of conversations and little else, so you poll the diff view to learn whether anything happened. The Vibe sidebar puts project, branch, running work and uncommitted changes in one glance, next to the conversation that caused them.",
+      "Chat-first coding tools tend to show a list of conversations and little else, so you poll the diff view to learn whether anything happened. The Vibe window's rail and sidebar put the places, project, branch, running work and uncommitted changes in one glance, next to the conversation that caused them.",
   },
 
   "workbench-web-version": {
     steps: [
       "Go to web.bluethenics.com in any modern browser - Chrome, Edge, Safari or Firefox, on a laptop, a Chromebook or a phone.",
       "Sign in with Google, GitHub or email. If you already use the desktop app, sign in with the account you linked there and your earnings stay in one balance.",
-      "Wait a few seconds while your private cloud workspace wakes up - the first time each day takes the longest.",
-      "Describe what you want to build in the box that appears and press Build it. ADCode makes the project, writes the code, runs it and opens it in Preview.",
-      "Keep asking for changes in the chat. Changes shows every file the assistant touched; Commit & Push sends it to GitHub after you connect GitHub once.",
-      "Cloud workspaces have no personal running-time quota. Idle workspaces sleep automatically with your work saved.",
-      "To take a project elsewhere, open Cloud workspace from the chip and choose Download, or push it to GitHub and clone it in the desktop app.",
+      "Start a conversation immediately. Browser chat and saved conversations do not need a running cloud workspace.",
+      "To work with your code, choose Connect GitHub in Project, enter the displayed code on GitHub, and select a repository and branch.",
+      "Ask about the repository or request a change. Select specific files if useful; the assistant can also find and read relevant files itself.",
+      "Review Proposed changes, then choose Create pull request. ADCode creates a new branch and a pull request; your main branch stays unchanged until you merge it on GitHub.",
+      "For commands and live previews, choose Open cloud workspace. This separate optional workspace uses shared execution capacity and budget. GitHub proposals are not automatically copied into it, and chat does not claim to have run or tested the code.",
     ],
     benefits: [
-      "Nothing to install: a work laptop, a school computer or a Chromebook is enough to build and run a real app.",
-      "The same assistant, agents, Changes and Preview as the desktop app's Vibe mode - not a cut-down demo.",
-      "Your workspace sleeps when you stop and comes back exactly as you left it, so idle minutes are not spent.",
+      "Nothing to install: chat, repository context and reviewed edits work in a modern browser.",
+      "Opening chat does not reserve a cloud computer or wait for a free coding slot.",
+      "GitHub stores your project, while conversation history is saved independently of the execution workspace.",
       "Previews are private: only you can open the app you are building until you choose to publish it elsewhere.",
       "Ads and earnings work the same as on the desktop, in the same balance.",
     ],
     betterThan:
-      "Browser-based AI builders usually lock your project into their hosting. ADCode on the web is a full Linux workspace with git, npm and a real browser for the agent to check its work, and everything in it can be downloaded or pushed to your own GitHub at any time. For local development, the desktop app is free with no limit and runs your projects on your own computer.",
+      "ADCode keeps ordinary chat and GitHub code work available without allocating a private execution computer. You review edits as a pull request in your own repository, and open the optional cloud workspace only for work that needs commands or previews. The desktop app can run projects on your own computer.",
   },
 
   "workbench-cloud-workspace": {
@@ -1686,7 +1686,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   "workbench-agents-board": {
     steps: [
-      "Choose Agents in the Vibe sidebar (in the IDE window, Agents in the More menu or Open Agents in the command palette).",
+      "Choose Agents on the Vibe window's rail (in the IDE window, Agents in the More menu or Open Agents in the command palette).",
       "Your agents starts with five specialists that use your current model. Edit one to pin a specific connection and model instead, or change its instructions, appearance and tool access.",
       "Press New task. Describe what you want - for example: Add a dark mode toggle to the settings page.",
       "Pick an agent, or keep Default agent to use your connected model with every tool. Optionally set a cost cap in dollars, then press Enter.",
@@ -1713,7 +1713,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   "workbench-tools-page": {
     steps: [
-      "Choose Tools in the Vibe sidebar, or Open Tools in the command palette.",
+      "Choose Tools on the Vibe window's rail, or Open Tools in the command palette.",
       "Built-in lists ADCode's own tools in plain words and which of your agents may use each one - change that in the agent's editor on the Agents page.",
       "Open Connectors. Each card wears a badge saying what it is - MCP, Extension, Plugin or Actions - and Add connector offers four ways in.",
       "Catalogue adds a server such as Playwright (test pages in a real browser) or Context7 (current library docs) in one click. Import scans what Claude Desktop, Claude Code, Cursor, Windsurf and VS Code already have; From a file reads a config file, an OpenAPI description, a ChatGPT plugin manifest, a .mcpb extension or a plugin folder, or takes a link or pasted text; Custom is for a server or API you know by hand.",
@@ -1735,7 +1735,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   "workbench-floating-panels": {
     steps: [
-      "Open a panel as usual: Changes or Preview in the Vibe sidebar, Project overview from the project card, or Ctrl+I for the assistant in the IDE.",
+      "Open a panel as usual: Changes or Preview on the Vibe window's rail, Project overview from the project card, or Ctrl+I for the assistant in the IDE.",
       "Drag it by its title bar to where you want it.",
       "Resize it from any edge or corner. Double-click the title bar, or press Maximise, to fill the window; do it again to restore.",
       "Press Escape or the close button to hide it. It opens in the same place next time.",

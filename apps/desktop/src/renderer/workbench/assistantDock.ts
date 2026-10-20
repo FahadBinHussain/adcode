@@ -5,6 +5,7 @@ import type { createProjectContext, ContextTab } from "./projectContext.ts";
 import { createIcon } from "./icons.ts";
 import { createContextMenu, attachContextMenuDismissal, type ContextMenuNode } from "./contextMenu.ts";
 import { createVibeSidebar, type VibeSidebar } from "./vibeSidebar.ts";
+import type { AppMenu } from "./appMenu.ts";
 import { createVibePages } from "./vibePages.ts";
 import { createFloatingPanel, type FloatingPanel } from "./floatingPanel.ts";
 import { motionPersonality } from "../motionFlip.ts";
@@ -29,6 +30,8 @@ interface AssistantDockDeps {
   readonly openNotifications: () => void;
   readonly onUnreadNotifications: (listener: (count: number) => void) => void;
   readonly onEarnings: (listener: (label: string) => void) => void;
+  /** The app's menus behind a button, in the windows that wear the frame (see appMenu.ts). */
+  readonly appMenu: AppMenu | null;
 }
 
 const contextTitle = (tab: ContextTab): string => tab === "changes" ? "Changes" : "Project overview";
@@ -223,6 +226,7 @@ export function createAssistantDock(deps: AssistantDockDeps) {
       openNotifications: deps.openNotifications,
       onUnreadNotifications: deps.onUnreadNotifications,
       onEarnings: deps.onEarnings,
+      appMenu: deps.appMenu,
       onLayoutChange: () => { mountDock(); deps.layoutChanged(); },
     });
     toolbar.append(vibeSidebar.topbar, vibeSidebar.element);

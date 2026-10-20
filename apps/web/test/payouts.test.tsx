@@ -96,7 +96,7 @@ describe("the admin jump box", () => {
 describe("the admin rail", () => {
   /*
    * The panel used to be six pages with a second level hidden inside them; it then
-   * spent a while as one page of disclosures. It is now nineteen destinations in seven
+   * spent a while as one page of disclosures. It is now twenty destinations in seven
    * groups - one row per real job, each with its own URL, so the rail reads like a
    * table of contents and the browser's back button works inside the panel.
    */
@@ -117,6 +117,7 @@ describe("the admin rail", () => {
       "/admin/analytics",
       "/admin/models",
       "/admin/tagflow",
+      "/admin/status",
       "/admin/review",
       "/admin/review?tab=feedback",
       "/admin/money",

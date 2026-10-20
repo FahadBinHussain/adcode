@@ -48,5 +48,6 @@ export async function readApi(path: `/v1/${string}`, revalidate: number): Promis
   } catch {
     // No API in this environment; the public one below answers instead.
   }
-  return fetch(`${API_ORIGIN}${path}`, { next: { revalidate } });
+  // A deadline: a page waits on this, and an API that is down must cost a visitor seconds, not minutes.
+  return fetch(`${API_ORIGIN}${path}`, { next: { revalidate }, signal: AbortSignal.timeout(4_000) });
 }

@@ -1,5 +1,5 @@
 /** Official Lucide icons, imported individually so unused icons are excluded from the bundle. */
-import { MessageSquarePlus, FileDiff, PanelsTopLeft, CalendarClock, CircleUserRound, PanelTop, Menu, FolderOpen, ChevronDown, ChevronRight, MessageSquare, Bot, Wrench, Bell, Settings, CodeXml, Search, Sparkles, Gift, MonitorDown, BookOpen, LayoutGrid, PanelLeft, Wallet, X, Ellipsis, MessageSquareText, Globe, GitBranch, Plug, GraduationCap, BookMarked } from "lucide";
+import { MessageSquarePlus, FileDiff, PanelsTopLeft, CalendarClock, CircleUserRound, Users, PanelTop, Menu, FolderOpen, ChevronDown, ChevronRight, MessageSquare, Bot, Wrench, Bell, Settings, CodeXml, Search, Sparkles, Gift, MonitorDown, BookOpen, LayoutGrid, PanelLeft, Wallet, X, Ellipsis, MessageSquareText, Globe, GitBranch, Plug, GraduationCap, BookMarked, Keyboard } from "lucide";
 
 export const WEB_ICON = {
   newChat: MessageSquarePlus,
@@ -7,6 +7,7 @@ export const WEB_ICON = {
   preview: PanelsTopLeft,
   automations: CalendarClock,
   account: CircleUserRound,
+  share: Users,
   workspace: PanelTop,
   menu: Menu,
   folder: FolderOpen,
@@ -29,6 +30,7 @@ export const WEB_ICON = {
   close: X,
   more: Ellipsis,
   feedback: MessageSquareText,
+  keyboard: Keyboard,
   browser: Globe,
   branch: GitBranch,
   servers: Plug,

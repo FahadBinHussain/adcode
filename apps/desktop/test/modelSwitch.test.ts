@@ -36,6 +36,12 @@ const status = (providers: AiProviderInfo[], active = "openai", model = "openai-
 });
 
 describe("modelChoices", () => {
+  it("offers every included model, not three", () => {
+    const included = provider("tagflow", { needsKey: false, models: ["a", "b", "c", "d", "e"].map((id) => ({ id: `free-${id}`, name: `Free ${id}`, toolCall: true, reasoning: false })) });
+    const shown = modelChoices(status([included], "tagflow", "free-a"), []).filter((one) => one.provider === "tagflow").map((one) => one.model);
+    expect(shown).toEqual(["free-a", "free-b", "free-c", "free-d", "free-e"]);
+  });
+
   it("offers only providers that can answer now, the active one first", () => {
     const choices = modelChoices(status([
       provider("anthropic"),

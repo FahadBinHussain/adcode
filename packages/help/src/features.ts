@@ -57,7 +57,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "workbench.webVersion": {
     actions: [command("help.openWebVersion", "Open ADCode on the web")],
-    keywords: ["web version", "browser", "online", "no install", "chromebook", "web.bluethenics.com", "use in browser", "cloud"],
+    keywords: ["web version", "browser", "online", "no install", "chromebook", "web.bluethenics.com", "use in browser", "cloud", "github", "pull request", "instant chat", "chat history", "no sandbox wait"],
   },
   "workbench.cloudWorkspace": {
     actions: [command("cloud.workspace", "Open Cloud workspace")],
@@ -147,7 +147,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "workbench.universalSearch": {
     actions: [command("search.universal", "Search")],
-    keywords: ["main search", "title bar", "find anything", "everywhere"],
+    keywords: ["main search", "title bar", "sidebar search", "find anything", "everywhere"],
   },
   "workbench.commandPalette": {
     actions: [command("palette.open", "Open")],

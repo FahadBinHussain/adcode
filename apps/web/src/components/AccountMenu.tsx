@@ -18,7 +18,7 @@ import { signOutNow } from "@/lib/firebase";
  * and the trigger carries `aria-expanded`. Anything less is a div that looks like a menu.
  */
 export function AccountMenu() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, adminError } = useAuth();
   const [open, setOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -85,8 +85,15 @@ export function AccountMenu() {
             <Link href="/portal" role="menuitem" onClick={() => setOpen(false)}>
               Advertiser portal
             </Link>
-            {isAdmin && (
-              <Link href="/admin" role="menuitem" onClick={() => setOpen(false)}>
+            {/* Visible while the answer is unknown, so an administrator can reach the
+                retry instead of being locked out by the same outage that hid the link. */}
+            {(isAdmin || adminError !== null) && (
+              <Link
+                href="/admin"
+                role="menuitem"
+                title={isAdmin ? undefined : "Admin access couldn't be verified yet"}
+                onClick={() => setOpen(false)}
+              >
                 Admin
               </Link>
             )}

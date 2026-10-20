@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthContext as Ctx, type AuthState } from "./AuthContext";
 export { useAuth } from "./AuthContext";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type ApiError } from "@/lib/api";
 import { watchUser, firebaseConfigured, type User } from "@/lib/firebase";
 import { excludeBrowserByDefault } from "@/lib/websiteAnalytics";
 
@@ -23,6 +23,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState<ApiError | null>(null);
+  const [adminAttempt, setAdminAttempt] = useState(0);
   const userRef = useRef<User | null>(null);
 
   useEffect(() => {
@@ -30,44 +32,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userRef.current = next;
       setUser(next);
       setLoading(false);
-
-      if (next === null) {
-        setIsAdmin(false);
-        setAdminLoading(false);
-        return;
-      }
-      setAdminLoading(true);
-
-      /*
-       * Ask the server, because the browser cannot work this out.
-       *
-       * This used to read a Firebase custom claim called `admin`. That was right until
-       * administrators moved into a database table, and nothing has written the claim
-       * since - so it read `undefined`, every account was told it was not an admin, and
-       * the founding administrator could reach every admin endpoint while never being
-       * shown the link to them.
-       *
-       * `/v1/me` returns what `authenticate` already computed for this request. It still
-       * only decides what the UI offers: the API re-checks on every admin route, because
-       * a client-side check is a convenience, never a control.
-       */
-      void next
-        .getIdToken()
-        .then((token) => apiFetch<{ uid: string; isAdmin: boolean }>({ path: "/me", token }))
-        .then((result) => {
-          // Only the answer for whoever is signed in now: a slow reply for the previous
-          // account must not decide what this one is shown.
-          if (userRef.current !== next) return;
-          const admin = result.ok && result.value.isAdmin;
-          setIsAdmin(admin);
-          // An administrator's own visits are not an audience. Excluded on this browser
-          // from here on, unless Admin > Analytics was told to count it.
-          if (admin) excludeBrowserByDefault();
-        })
-        .catch(() => { if (userRef.current === next) setIsAdmin(false); })
-        .finally(() => { if (userRef.current === next) setAdminLoading(false); });
     });
   }, []);
+
+  /*
+   * Ask the server, because the browser cannot work this out.
+   *
+   * This used to read a Firebase custom claim called `admin`. That was right until
+   * administrators moved into a database table, and nothing has written the claim
+   * since - so it read `undefined`, every account was told it was not an admin, and
+   * the founding administrator could reach every admin endpoint while never being
+   * shown the link to them.
+   *
+   * `/v1/me` returns what `authenticate` already computed for this request. It still
+   * only decides what the UI offers: the API re-checks on every admin route, because
+   * a client-side check is a convenience, never a control.
+   *
+   * A failed question is not a "no". When the API or the database behind it is down,
+   * the answer is `adminError`, and the gate offers a retry instead of telling a real
+   * administrator that she is not one.
+   */
+  useEffect(() => {
+    if (user === null) {
+      setIsAdmin(false);
+      setAdminLoading(false);
+      setAdminError(null);
+      return;
+    }
+
+    let active = true;
+    setAdminLoading(true);
+    setAdminError(null);
+
+    void (async () => {
+      try {
+        const token = await user.getIdToken();
+        const result = await apiFetch<{ uid: string; isAdmin: boolean }>({ path: "/me", token });
+
+        // Only the answer for whoever is signed in now: a slow reply for the previous
+        // account must not decide what this one is shown.
+        if (!active || userRef.current !== user) return;
+
+        if (!result.ok) {
+          setIsAdmin(false);
+          // `not-admin` is an answer. Everything else - offline, a 500, an expired
+          // token - is a question that went unanswered.
+          setAdminError(result.error === "not-admin" ? null : result.error);
+          return;
+        }
+
+        const admin = result.value.isAdmin === true;
+        setIsAdmin(admin);
+        // An administrator's own visits are not an audience. Excluded on this browser
+        // from here on, unless Admin > Analytics was told to count it.
+        if (admin) excludeBrowserByDefault();
+      } catch {
+        if (!active || userRef.current !== user) return;
+        setIsAdmin(false);
+        setAdminError("offline");
+      } finally {
+        if (active && userRef.current === user) setAdminLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [user, adminAttempt]);
+
+  const retryAdmin = useCallback(() => setAdminAttempt((attempt) => attempt + 1), []);
 
   const token = useCallback(async () => {
     const current = userRef.current;
@@ -80,8 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, loading, configured: firebaseConfigured, token, isAdmin, adminLoading }),
-    [user, loading, token, isAdmin, adminLoading],
+    () => ({ user, loading, configured: firebaseConfigured, token, isAdmin, adminLoading, adminError, retryAdmin }),
+    [user, loading, token, isAdmin, adminLoading, adminError, retryAdmin],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

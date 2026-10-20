@@ -233,7 +233,7 @@ export function AppShell({
   requireAdmin?: boolean;
   children: React.ReactNode;
 }) {
-  const { user, loading, configured, isAdmin, adminLoading } = useAuth();
+  const { user, loading, configured, isAdmin, adminLoading, adminError, retryAdmin } = useAuth();
   const pathname = usePathname();
 
   const [drawer, setDrawer] = useState(false);
@@ -307,6 +307,36 @@ export function AppShell({
       <section className="auth-screen">
         <div className="wrap">
           <SignInCard heading={`Sign in to ${title.toLowerCase()}`} />
+        </div>
+      </section>
+    );
+  }
+
+  /*
+   * The admin question went unanswered. That is not the same as "no", and treating it
+   * as one turned an API outage into a false accusation against a real administrator.
+   * See `AdminShell` for the same distinction.
+   */
+  if (requireAdmin && adminError !== null) {
+    return (
+      <section className="band">
+        <div className="wrap">
+          <div className="empty" role="alert">
+            <h3>Couldn&apos;t check your access</h3>
+            <p>
+              You&apos;re signed in as <strong>{user.email ?? user.uid}</strong>, but the
+              server didn&apos;t answer when we asked whether this account is an
+              administrator.{" "}
+              {adminError === "offline"
+                ? "The request never reached it, so check your connection and try again."
+                : adminError === "unauthenticated"
+                  ? "It didn't accept the session token. Try again, or sign out and back in."
+                  : "The error is on our side, and trying again is usually enough."}
+            </p>
+            <button type="button" className="btn btn-outline btn-small" onClick={retryAdmin}>
+              Try again
+            </button>
+          </div>
         </div>
       </section>
     );

@@ -67,6 +67,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
     { url: url(COMPARE_PREFIX), lastModified: at(compareDay), changeFrequency: "monthly", priority: 0.8 },
     { url: url("/versions"), lastModified: at(releaseDay), changeFrequency: "weekly", priority: 0.8 },
+    /*
+     * The status page changes with every request it measures, so there is no honest
+     * lastmod finer than the site's own day - it is crawled for its content, not for a
+     * date, and a fabricated one would be the exact "verifiably inaccurate" the note
+     * above warns about.
+     */
+    { url: url("/status"), lastModified: at(siteDay), changeFrequency: "daily", priority: 0.6 },
     { url: url("/docs"), lastModified: at(newest([releaseDay, writingDay], writingDay)), changeFrequency: "weekly", priority: 0.8 },
     ...docs.map((page) => ({
       url: url(`/docs/${page.slug}`),

@@ -46,6 +46,8 @@ import {
   RELEASE_COLS,
   REPORT_COLS,
   SERVE_COLS,
+  STATUS_INCIDENT_COLS,
+  STATUS_INCIDENT_UPDATE_COLS,
   USER_COLS,
   fromAdvertiser,
   fromAdmin,
@@ -78,6 +80,8 @@ import {
   toPayoutProfile,
   toReport,
   toServe,
+  toStatusIncident,
+  toStatusIncidentUpdate,
   toUser,
   type ActivityRow,
   type AdvertiserRow,
@@ -92,6 +96,8 @@ import {
   type NoticeRow,
   type PostRow,
   type ReleaseRow,
+  type StatusIncidentRow,
+  type StatusIncidentUpdateRow,
   toWithdrawal,
   fromWithdrawal,
   PAYOUT_PROFILE_COLS,
@@ -119,6 +125,7 @@ import {
 } from "./supabaseRows.ts";
 import { DEFAULT_REFERRAL_CONFIG, type AttributionRecord } from "../src/store.ts";
 import { createTagflowStore } from "./tagflowStore.ts";
+import { cached, cachedBy, createBreaker } from "./dbGuard.ts";
 import type {
   ActivityDay,
   CampaignBudgetMoveRefusal,
@@ -280,6 +287,9 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
       // There is no user session here and nothing to persist: this client is the
       // service_role acting on its own behalf, in a runtime with no storage to speak of.
       auth: { persistSession: false, autoRefreshToken: false },
+      // A deadline and a circuit breaker (dbGuard.ts): a struggling database gets room to
+      // recover instead of a queue of 20-second requests.
+      global: { fetch: databaseBreaker.fetch },
     });
     return client;
   };
@@ -321,7 +331,7 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
     return { rows: kept, nextCursor: more && last !== undefined ? cursorOf(last) : null };
   };
 
-  return {
+  const store: Store = {
     async getUser(uid) {
       const row = await maybe<UserRow>("getUser", (db) =>
         db.from("users").select(USER_COLS).eq("uid", uid).maybeSingle(),
@@ -1128,6 +1138,55 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
       return rows.map(toNotice);
     },
 
+    async listStatusIncidents() {
+      const rows = await many<StatusIncidentRow>("listStatusIncidents", (db) =>
+        db.from("status_incidents").select(STATUS_INCIDENT_COLS).order("created_at", { ascending: false }),
+      );
+      return rows.map(toStatusIncident);
+    },
+
+    async listStatusIncidentUpdates() {
+      const rows = await many<StatusIncidentUpdateRow>("listStatusIncidentUpdates", (db) =>
+        db.from("status_incident_updates").select(STATUS_INCIDENT_UPDATE_COLS).order("created_at", { ascending: false }),
+      );
+      return rows.map(toStatusIncidentUpdate);
+    },
+
+    async getStatusIncident(incidentId) {
+      const row = await maybe<StatusIncidentRow>("getStatusIncident", (db) =>
+        db.from("status_incidents").select(STATUS_INCIDENT_COLS).eq("incident_id", incidentId).maybeSingle(),
+      );
+      return row === null ? null : toStatusIncident(row);
+    },
+
+    // The incident and its first update are two rows that must land together.
+    async createStatusIncident(incident, firstUpdate) {
+      const { error } = await (await lazy()).rpc("status_create_incident", {
+        p_incident_id: incident.incidentId,
+        p_update_id: firstUpdate.updateId,
+        p_title: incident.title,
+        p_impact: incident.impact,
+        p_status: incident.status,
+        p_body: firstUpdate.body,
+        p_author_uid: incident.authorUid,
+        p_at: incident.createdAt,
+      });
+      if (error !== null) fail("createStatusIncident", error);
+    },
+
+    async addStatusIncidentUpdate(incidentId, update) {
+      const { data, error } = await (await lazy()).rpc("status_add_incident_update", {
+        p_incident_id: incidentId,
+        p_update_id: update.updateId,
+        p_status: update.status,
+        p_body: update.body,
+        p_author_uid: update.authorUid,
+        p_at: update.createdAt,
+      });
+      if (error !== null) fail("addStatusIncidentUpdate", error);
+      return data === true;
+    },
+
     async creativesByStatus(status) {
       const rows = await many<CreativeRow>("creativesByStatus", (db) =>
         db.from("creatives").select(CREATIVE_COLS).eq("status", status),
@@ -1407,5 +1466,41 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
       const rows = await many<{ email: string }>("countAdmins", (db) => db.from("admins").select("email"));
       return rows.length;
     },
+  };
+  return withHotCaches(store);
+}
+
+/** One breaker per isolate, shared by every store the isolate makes. */
+const databaseBreaker = createBreaker((input, init) => fetch(input, init));
+
+/**
+ * The reads every request makes - the AI catalogue, serving config, "is this an admin" - from
+ * memory for a few seconds, and from the last good copy while the database is unreachable.
+ * Saving any of them clears its copy, so an administrator's change applies on the next request
+ * in this isolate and within the TTL everywhere else.
+ */
+function withHotCaches(store: Store): Store {
+  const config = cached(() => store.getConfig(), { ttlMs: 30_000, staleMs: 6 * 3_600_000 });
+  const tagflow = cached(() => store.getTagflowConfig(), { ttlMs: 30_000, staleMs: 6 * 3_600_000 });
+  const admins = cachedBy((email) => store.isAdmin(email), { ttlMs: 60_000, staleMs: 3_600_000, max: 500 });
+  // Public counters every landing-page visitor polls; each is a set of whole-table counts.
+  const impressions = cached(() => store.liveImpressions(), { ttlMs: 120_000, staleMs: 24 * 3_600_000 });
+  // "This week" in the stats moves by at most the two minutes a copy is kept.
+  const stats = cached(() => store.publicStats(Date.now()), { ttlMs: 120_000, staleMs: 24 * 3_600_000 });
+  // Every authenticated request reads its user row; a ban or rename applies within 20 s.
+  const users = cachedBy((uid) => store.getUser(uid), { ttlMs: 20_000, staleMs: 600_000, max: 5_000 });
+  return {
+    ...store,
+    getConfig: () => config.get(),
+    async putConfig(next) { await store.putConfig(next); config.clear(); },
+    getTagflowConfig: () => tagflow.get(),
+    async putTagflowConfig(record) { await store.putTagflowConfig(record); tagflow.clear(); },
+    isAdmin: (email) => admins.get(email.toLowerCase()),
+    getUser: (uid) => users.get(uid),
+    liveImpressions: () => impressions.get(),
+    publicStats: () => stats.get(),
+    async putUser(user) { await store.putUser(user); users.forget(user.uid); },
+    async addAdmin(record) { const added = await store.addAdmin(record); admins.clear(); return added; },
+    async removeAdmin(email) { const removed = await store.removeAdmin(email); admins.clear(); return removed; },
   };
 }

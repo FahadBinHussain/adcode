@@ -185,6 +185,13 @@ function createWindow(role: WindowRole = "vibe"): BrowserWindow {
     backgroundColor: "#1c1c1e",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     titleBarOverlay: process.platform === "win32" ? { color: "#00000000", symbolColor: "#ffffff", height: 36 } : false,
+    /*
+     * macOS draws its three window buttons over the window's top-left corner, which in the Vibe
+     * window's frame is the icon rail. Placed here so they sit over the rail's own top padding
+     * instead of the mark below it, which is why the frame reserves that room
+     * (`webFrame.css`, `[data-platform="darwin"]`). The Code window keeps the system's inset.
+     */
+    ...(process.platform === "darwin" && role === "vibe" ? { trafficLightPosition: { x: 16, y: 12 } } : {}),
     // §3: translucent chrome, backed by the platform's own material.
     ...(process.platform === "darwin" ? { vibrancy: "sidebar" as const } : {}),
     ...(process.platform === "win32" ? { backgroundMaterial: "mica" as const } : {}),
