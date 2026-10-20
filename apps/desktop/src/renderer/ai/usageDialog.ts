@@ -90,7 +90,9 @@ export function openUsageDialog(): Promise<void> {
       resolve();
     });
 
-    const historyNote = el("p", "usage-lead", "History below covers the selected period and all models on this computer. Included-AI availability above applies across your devices. Included AI is free; costs for your own models are estimates.");
+    const historyText = "History below covers the selected period and all models on this computer.";
+    const freeText = "Included AI is free; costs for your own models are estimates.";
+    const historyNote = el("p", "usage-lead", `${historyText} ${freeText}`);
     const allowance = el("div", "usage-allowance", "Checking included AI allowance…");
     const allowanceHelp = el("details", "usage-allowance-help");
     const budgetNote = el("p", "usage-note");
@@ -152,6 +154,8 @@ export function openUsageDialog(): Promise<void> {
         if (mine !== allowanceRequest) return;
         allowance.hidden = view === null || !view.available;
         allowanceHelp.hidden = allowance.hidden;
+        // "Above" only means something when the allowance is there to point at.
+        historyNote.textContent = allowance.hidden ? `${historyText} ${freeText}` : `${historyText} The included-AI allowance above applies across your devices. ${freeText}`;
         if (view === null || !view.available) return;
         if (view.blocked) { allowance.textContent = "Included AI is disabled for this account."; allowanceHelp.hidden = true; return; }
         if (view.unlimited) {

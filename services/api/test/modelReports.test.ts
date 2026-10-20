@@ -71,7 +71,7 @@ describe("provider report and feedback endpoints",() => {
   async function setup(upstream: typeof fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: "OK" },finish_reason: "stop" }],usage: { prompt_tokens: 10,completion_tokens: 2 } }),{ headers: { "content-type": "application/json" } })) {
     const store = createMemoryStore(); await store.addAdmin({ email: "admin@test.com",addedAt: 1,addedBy: "setup" }); await store.putTagflowConfig({ config,updatedAt: from,updatedBy: "admin" });
     let clockNow = from+3600000;
-    const handle = createFetchHandler({ store,verifier,clock: { now: () => clockNow },tagflow: { apiKey: "test-key",fetchImpl: upstream } });
+    const handle = createFetchHandler({ store,verifier,clock: { now: () => clockNow },tagflow: { apiKey: "test-key",fetchImpl: upstream,rateLimitWaitsMs: [0, 0] } });
     const call = async (path: string,token: string,data?: unknown,source?: string) => {
       const response = await handle(new Request(`https://adcode.test/v1${path}`,{ method: data === undefined ? "GET" : "POST",headers: { authorization: `Bearer ${token}`,"content-type":"application/json",...(source ? { "x-adcode-ai-source":source } : {}) },...(data === undefined ? {} : { body: JSON.stringify(data) }) }));
       clockNow += 1;

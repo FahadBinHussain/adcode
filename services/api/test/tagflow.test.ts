@@ -51,7 +51,7 @@ describe("included Tagflow AI", () => {
     await store.addAdmin({ email: "admin@adcode.test", addedBy: "setup", addedAt: 0 });
     await save(structuredClone(config));
     upstream = vi.fn<typeof fetch>().mockImplementation(async () => reply());
-    handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream } });
+    handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, rateLimitWaitsMs: [0, 0] } });
   });
   afterEach(async () => { for (const response of pending) if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined); vi.unstubAllEnvs(); });
 
@@ -81,10 +81,18 @@ describe("included Tagflow AI", () => {
     expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ unlimited: true, credits: { weekly: { used: 1.015 } } });
   });
 
+  it("retries a provider's burst rate limit and answers when it clears", async () => {
+    upstream.mockImplementationOnce(async () => new Response("slow down", { status: 429 }));
+    const response = await chat();
+    expect(response.status).toBe(200); await response.text();
+    expect(upstream).toHaveBeenCalledTimes(2);
+  });
+
   it("identifies an upstream rate limit without charging daily usage or exposing its response", async () => {
-    upstream.mockResolvedValue(new Response("server-secret private upstream limit", { status: 429 }));
+    upstream.mockImplementation(async () => new Response("server-secret private upstream limit", { status: 429 }));
     const response = await chat();
     expect(response.status).toBe(429);
+    expect(upstream).toHaveBeenCalledTimes(3);
     expect(response.headers.get("retry-after")).toBe("60");
     const text = await response.text();
     expect(text).toContain("upstream-rate-limit");

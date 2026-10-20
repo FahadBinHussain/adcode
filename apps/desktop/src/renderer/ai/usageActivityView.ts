@@ -38,8 +38,12 @@ export function createUsageActivity(view: UsageActivityView, position: { day?: s
     const date = new Date(`${day.day}T00:00:00Z`);
     const monthKey = day.day.slice(0, 7);
     if (monthKey !== month) {
+      const column = Math.floor((padding + index) / 7) + 1;
+      // The year's first month is often a week or two wide; its name ran into the next ("OctNov").
+      const previous = months.lastElementChild as HTMLElement | null;
+      if (previous !== null && column - Number(previous.style.gridColumn) < 3) previous.remove();
       const label = el("span", "", date.toLocaleDateString([], { month: "short", timeZone: "UTC" }));
-      label.style.gridColumn = String(Math.floor((padding + index) / 7) + 1);
+      label.style.gridColumn = String(column);
       months.append(label);
       month = monthKey;
     }

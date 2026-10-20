@@ -265,7 +265,7 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 }
 
 export interface ApiOptions {
-  tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined; workerSecrets?: WorkerSecrets };
+  tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined; workerSecrets?: WorkerSecrets; rateLimitWaitsMs?: readonly number[] };
   websiteAnalytics?: WebsiteAnalyticsStore;
   mailing?: MailingStore;
   mailingWebhookSecret?: () => string | undefined;

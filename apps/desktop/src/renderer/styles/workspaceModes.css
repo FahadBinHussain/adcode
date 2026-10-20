@@ -250,3 +250,5 @@ body[data-workspace-mode="code"] .project-toolbar .command-centre {
 .project-toolbar .project-toolbar-action { display: inline-flex; align-items: center; gap: 6px; }
 .project-toolbar .project-toolbar-name svg,
 .project-toolbar .project-toolbar-action svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; }
+.context-empty { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-5) var(--space-4); }
+.context-empty .context-caption { margin: 0 0 var(--space-2); max-width: 46ch; }

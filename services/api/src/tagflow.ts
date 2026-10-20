@@ -22,7 +22,12 @@ export interface TagflowOptions {
   country?: (request: Request) => string | undefined;
   /** Saves provider keys as this Worker's Cloudflare secrets from the admin panel. */
   workerSecrets?: WorkerSecrets;
+  /** The waits before retrying a provider's 429; tests pass zeros. */
+  rateLimitWaitsMs?: readonly number[];
 }
+
+/** Two retries of a provider's rate limit, then the person hears about it. */
+export const UPSTREAM_RATE_LIMIT_WAITS_MS: readonly number[] = [700, 1600];
 
 export function isTagflowPath(path: string): boolean {
   return path === "/v1/ai/tagflow/config" || path === "/v1/ai/tagflow/usage" || path === "/v1/ai/tagflow/chat/completions" ||
@@ -407,7 +412,19 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         // public HTTPS addresses only an administrator can register. Redirects are refused, so a
         // credential cannot travel to another host.
         const keyHeader: Record<string, string> = connection.authentication === "bearer" ? { authorization: `Bearer ${apiKey}` } : { [connection.authentication]: apiKey };
-        upstream = await fetchImpl(`${baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...keyHeader }, body: JSON.stringify(parsed.body), redirect: "manual", signal: abort.signal });
+        const send = (): Promise<Response> => fetchImpl(`${baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...keyHeader }, body: JSON.stringify(parsed.body), redirect: "manual", signal: abort.signal });
+        upstream = await send();
+        // A provider's 429 is usually a burst limit, not a quota: on 2026-10-20 one included model
+        // refused 21% of requests with 429 while answering thousands beside them. Two short waits
+        // (the provider's Retry-After when it asks for under 4 s) turn most into an answer.
+        for (const wait of deps.rateLimitWaitsMs ?? UPSTREAM_RATE_LIMIT_WAITS_MS) {
+          if (upstream.status !== 429 || abort.signal.aborted) break;
+          const asked = Number(upstream.headers.get("retry-after"));
+          await upstream.body?.cancel();
+          await new Promise((resolve) => setTimeout(resolve, Number.isFinite(asked) && asked > 0 && asked <= 4 && wait > 0 ? asked * 1000 : wait));
+          if (abort.signal.aborted) break;
+          upstream = await send();
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         const reason = abort.signal.aborted ? request.signal.aborted ? "request-ended" : "timeout"

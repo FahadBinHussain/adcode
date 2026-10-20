@@ -212,11 +212,11 @@ export function createPopupShell(options: PopupShellOptions): PopupShell {
     surface,
     open(openOptions = {}) {
       backdropPressed = false;
-      anchor = openOptions.anchor;
+      anchor = shownAnchor(openOptions.anchor, dialog);
       const current = dialog.open ? presentation() : undefined;
       cancelSurfaceMotion();
       restoreTarget = openOptions.trigger ?? null;
-      if (openOptions.anchor !== undefined) positionAnchored(dialog, openOptions.anchor);
+      if (anchor !== undefined) positionAnchored(dialog, anchor);
       if (!dialog.open) {
         if (options.modal) {
           dismissClosingPopupDialogs();
@@ -274,9 +274,31 @@ export function createPopupShell(options: PopupShellOptions): PopupShell {
   };
 }
 
+const isShown = (element: Element): boolean => {
+  const box = element.getBoundingClientRect();
+  return box.width > 0 || box.height > 0;
+};
+
+/**
+ * A layout can hide the button a popup was anchored to (the Vibe frame hides the status bar
+ * whose Earnings button the popover hangs from) while another door opens it. A hidden anchor
+ * measures 0,0 and pinned the popover over the logo; the element that opened it stands in.
+ */
+function shownAnchor(anchor: HTMLElement | undefined, dialog: HTMLDialogElement): HTMLElement | undefined {
+  if (anchor === undefined || isShown(anchor)) return anchor;
+  const opener = document.activeElement;
+  return opener instanceof HTMLElement && !dialog.contains(opener) && opener !== document.body && isShown(opener) ? opener : anchor;
+}
+
 function positionAnchored(dialog: HTMLDialogElement, anchor: HTMLElement): void {
-  const box = anchor.getBoundingClientRect();
   const width = Math.min(420, window.innerWidth - 72);
+  if (!isShown(anchor)) {
+    // Nothing on screen to hang from: centred under the title bar rather than in a corner.
+    dialog.style.setProperty("--popup-anchor-x", `${String(Math.max(12, Math.round((window.innerWidth - width) / 2)))}px`);
+    dialog.style.setProperty("--popup-anchor-y", "72px");
+    return;
+  }
+  const box = anchor.getBoundingClientRect();
   const x = Math.max(12, Math.min(box.right + 10, window.innerWidth - width - 12));
   dialog.style.setProperty("--popup-anchor-x", `${String(x)}px`);
   const height = dialog.querySelector<HTMLElement>(".popup-shell-surface")?.offsetHeight ?? 620;

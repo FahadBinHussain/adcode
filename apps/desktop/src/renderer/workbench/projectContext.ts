@@ -112,9 +112,18 @@ export function createProjectContext(deps: ContextDeps) {
     const current = (): boolean => request === generation && root === deps.root() && view === selected;
     try {
       if (!root) {
-        paragraph("A workspace for your next idea", fragment, "context-title");
-        paragraph("Open a project folder. Your files, conversations, changes and tasks will stay together here.", fragment);
-        action("Open a project", () => deps.run("workspace.open"), fragment);
+        // Changes drops the content padding for its full-width bar; the empty state keeps its own.
+        const empty = document.createElement("div");
+        empty.className = "context-empty";
+        paragraph("A workspace for your next idea", empty, "context-title");
+        paragraph("Open a project folder. Your files, conversations, changes and tasks will stay together here.", empty);
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "btn btn-primary";
+        open.textContent = "Open a project";
+        open.addEventListener("click", () => deps.run("workspace.open"));
+        empty.append(open);
+        fragment.append(empty);
       } else if (view === "project") {
         const [entries, ai, git, tasks] = await Promise.all([window.adcode.workspace.list(root), window.adcode.ai.status(), window.adcode.git.status(), window.adcode.aiWorkspace.list()]);
         signature += JSON.stringify([entries, ai.ready, ai.activeModel, git, tasks, deps.activeFile()]);
