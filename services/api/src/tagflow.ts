@@ -271,10 +271,15 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     let metric: ModelRequestRecord | null = null;
     let metricFinished = false;
-    const writeMetric = async (): Promise<void> => {
-      if (metric === null) return;
-      try { await deps.store.putModelRequest({ ...metric }); }
-      catch { console.warn("Included AI telemetry write failed"); }
+    // Telemetry never holds up an answer: the "pending" row goes out alongside the provider
+    // call, not before it. Writes are chained, so a slow early write can never land after -
+    // and overwrite - the finished record of the same request.
+    let metricWrites: Promise<void> = Promise.resolve();
+    const writeMetric = (): Promise<void> => {
+      if (metric === null) return metricWrites;
+      const snapshot = { ...metric };
+      metricWrites = metricWrites.then(() => deps.store.putModelRequest(snapshot)).catch(() => { console.warn("Included AI telemetry write failed"); });
+      return metricWrites;
     };
     const finishMetric = async (outcome: ModelRequestOutcome, code: string | null = null): Promise<void> => {
       if (metric === null || metricFinished) return;
@@ -410,10 +415,13 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       }
       const policy = await deps.store.getTagflowPolicy(subject);
       const limits = policy?.limits ?? config.limits;
-      const usage = await deps.store.getTagflowUsage(subject, day) ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
       const plan: CreditPlan = policy?.credits ?? config.credits ?? DEFAULT_CREDIT_PLAN;
       if (userMatch !== null || url.pathname === "/v1/ai/tagflow/usage" && request.method === "GET") {
-        const credits = creditsView(plan, await deps.store.getCreditWindows(subject), Object.fromEntries(offeredModels.map((model) => [model.id, modelCreditRate(model, config)])), deps.clock.now());
+        // The day's usage row and the credit windows are what this view shows; a chat request
+        // needs neither - its reservation checks both inside one database transaction.
+        const [stored, windows] = await Promise.all([deps.store.getTagflowUsage(subject, day), deps.store.getCreditWindows(subject)]);
+        const usage = stored ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
+        const credits = creditsView(plan, windows, Object.fromEntries(offeredModels.map((model) => [model.id, modelCreditRate(model, config)])), deps.clock.now());
         if (userMatch !== null) return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true, unlimited: true, credits });
         // Desktops from before credits read only the token fields. They get the session window in
         // tokens (a credit is 1,000 tokens at the standard rate), so their meter, its reset time
@@ -441,7 +449,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
           streamed: isRecord(raw) && raw["stream"] !== false, toolsOffered: isRecord(raw) && Array.isArray(raw["tools"]) && raw["tools"].length > 0,
           toolCalls: 0, finishReason: null, contextWindow: selected.contextWindow, requestedOutput: 0, estimatedInput: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimated: false, durationMs: null, firstTokenMs: null };
         headers["x-adcode-request-id"] = metric.id;
-        await writeMetric();
+        void writeMetric();
       }
       if (!available) { await finishMetric("rejected","unavailable"); return fail(503, "unavailable", "Included AI is unavailable. Try another connected model."); }
       if (policy?.blocked) { await finishMetric("rejected","blocked"); return fail(403, "blocked", "Included AI is disabled for this account."); }
@@ -530,13 +538,13 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
        */
       const switchTo = async (fallback: NonNullable<ReturnType<typeof fallbackFor>>, outcome: ModelRequestOutcome, code: string): Promise<void> => {
         if (metric !== null) {
-          await finishMetric(outcome, code);
+          void finishMetric(outcome, code);
           const model = fallback.parsed.model;
           metric = { ...metric, id: randomUUID(), modelId: model.id, modelName: model.name, provider: modelProvider(model), upstreamModel: model.upstreamModel ?? model.id, contextWindow: model.contextWindow,
             requestedOutput: fallback.parsed.output, estimatedInput: fallback.parsed.contextInput, providerStartedAt: deps.clock.now(), finishedAt: null, outcome: "pending", errorCode: null, upstreamStatus: null, durationMs: null, firstTokenMs: null };
           metricFinished = false;
           headers["x-adcode-request-id"] = metric.id;
-          await writeMetric();
+          void writeMetric();
         }
         headers["x-adcode-fallback-model"] = fallback.parsed.model.id;
         route = fallback.route; served = fallback.parsed; servedRate = modelCreditRate(fallback.parsed.model, config);
@@ -558,8 +566,8 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       };
       let upstream: Response;
       try {
+        // Recorded with the finished request; a write of its own would sit in front of the provider.
         if (metric !== null) metric.providerStartedAt = deps.clock.now();
-        await writeMetric();
         const body = raw as Record<string, unknown>;
         // A model that keeps refusing is cooling: skip it rather than make this person wait to be refused.
         if (health.cooling(parsed.model.id, deps.clock.now())) {

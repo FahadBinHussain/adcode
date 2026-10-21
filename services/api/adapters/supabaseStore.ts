@@ -1489,6 +1489,14 @@ function withHotCaches(store: Store): Store {
   const stats = cached(() => store.publicStats(Date.now()), { ttlMs: 120_000, staleMs: 24 * 3_600_000 });
   // Every authenticated request reads its user row; a ban or rename applies within 20 s.
   const users = cachedBy((uid) => store.getUser(uid), { ttlMs: 20_000, staleMs: 600_000, max: 5_000 });
+  // Every included-AI request reads the account's AI policy, which only an administrator changes;
+  // a block or new allowance applies here at once and within 30 s in every other isolate.
+  const policies = cachedBy((uid) => store.getTagflowPolicy(uid), { ttlMs: 30_000, staleMs: 600_000, max: 5_000 });
+  // Every ad serve reads the live campaigns for its tags and each one's approved artwork; both
+  // change only when an advertiser or administrator edits them. Spend is never cached, so a
+  // campaign that runs out of budget still stops at once.
+  const campaigns = cachedBy((tags) => store.activeCampaignsFor(JSON.parse(tags) as string[]), { ttlMs: 30_000, staleMs: 600_000, max: 500 });
+  const artwork = cachedBy((campaignId) => store.creativesForCampaign(campaignId), { ttlMs: 30_000, staleMs: 600_000, max: 2_000 });
   return {
     ...store,
     getConfig: () => config.get(),
@@ -1500,6 +1508,14 @@ function withHotCaches(store: Store): Store {
     liveImpressions: () => impressions.get(),
     publicStats: () => stats.get(),
     async putUser(user) { await store.putUser(user); users.forget(user.uid); },
+    getTagflowPolicy: (uid) => policies.get(uid),
+    activeCampaignsFor: (tags) => campaigns.get(JSON.stringify([...tags].sort())),
+    creativesForCampaign: (campaignId) => artwork.get(campaignId),
+    async putCampaign(campaign) { await store.putCampaign(campaign); campaigns.clear(); },
+    async transitionCampaignCommitment(input) { const result = await store.transitionCampaignCommitment(input); campaigns.clear(); return result; },
+    async moveCampaignBudget(input) { const result = await store.moveCampaignBudget(input); campaigns.clear(); return result; },
+    async putCreative(creative) { await store.putCreative(creative); artwork.forget(creative.campaignId); },
+    async putTagflowPolicy(uid, policy) { await store.putTagflowPolicy(uid, policy); policies.forget(uid); },
     async addAdmin(record) { const added = await store.addAdmin(record); admins.clear(); return added; },
     async removeAdmin(email) { const removed = await store.removeAdmin(email); admins.clear(); return removed; },
   };

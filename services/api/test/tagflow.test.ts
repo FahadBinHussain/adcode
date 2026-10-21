@@ -81,6 +81,38 @@ describe("included Tagflow AI", () => {
     expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ unlimited: true, credits: { weekly: { used: 1.015 } } });
   });
 
+  describe("what stands between a message and the model", () => {
+    it("asks the provider while the request's telemetry write is still outstanding", async () => {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const put = store.putModelRequest.bind(store);
+      vi.spyOn(store, "putModelRequest").mockImplementation(async (record) => { await held; await put(record); });
+      const response = await chat();
+      expect(response.status).toBe(200);
+      expect(upstream).toHaveBeenCalledTimes(1);
+      release(); await response.text();
+    });
+
+    it("never lets a slow early write overwrite the finished record", async () => {
+      const writes: string[] = [];
+      const put = store.putModelRequest.bind(store);
+      vi.spyOn(store, "putModelRequest").mockImplementation(async (record) => {
+        if (record.outcome === "pending") await new Promise((resolve) => setTimeout(resolve, 30));
+        writes.push(record.outcome); await put(record);
+      });
+      const response = await chat(); await response.text();
+      await vi.waitFor(() => expect(writes).toEqual(["pending", "success"]));
+      const id = response.headers.get("x-adcode-request-id")!;
+      expect(await store.getModelRequest(id)).toMatchObject({ outcome: "success", providerStartedAt: expect.any(Number) });
+    });
+
+    it("does not read the day's usage to answer a chat request", async () => {
+      const reads = vi.spyOn(store, "getTagflowUsage");
+      const response = await chat(); expect(response.status).toBe(200); await response.text();
+      expect(reads).not.toHaveBeenCalled();
+    });
+  });
+
   it("retries a provider's burst rate limit and answers when it clears", async () => {
     upstream.mockImplementationOnce(async () => new Response("slow down", { status: 429 }));
     const response = await chat();
