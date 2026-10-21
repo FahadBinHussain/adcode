@@ -25,6 +25,16 @@ export const AI_ENTRIES: readonly HelpEntry[] = [
     related: ["ai.seesYourApp", "workbench.toolsPage", "adcode.ai.editPolicy", "adcode.ai.designTaste"],
   },
   {
+    id: "ai.operatesAdcode",
+    title: "The assistant uses ADCode for you",
+    plain: "Ask the assistant to do something in ADCode - connect a tool such as Roblox Studio, change a setting, open a view - and it does it, instead of telling you where to click.",
+    why: "You should not have to learn where every switch lives to get something done, and an assistant that guesses about its own app gives wrong answers. This one looks ADCode's features up, so when it says ADCode can or cannot do something, it checked.",
+    how: "Ask in plain words: \"connect Roblox Studio\", \"turn on dark theme\", \"show my usage\", \"add the Playwright server\". Or run AI: Set Up a Connector for Me. The assistant searches ADCode's own feature list, runs the command or changes the setting, and adds, connects and enables MCP connectors on the Tools page for you. Some steps stay yours, and it asks for them: starting a connector's program, letting it use that connector's tools, removing a connector, and settings that change ads, updates, where its edits land, or what runs as a command, each open a dialog first. A step only another app can do - such as turning on Enable Studio as MCP server inside Roblox Studio (Assistant, ..., Manage MCP Servers) - it names exactly. It never claims a feature is missing, or that something is connected or changed, without a result that shows it. Local models get a shorter request without these tools; they say they cannot check rather than guess.",
+    group: "ai",
+    settingIds: [],
+    related: ["workbench.toolsPage", "ai.agentTools", "workbench.allFeatures"],
+  },
+  {
     id: "ai.team",
     title: "AI Team",
     plain: "Create named agents with their own instructions and models, then let a team divide a task - messaging each other as they work and sharing the project's memory - and bring its results back for review.",

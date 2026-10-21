@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MailingStore, EmailJob } from "../src/mailing.ts";
+import type { MailingStore, EmailJob, AnnouncementJob, AnnouncementPayload, AnnouncementTopic } from "../src/mailing.ts";
 
 export function createSupabaseMailingStore(): MailingStore {
   let client: SupabaseClient | undefined;
@@ -21,7 +21,7 @@ export function createSupabaseMailingStore(): MailingStore {
       const database = await db();
       const [user, prefs] = await Promise.all([
         database.from("users").select("email,email_verified,status").eq("uid", uid).maybeSingle(),
-        database.from("email_preferences").select("subscribed,email").eq("uid", uid).maybeSingle(),
+        database.from("email_preferences").select("subscribed,email,status_updates,model_updates").eq("uid", uid).maybeSingle(),
       ]);
       if (user.error || prefs.error) throw new Error("Mailing preferences unavailable");
       const email = user.data?.email as string | undefined;
@@ -32,10 +32,51 @@ export function createSupabaseMailingStore(): MailingStore {
         if (result.error) throw new Error("Mailing suppression check failed");
         suppressed = result.data !== null;
       }
+      const current = eligible && !suppressed && prefs.data?.email === email;
       return { email: email ?? null, eligible, suppressed,
-        subscribed: eligible && !suppressed && prefs.data?.email === email && prefs.data?.subscribed === true };
+        subscribed: current && prefs.data?.subscribed === true,
+        statusUpdates: current && prefs.data?.status_updates === true,
+        modelUpdates: current && prefs.data?.model_updates === true };
     },
     async consent(uid, enabled, now) { await rpc("email_set_consent", { p_uid: uid, p_enabled: enabled, p_now: now }); },
+    async setStatusUpdates(uid, enabled, now) { await rpc("email_set_status_updates", { p_uid: uid, p_enabled: enabled, p_now: now }); },
+    async unsubscribeStatus(token, now) { await rpc("email_unsubscribe_status", { p_token: token, p_now: now }); },
+    async setModelUpdates(uid, enabled, now) { await rpc("email_set_model_updates", { p_uid: uid, p_enabled: enabled, p_now: now }); },
+    async unsubscribeModels(token, now) { await rpc("email_unsubscribe_models", { p_token: token, p_now: now }); },
+    async announce(input) {
+      return Number(await rpc("email_announce", { p_topic: input.topic, p_ref: input.ref, p_subject: input.subject, p_payload: input.payload, p_by: input.by, p_now: input.now }));
+    },
+    async claimAnnouncements(now, limit) {
+      const rows = await rpc("email_claim_announcements", { p_now: now, p_limit: limit }) as Array<Record<string, unknown>>;
+      return rows.map((row): AnnouncementJob => ({ id: String(row["id"]), uid: String(row["uid"]), email: String(row["email"]), attempts: Number(row["attempts"]),
+        topic: row["topic"] as AnnouncementTopic, subject: String(row["subject"]), payload: row["payload"] as AnnouncementPayload, unsubscribeToken: String(row["unsubscribe_token"]) }));
+    },
+    async finishAnnouncement(id, result, now) {
+      await rpc("email_finish_announcement", "providerId" in result
+        ? { p_id: id, p_provider_id: result.providerId, p_retry: false, p_code: null, p_now: now }
+        : { p_id: id, p_provider_id: null, p_retry: result.retry, p_code: result.code, p_now: now });
+    },
+    async undeliverable(email) {
+      const { data, error } = await (await db()).from("email_suppressions").select("reason").eq("email", email.toLowerCase()).in("reason", ["bounce", "complaint"]).maybeSingle();
+      if (error) throw new Error("Mailing suppression check failed");
+      return data !== null;
+    },
+    async recordReportReply(reply) {
+      const { error } = await (await db()).from("report_replies").insert({ reply_id: reply.replyId, report_id: reply.reportId, author_uid: reply.authorUid,
+        email: reply.email, body: reply.body, provider_id: reply.providerId, created_at: reply.createdAt });
+      if (error) throw new Error("Report reply could not be recorded");
+    },
+    async repliedAt(reportIds) {
+      if (reportIds.length === 0) return {};
+      const { data, error } = await (await db()).from("report_replies").select("report_id,created_at").in("report_id", [...reportIds]);
+      if (error) throw new Error("Report replies unavailable");
+      const latest: Record<string, number> = {};
+      for (const row of data ?? []) {
+        const at = Number(row.created_at);
+        if (at > (latest[row.report_id as string] ?? 0)) latest[row.report_id as string] = at;
+      }
+      return latest;
+    },
     async touch(uid, now) { await rpc("email_touch", { p_uid: uid, p_now: now }); },
     async unsubscribe(token, now) { await rpc("email_unsubscribe", { p_token: token, p_now: now }); },
     async settings() {

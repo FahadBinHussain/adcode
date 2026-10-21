@@ -209,13 +209,13 @@ describe("assembleStatusView", () => {
     expect(view.models[0]?.days[89]).toMatchObject({ day: day(0), level: "operational", turns: 10, avgMs: 1_000 });
   });
 
-  it("computes uptime over everything that was not stopped by the person", () => {
+  it("computes uptime over answers and the service's own failures", () => {
     const view = assembleStatusView({
       now,
       days: 30,
       outcomes: [
         row({ count: 8, totalMs: 8_000 }),
-        row({ outcome: "auth", count: 2, totalMs: 200 }),
+        row({ outcome: "server", count: 2, totalMs: 200 }),
         // Stopped turns are not the model's fault and must not move the percentage.
         row({ outcome: "cancelled", count: 50, totalMs: 50_000 }),
       ],
@@ -226,6 +226,25 @@ describe("assembleStatusView", () => {
     expect(model).toMatchObject({ turns: 10, ok: 8, uptimePct: 80, errorPct: 20 });
     // 20% is degraded, and the day carries the errors in its tooltip.
     expect(model?.days[29]).toMatchObject({ turns: 10, errors: 2, level: "degraded" });
+  });
+
+  it("never calls a model broken for the person's own situation", () => {
+    // 2026-10-20: signed-out turns, long conversations and dropped connections made every
+    // included model read "outage" while the relay was answering nearly everything.
+    const view = assembleStatusView({
+      now,
+      days: 30,
+      outcomes: [
+        row({ count: 20, totalMs: 20_000 }),
+        ...["auth", "credits", "too_large", "network", "history", "output_limit", "thinking_limit", "refused", "other"].map((outcome) =>
+          row({ outcome, count: 10, totalMs: 100 }),
+        ),
+      ],
+      incidents: [],
+      updates: [],
+    });
+    expect(view.models[0]).toMatchObject({ turns: 20, ok: 20, uptimePct: 100, state: "operational" });
+    expect(view.overall.state).toBe("operational");
   });
 
   it("reports the newest active day as the model's state", () => {

@@ -288,6 +288,16 @@ export function levelFor(errorPct: number, turns: number): StatusLevel {
   return "degraded";
 }
 
+/**
+ * The turn endings that say the service failed. Everything else a turn can end with is the
+ * person's own situation: signed out (`auth`), out of credit, a conversation too long for
+ * the model, their own connection dropping, a reply cut at the limit they chose, a stop, or
+ * an error nobody could classify. On 2026-10-20 counting those made every included model
+ * read "outage" at 40-60% errors while the relay's own log had Tagflow Code 27B answering
+ * 2,353 requests against 87 failures - signed-out turns alone were a third of the "errors".
+ */
+export const SERVICE_FAILURES: ReadonlySet<string> = new Set(["server", "rate_limit", "model_missing", "no_tools", "tool_format"]);
+
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
 interface DayTally {
@@ -323,7 +333,8 @@ export function assembleStatusView(args: {
   const series = new Map<string, { provider: string; model: string; days: Map<string, DayTally> }>();
   const last7 = new Set(dayKeys.slice(-7));
   for (const row of args.outcomes) {
-    if (row.outcome === "cancelled") continue; // stopped by the person, not by the model
+    // Only an answer or the service's own failure is evidence about the model.
+    if (row.outcome !== "ok" && !SERVICE_FAILURES.has(row.outcome)) continue;
     const key = `${row.provider}:${row.model}`;
     const entry = series.get(key) ?? { provider: row.provider, model: row.model, days: new Map<string, DayTally>() };
     const tally = entry.days.get(row.day) ?? blankDay();

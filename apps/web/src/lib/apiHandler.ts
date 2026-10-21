@@ -24,14 +24,20 @@ import { createSupabaseStore } from "@adcode/api/adapters/supabaseStore.ts";
 import { createFirebaseJwksVerifier } from "@adcode/api/adapters/firebaseJwks.ts";
 import { createDodoProvider } from "@adcode/api/adapters/dodoPayments.ts";
 import { createWebsiteAnalyticsStore } from "@adcode/api/adapters/websiteAnalyticsStore.ts";
-import { mailingStore } from "./mailing";
+import { createFirebaseIdentity } from "@adcode/api/src/accountIdentity.ts";
+import { mailingStore, sendReportReplyEmail } from "./mailing";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const handleApiRequest = createFetchHandler({
-  tagflow: { country: () => getCloudflareContext().cf?.country },
+  tagflow: {
+    country: () => getCloudflareContext().cf?.country,
+    // The project's public web API key - the one every browser that signs in already holds.
+    identity: createFirebaseIdentity(() => (process.env["FIREBASE_WEB_API_KEY"] ?? process.env["NEXT_PUBLIC_FIREBASE_API_KEY"] ?? "").trim()),
+  },
   websiteAnalytics: createWebsiteAnalyticsStore(),
   mailing: mailingStore,
   mailingWebhookSecret: () => process.env["RESEND_WEBHOOK_SECRET"],
+  reportReplyMailer: sendReportReplyEmail,
   store: createSupabaseStore(),
   verifier: createFirebaseJwksVerifier(),
   payments: createDodoProvider(),

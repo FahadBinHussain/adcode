@@ -89,6 +89,18 @@ async function ensureUser(deps: AuthDeps, verified: VerifiedToken): Promise<User
    * read plus a write, on the busiest path there is.
    */
   const identity = identityOf(verified);
+  /*
+   * A verified address stays verified while it is the same address.
+   *
+   * A token's claim is a snapshot from when it was minted. The included-AI gate marks an account
+   * verified the moment Firebase says so (read live with the person's own token), and the
+   * desktop's next request may still carry an hour-old token saying `false` - which used to write
+   * the account straight back to unverified. Changing the address is what resets verification at
+   * Firebase, so a different email still takes the token's word.
+   */
+  if (user.emailVerified === true && identity.emailVerified === false && (identity.email === undefined || identity.email === user.email)) {
+    identity.emailVerified = true;
+  }
   if (differs(user, identity)) {
     user = { ...user, ...identity };
     await deps.store.putUser(user);

@@ -196,7 +196,7 @@ type TargetKind = "command" | "path" | "url" | "name";
 const PATH_TOOLS = new Set(["read_file", "edit_file", "propose_edit", "delete_file", "get_outline", "list_files", "search", "glob_files"]);
 const PAGE_TOOLS = new Set(["fetch_url", "view_page", "audit_page", "open_preview"]);
 /** Tools that change something. When a settings file cannot be read, these ask first. */
-const CHANGING_TOOLS = new Set(["run_command", "edit_file", "propose_edit", "delete_file", "move_file", "memory_write", "call_mcp"]);
+const CHANGING_TOOLS = new Set(["run_command", "edit_file", "propose_edit", "delete_file", "move_file", "memory_write", "call_mcp", "adcode_action", "adcode_connectors"]);
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
 
@@ -212,6 +212,8 @@ export function callTargets(call: ToolCallBlock, root: string | null): { readonl
   if (call.name === "move_file") return { kind: "path", values: [workspacePath(input["from"], root), workspacePath(input["to"], root)] };
   if (PAGE_TOOLS.has(call.name)) return { kind: "url", values: [text(input["url"]) || text(input["path"])] };
   if (call.name === "call_mcp") return { kind: "name", values: [`${text(input["server"])}/${text(input["tool"])}`] };
+  if (call.name === "adcode_action") return { kind: "name", values: [text(input["command"]) || text(input["setting"])] };
+  if (call.name === "adcode_connectors") return { kind: "name", values: [`${text(input["action"])}/${text(input["id"]) || text(input["preset"])}`] };
   if (call.name === "load_skill" || call.name === "load_builtin_skill") return { kind: "name", values: [text(input["id"]) || text(input["name"])] };
   return null;
 }
@@ -553,6 +555,8 @@ const QUESTION_TITLES: Readonly<Record<string, string>> = {
   move_file: "Let the AI move this file?",
   fetch_url: "Let the AI fetch this address?",
   call_mcp: "Let the AI use this external tool?",
+  adcode_action: "Let the AI do this in ADCode?",
+  adcode_connectors: "Let the AI change this connector?",
 };
 
 /** What the person is asked: the call in their words, and the rule that made it ask. */

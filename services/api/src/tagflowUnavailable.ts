@@ -20,4 +20,5 @@ export const tagflowUnavailable: TagflowStore = {
   async listTagflowUsage() { throw new Error("Tagflow requires the Supabase adapter"); },
   async reserveTagflow() { throw new Error("Tagflow requires the Supabase adapter"); },
   async settleTagflow() { throw new Error("Tagflow requires the Supabase adapter"); },
+  async claimVerificationSend() { throw new Error("Tagflow requires the Supabase adapter"); },
 };

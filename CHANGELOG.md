@@ -3,8 +3,10 @@
 All notable changes to ADCode. Dates are the date the version was prepared; a version is
 only public once its installers are attached to a GitHub release.
 
-## 2.4.0 — 2026-10-20
+## 2.4.0 — 2026-10-21
 
+- **The assistant uses ADCode for you.** Ask it to connect a tool such as Roblox Studio, change a setting or open a view, and it does it instead of telling you where to click. It looks ADCode's own features up before it answers, and asks first for anything that changes ads, updates or what runs as a command. Roblox Studio is in the Connectors catalogue.
+- Calmer chat: quieter composer, spacing and motion in the conversation, the timeline and the live agents window.
 - **A new look for the Vibe window.** An icon rail on the left for Chat, Agents, Tools, Changes, Preview and Automations; a sidebar card with your project and chats; and a tab for each open chat along the top. New type throughout (Manrope, Space Grotesk, Geist Mono), quieter borders, and small, quick motion that stays still when you ask for reduced motion. The app's menus open from the button beside the ADCode name. The IDE window is unchanged.
 - **Chats keep working in the background**, several at once. A spinner in the chat list (and on its tab) shows which are working, and a dot marks one that finished while you were elsewhere.
 - **Each answer is a timeline**: what the assistant read, ran and changed, step by step, folded once it is done.

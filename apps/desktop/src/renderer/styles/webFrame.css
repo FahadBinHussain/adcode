@@ -345,6 +345,34 @@
 }
 :root[data-frame="web"] .web-sidebar-panel .vibe-nav-item:hover .vibe-shortcut { opacity: 1; }
 
+/* New conversation is the sidebar's one call to action - Kimi's "New chat" row: raised on a
+   hairline, a little taller, its shortcut always showing on the right. */
+:root[data-frame="web"] .web-sidebar-panel .vibe-nav-item.vibe-new-button {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 40px;
+  margin-bottom: 6px;
+  border: 1px solid var(--web-line);
+  background: var(--web-panel-raised);
+  box-shadow: var(--web-sheen);
+}
+:root[data-frame="web"] .web-sidebar-panel .vibe-nav-item.vibe-new-button:hover {
+  border-color: var(--web-line-strong);
+  background: color-mix(in srgb, var(--web-panel-raised) 88%, var(--text-primary));
+}
+/* Its shortcut floats over the row's right end on hover rather than taking room from the
+   label, so "New conversation" never truncates and nothing shifts under the pointer. */
+:root[data-frame="web"] .web-sidebar-panel .vibe-nav-item.vibe-new-button { position: relative; }
+:root[data-frame="web"] .web-sidebar-panel .vibe-new-button .vibe-shortcut {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--web-panel-raised) 88%, var(--text-primary));
+  font-size: 10px;
+  transform: translateY(-50%);
+}
+
 /* Badges: Freebuff's mint count, in ADCode's money green. */
 :root[data-frame="web"] .web-sidebar-panel .vibe-badge {
   min-width: 26px;
@@ -487,6 +515,9 @@
   mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
 }
 .web-tabs-strip::-webkit-scrollbar { display: none; }
+/* The fade is for tabs that scroll out of sight; 24px of room at the end means it only ever
+   covers that room - never the last tab's own name - until the strip actually overflows. */
+.web-tabs-strip { padding-right: 24px; }
 .web-tabs-button,
 .web-tabs-add {
   display: inline-flex;
@@ -524,6 +555,11 @@
 }
 /* Tab insertion motion is owned by tabMotion.ts so keyboard actions stay instant. */
 .web-tab { transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease; }
+/* Freebuff's tabs are one width, not the width of their titles: "New chat" and a long title
+   sit side by side as equals, and the close button stays in the same place on every tab. They
+   give way evenly once the strip is full. */
+.web-tab { flex: 0 1 200px; min-width: 120px; }
+.web-tab-open { flex: 1; }
 .web-tab:hover { background: var(--web-hover); color: var(--text-primary); }
 .web-tab[data-active="true"] {
   border-color: var(--web-line);
@@ -791,24 +827,28 @@
     border-radius: 16px;
     margin-bottom: max(12px, env(safe-area-inset-bottom));
   }
-  :root[data-frame="web"] body[data-workspace-mode="vibe"] .chat-card .chat-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-  }
-  :root[data-frame="web"] .chat-composer-utilities { gap: 4px; }
-  :root[data-frame="web"] .chat-composer-utilities .composer-tool-label { display: inline; }
+  :root[data-frame="web"] .chat-quick-actions { flex-wrap: wrap; }
+}
+
+/* A finger needs 44px; a mouse in a narrow window does not, and gets the desktop's 32. */
+@media (max-width: 760px) and (pointer: coarse) {
   :root[data-frame="web"] body[data-workspace-mode="vibe"] .chat-card .chat-toolbar :is(.chat-team-button, .composer-tools > summary) {
-    width: auto;
+    width: 44px;
     min-width: 44px;
     min-height: 44px;
-    padding-inline: 8px;
-    gap: 6px;
   }
-  :root[data-frame="web"] .chat-composer-routing { width: 100%; }
   :root[data-frame="web"] body[data-workspace-mode="vibe"] .chat-card .chat-toolbar :is(.chat-mode-pill, .chat-model.chat-model-pill) { min-height: 44px; }
   :root[data-frame="web"] body[data-workspace-mode="vibe"] .chat-card .chat-composer .chat-send { width: 44px; height: 44px; }
   :root[data-frame="web"] body[data-workspace-mode="vibe"] .chat-card .chat-input { font-size: 16px; }
-  :root[data-frame="web"] .chat-quick-actions { flex-wrap: wrap; }
+}
+
+/* Windows keeps its caption buttons over the top-right of the first row only: the compact bar's
+   second row (New chat, Changes, Preview, Workspace) has the window's whole width. */
+@media (max-width: 760px) {
+  :root[data-frame="web"][data-platform="win32"] body[data-workspace-mode][data-vibe-rail="compact"] .project-toolbar { padding-right: 8px; }
+  :root[data-frame="web"][data-platform="win32"] body[data-workspace-mode="vibe"][data-vibe-rail="compact"] .vibe-topbar {
+    grid-template-columns: 44px minmax(0, 1fr) 44px calc(var(--web-caption) - 6px);
+  }
 }
 
 /* Keep the conversation usable with a landscape phone or an on-screen keyboard. */

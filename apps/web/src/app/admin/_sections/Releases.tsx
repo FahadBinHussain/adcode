@@ -50,6 +50,24 @@ export function ReleasesBody() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [docsDraft, setDocsDraft] = useState({ path: "", title: "", summary: "" });
+  const [announced, setAnnounced] = useState<string | null>(null);
+
+  /** Queues a release or docs announcement for people who said yes to ADCode updates. */
+  const announce = async (body: Record<string, unknown>, what: string): Promise<void> => {
+    setBusy(true);
+    setAnnounced(null);
+    const result = await apiFetch<{ queued: number; sendingEnabled: boolean }>({ path: "/admin/email/announce", token: await token(), method: "POST", body });
+    setBusy(false);
+    if (!result.ok) {
+      setAnnounced(result.error === "invalid-state" ? `${what} was already emailed, or the note is not published yet.` : `Could not queue ${what}. Check the page path and try again.`);
+      return;
+    }
+    setAnnounced(result.value.sendingEnabled
+      ? `${what}: queued for ${result.value.queued} ${result.value.queued === 1 ? "person" : "people"}; the hourly sender delivers it.`
+      : `${what}: queued for ${result.value.queued}, but sending is switched off until a postal address is set.`);
+    if (body["docs"] !== undefined) setDocsDraft({ path: "", title: "", summary: "" });
+  };
 
   const load = useCallback(async () => {
     const found = await apiFetch<{ releases: ReleaseRow[] }>({
@@ -300,6 +318,11 @@ export function ReleasesBody() {
                   {when(row.publishedAt ?? row.updatedAt)}
                 </span>
               </span>
+              {row.status === "published" && (
+                <button className="btn btn-outline btn-small" disabled={busy} onClick={() => void announce({ topic: "product", release: row.version }, row.version)}>
+                  Email subscribers
+                </button>
+              )}
               <button className="btn btn-outline btn-small" disabled={busy} onClick={() => edit(row)}>
                 Edit
               </button>
@@ -307,6 +330,39 @@ export function ReleasesBody() {
           ))}
         </div>
       )}
+
+      {/* New docs are code, not admin content, so their announcement names the page and says what it is. */}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void announce({ topic: "product", docs: { path: docsDraft.path.trim(), title: docsDraft.title.trim(), summary: docsDraft.summary.trim() } }, docsDraft.path.trim());
+        }}
+        style={{ maxWidth: 620, marginTop: 34 }}
+      >
+        <h3 style={{ fontSize: 18, marginBottom: 6 }}>Announce new docs</h3>
+        <p className="field-hint" style={{ marginBottom: 12 }}>
+          Emails people who said yes to ADCode updates - once per docs page. Nothing is sent while
+          email sending is switched off.
+        </p>
+        <div className="field">
+          <label htmlFor="d-path">Docs page</label>
+          <input id="d-path" className="input" placeholder="/docs/background-chats" value={docsDraft.path} onChange={(e) => setDocsDraft({ ...docsDraft, path: e.target.value })} />
+        </div>
+        <div className="field">
+          <label htmlFor="d-title">Title</label>
+          <input id="d-title" className="input" maxLength={120} placeholder="Run several chats at once" value={docsDraft.title} onChange={(e) => setDocsDraft({ ...docsDraft, title: e.target.value })} />
+        </div>
+        <div className="field">
+          <label htmlFor="d-summary">What it helps with</label>
+          <textarea id="d-summary" className="textarea" rows={3} maxLength={600} value={docsDraft.summary} onChange={(e) => setDocsDraft({ ...docsDraft, summary: e.target.value })} />
+        </div>
+        <div className="actions">
+          <button type="submit" className="btn btn-outline" disabled={busy || docsDraft.path.trim() === "" || docsDraft.title.trim() === "" || docsDraft.summary.trim() === ""}>
+            Email subscribers about these docs
+          </button>
+        </div>
+      </form>
+      {announced !== null && <p className="field-hint" role="status" style={{ marginTop: 10 }}>{announced}</p>}
 
       <p className="field-hint" style={{ marginTop: 18, maxWidth: "64ch" }}>
         Editing a published note changes what the changelog says, but not who has already

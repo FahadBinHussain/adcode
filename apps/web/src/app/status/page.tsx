@@ -281,6 +281,11 @@ function Subscribe({ copy }: { copy: string }) {
           Incident updates publish to an RSS feed. Add it to a feed reader, Slack or Discord — no
           account needed, and nothing else is ever sent on it.
         </p>
+        <p>
+          Prefer email? With an ADCode account you can choose outage emails, a note when a new free
+          model arrives, and a report on how the models have been performing.{" "}
+          <a href="/dashboard#email-preferences">Choose your emails</a>
+        </p>
       </div>
       <CopyField label="Status feed" value={STATUS_FEED} />
       <small>{copy}</small>
@@ -309,7 +314,9 @@ export default async function StatusPage() {
           <h1>ADCode status</h1>
           <p>
             Uptime and error rates for the AI models included with ADCode, measured from the assistant turns
-            people actually ran. Incidents are posted here by hand, with updates as they happen.
+            people actually ran. A turn counts against a model only when the service failed it - not when
+            someone was signed out, out of credit, offline, or stopped it. Incidents are posted here by hand,
+            with updates as they happen.
           </p>
           <div className="status-hero-actions">
             <a className="status-subscribe-button" href="#subscribe">

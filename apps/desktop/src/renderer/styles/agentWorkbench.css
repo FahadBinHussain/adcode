@@ -31,7 +31,6 @@ body[data-workspace-mode="code"] .project-toolbar .code-assistant-button[aria-pr
 :root[data-density="compact"] .sidebar[data-agents="true"] { grid-template-rows: minmax(140px, .42fr) 40px minmax(0, 1fr); }
 .sidebar-header { border-bottom: 1px solid var(--workspace-line); }
 .tabs, .breadcrumbs, .editor-file-header, .panel-header, .statusbar, .titlebar { border-color: var(--workspace-line); }
-.tab { border-right: 1px solid var(--workspace-line); }
 .panel { border-top: 1px solid var(--workspace-line); }
 .workspace-agents { position: relative; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--workspace-line); }
 .workspace-agents[hidden], .assistant-dock[hidden], #splitter-assistant[hidden] { display: none; }

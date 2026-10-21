@@ -68,14 +68,40 @@
   color: var(--danger);
 }
 
+/*
+ * The menu's own shape - the model switch, Auto, right-click, the app menus: Claude's and
+ * Kimi's popovers. A 12px card with 6px of air, rows 32px tall on an 8px radius, headings in
+ * sentence case rather than shouting capitals, and the check or shortcut pushed to the edge.
+ */
+.menu-panel {
+  padding: 6px;
+  border-color: var(--border-subtle);
+  border-radius: 12px;
+}
+
 .menu-panel[data-context="true"] .menu-item {
-  min-height: 28px;
+  min-height: 32px;
+  gap: 16px;
   padding: 0 10px;
-  font-size: var(--text-sm);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.menu-panel[data-context="true"] .menu-heading {
+  padding: 8px 10px 4px;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  font-weight: 550;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .menu-panel[data-context="true"] .menu-separator {
-  margin: 4px 6px;
+  margin: 5px 4px;
+}
+
+.menu-panel[data-context="true"] .menu-item-accelerator {
+  font-size: 11.5px;
 }
 
 .chat-message-menu-item:hover { background: var(--surface-selected); }

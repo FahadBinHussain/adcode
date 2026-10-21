@@ -115,7 +115,7 @@ import { announceFinishedUnseen, keepAwakeWhileWorking } from "./backgroundWork.
 import { createChatRuns, KEEP_GOING_LIMIT, MAX_PARALLEL_CHATS, shouldKeepGoing } from "./chatRuns.ts";
 import { CONTINUE_PROMPT } from "../shared/continuePrompt.ts";
 import { checkpointView, checkpointsForSession } from "./aiCheckpointView.ts";
-import { ASSISTANT_EXTENSION_TOOLS, withAssistantExtensions } from "./assistantControls.ts";
+import { ADCODE_APP_TOOLS, ASSISTANT_EXTENSION_TOOLS, withAssistantExtensions } from "./assistantControls.ts";
 import { memoryForWorkspace } from "./memory.ts";
 import { currentSettings, writeSetting } from "./settings.ts";
 import { describeDebugContext, recordDebug } from "./debugLog.ts";
@@ -1387,7 +1387,7 @@ function splitAttachments(attachments: readonly AiAttachmentView[]): {
 /** The chat's tools: everything built in, minus memory when memory capture is off. */
 function chatTools() {
   const memoryEnabled = currentSettings()["adcode.ai.memoryCapture"] !== false;
-  return [...(memoryEnabled ? BUILT_IN_TOOLS : TOOLS_WITHOUT_MEMORY), ...ASSISTANT_EXTENSION_TOOLS, BUILTIN_SKILL_TOOL];
+  return [...(memoryEnabled ? BUILT_IN_TOOLS : TOOLS_WITHOUT_MEMORY), ...ASSISTANT_EXTENSION_TOOLS, ...ADCODE_APP_TOOLS, BUILTIN_SKILL_TOOL];
 }
 
 /**
@@ -2147,6 +2147,7 @@ export function createBuiltInAiTeamNodeRunner(): AiTeamNodeRunner {
     const routine = [
       ...(memoryOn ? ["Start with project_context to learn what this project has already decided, and record any new decision or gotcha with memory_write."] : []),
       "If the work has more than two steps, post your plan with update_plan and keep it current.",
+      "Report only what your tool results show: never claim a check passed, a file changed or something works, and never claim ADCode lacks a feature, without a result that says so.",
       "Before you finish, prove it works: run the project's own checks that apply - its tests, type checker or linter (look in package.json or the equivalent) - with run_command, and fix any failure you caused. If there are none, say so plainly.",
     ];
     const teammates = roles.filter((role) => role.id !== input.context.role.id);

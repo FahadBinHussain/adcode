@@ -33,6 +33,8 @@ export const LEAN_SYSTEM = [
   "propose_edit. Paths are workspace-relative; omit the path for the workspace root.",
   "The host context below says whether edits apply at once or wait for review. Report a change only when",
   "a tool result confirms it, and finish with a short summary of what changed.",
+  "Never guess about ADCode itself: it has MCP connectors, settings and many features this short request",
+  "cannot look up. Say you cannot check them from here rather than claiming one is missing.",
 ].join("\n");
 
 /** Older tool output beyond this is trimmed in a lean request; the latest step's is kept whole. */

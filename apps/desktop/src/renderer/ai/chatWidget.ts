@@ -59,7 +59,8 @@ import {
   type SlashCommand,
 } from "./composerMenu.ts";
 import { runChatWidgetIntent } from "./chatWidgetIntents.ts";
-import { createIcon, ICON } from "../workbench/icons.ts";
+import { createIcon, ICON, type IconSource } from "../workbench/icons.ts";
+import { WEB_ICON } from "../workbench/webIcons.ts";
 import { createContextMenu, attachContextMenuDismissal, type ContextMenuNode } from "../workbench/contextMenu.ts";
 import { contextMeterModel, createContextMeter } from "./contextMeter.ts";
 import { openModelFeedback } from "./modelFeedback.ts";
@@ -474,7 +475,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     nodes.push({ kind: "separator" }, { label: "More models and providers…", run: () => deps.openConnect() });
     const rect = modelLabel.getBoundingClientRect();
     modelLabel.setAttribute("aria-expanded", "true");
-    modelMenu.open(rect.left, rect.top - 4, nodes, () => modelLabel.setAttribute("aria-expanded", "false"));
+    modelMenu.open(rect.left, rect.top - 6, nodes, () => modelLabel.setAttribute("aria-expanded", "false"), { prefer: "above" });
   }
   let modelMenuWasOpen = false;
   modelLabel.addEventListener("pointerdown", () => { modelMenuWasOpen = modelMenu.isOpen(); });
@@ -1960,7 +1961,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       },
       { label: "Schedule a message…", run: () => api.openScheduleComposer() },
       { label: "Split the job across an AI team…", run: () => api.openTeamSetup() },
-    ], () => modePill.setAttribute("aria-expanded", "false"));
+    ], () => modePill.setAttribute("aria-expanded", "false"), { prefer: "above" });
   });
   /** A one-line note in the conversation: what just changed about how the assistant works. */
   function modeNote(text: string): void {
@@ -2029,7 +2030,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       { kind: "separator" },
       { label: "Browse commands", accelerator: "/", run: () => api.openComposerMenu("/") },
       { label: "Add a project file", accelerator: "@", run: () => api.openComposerMenu("@") },
-    ], () => composerHelp.setAttribute("aria-expanded", "false"));
+    ], () => composerHelp.setAttribute("aria-expanded", "false"), { prefer: "above" });
   });
   const composerHints = document.createElement("div");
   composerHints.className = "composer-hints";
@@ -2049,7 +2050,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       { kind: "separator" as const },
       { label: "Usage by model…", run: () => void openUsageDialog() },
       { label: "Auto-compact settings", run: () => deps.openSettings?.("adcode.ai.autoCompact") },
-    ], () => trigger.setAttribute("aria-expanded", "false"));
+    ], () => trigger.setAttribute("aria-expanded", "false"), { prefer: "above" });
   });
   function refreshContextMeter(): void {
     const mine = ++contextRequest;
@@ -2365,21 +2366,21 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   quickActions.className = "chat-quick-actions";
   // A starter that ends in ": " waits for the user's words; a complete one sends at once.
   // Each one heads for a result - none of them is a review step.
-  type Starter = { label: string; hint: string; prompt?: string; run?: () => void };
+  type Starter = { label: string; hint: string; icon: IconSource; prompt?: string; run?: () => void };
   const projectStarters: readonly Starter[] = [
-    { label: "Explain this project", hint: "A tour of the codebase", prompt: "Give me a short tour of this project: what it does, how the code is organised, how to run it, and where a newcomer should start reading." },
-    { label: "Build something", hint: "Describe it - ADCode builds it", prompt: "Build this in my project, then run it and check that it works: " },
-    { label: "Fix an error", hint: "Paste it or name the file", prompt: "Find the root cause of this error and fix it, then verify the fix: " },
-    { label: "Plan new idea", hint: "Scope it before building", prompt: "Plan this idea for my project. Identify the files, risks, and a way to verify the result: " },
-    { label: "Multitask", hint: "Set up an AI team", run: () => api.openTeamSetup() },
+    { label: "Explain this project", hint: "A tour of the codebase", icon: WEB_ICON.book, prompt: "Give me a short tour of this project: what it does, how the code is organised, how to run it, and where a newcomer should start reading." },
+    { label: "Build something", hint: "Describe it - ADCode builds it", icon: WEB_ICON.build, prompt: "Build this in my project, then run it and check that it works: " },
+    { label: "Fix an error", hint: "Paste it or name the file", icon: WEB_ICON.bug, prompt: "Find the root cause of this error and fix it, then verify the fix: " },
+    { label: "Plan new idea", hint: "Scope it before building", icon: WEB_ICON.idea, prompt: "Plan this idea for my project. Identify the files, risks, and a way to verify the result: " },
+    { label: "Multitask", hint: "Set up an AI team", icon: WEB_ICON.share, run: () => api.openTeamSetup() },
   ];
   // With no folder open, the starters are things to build: each one makes its own project.
   const ideaStarters: readonly Starter[] = [
-    { label: "Landing page", hint: "For a business or an idea", prompt: "Build a landing page for my small business, with a hero section, services, testimonials and a contact form." },
-    { label: "Snake game", hint: "Plays in the browser", prompt: "Build a snake game in the browser with a score, a high score and a restart button." },
-    { label: "To-do app", hint: "Saved in the browser", prompt: "Build a to-do app where I can add, tick off and delete tasks, saved in the browser." },
-    { label: "Portfolio", hint: "About, projects, contact", prompt: "Build a personal portfolio site with an about section, my projects and a way to contact me." },
-    { label: "Something else", hint: "Describe it - ADCode builds it", prompt: "Build this, then open it in the preview: " },
+    { label: "Landing page", hint: "For a business or an idea", icon: WEB_ICON.preview, prompt: "Build a landing page for my small business, with a hero section, services, testimonials and a contact form." },
+    { label: "Snake game", hint: "Plays in the browser", icon: WEB_ICON.game, prompt: "Build a snake game in the browser with a score, a high score and a restart button." },
+    { label: "To-do app", hint: "Saved in the browser", icon: WEB_ICON.todo, prompt: "Build a to-do app where I can add, tick off and delete tasks, saved in the browser." },
+    { label: "Portfolio", hint: "About, projects, contact", icon: WEB_ICON.person, prompt: "Build a personal portfolio site with an about section, my projects and a way to contact me." },
+    { label: "Something else", hint: "Describe it - ADCode builds it", icon: WEB_ICON.spark, prompt: "Build this, then open it in the preview: " },
   ];
   /*
    * "Continue" - the conversation this project was left on, first among the starters.
@@ -2411,7 +2412,10 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         const title = latest.title.length > 42 ? `${latest.title.slice(0, 41)}…` : latest.title;
         const hint = document.createElement("small");
         hint.textContent = "Pick up where you left off";
-        continueAction.replaceChildren(`Continue “${title}”`, hint);
+        const label = document.createElement("span");
+        label.className = "chat-quick-label";
+        label.textContent = `Continue “${title}”`;
+        continueAction.replaceChildren(createIcon(WEB_ICON.resume), label, hint);
       }
     } catch {
       continueAction.hidden = true;
@@ -2430,10 +2434,12 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       action.className = "chat-quick-action";
       // Their place in the row, for the arrival stagger in motion.css.
       action.style.setProperty("--i", String(index + 1));
-      action.textContent = starter.label;
+      const label = document.createElement("span");
+      label.className = "chat-quick-label";
+      label.textContent = starter.label;
       const hint = document.createElement("small");
       hint.textContent = starter.hint;
-      action.append(hint);
+      action.append(createIcon(starter.icon), label, hint);
       action.addEventListener("click", () => {
         if (starter.run) { starter.run(); return; }
         input.value = starter.prompt ?? "";
@@ -2699,6 +2705,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     timeline = createTurnTimeline(timelineStartsAt === null ? undefined : { startedAt: timelineStartsAt });
     timelineStartsAt = null;
     transcript.append(timeline.element);
+    // The plan is usually drawn a moment before the steps it plans; it goes under them.
+    bringCardsDown();
     scrollToEnd();
     return timeline;
   }
@@ -2716,10 +2724,54 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     timeline.appendText(node);
   }
 
+  /*
+   * The turn's live cards - its plan, its live window, the page it looked at - follow the work.
+   *
+   * Each is made once per turn and updated in place, so before this a plan made in the first
+   * minute stayed where it first appeared while fifty steps, notes and answers piled up under it,
+   * and the person scrolled back up to see which step was running. Now, whenever one of them
+   * changes, the three of them (in that order) become the last things above the "is writing"
+   * row again. Only when something else has landed below them: an update that changes nothing
+   * moves nothing. Someone reading further up keeps their place - the transcript's scroll
+   * anchoring compensates for a card leaving the part above them.
+   */
+  function turnCards(): HTMLElement[] {
+    return [planCard?.element ?? null, live.chatWindow.current(), viewCard?.element ?? null]
+      .filter((card): card is HTMLElement => card !== null && card.parentElement === transcript);
+  }
+
+  function bringCardsDown(): void {
+    // A finished turn's cards have settled; an event after the end must not pull them back.
+    if (!turnActive) return;
+    const cards = turnCards();
+    if (cards.length === 0) return;
+    // The last items, not counting the "is writing" row - which a new message can briefly sit
+    // above until the next scroll puts the row back at the end.
+    const tail: Element[] = [];
+    for (let node = transcript.lastElementChild; node !== null && tail.length < cards.length; node = node.previousElementSibling) {
+      if (node !== working) tail.unshift(node);
+    }
+    if (tail.length === cards.length && tail.every((node, index) => node === cards[index])) return;
+    for (const card of cards) transcript.append(card);
+    if (working.parentElement === transcript) transcript.append(working);
+  }
+
+  /*
+   * When the turn ends they settle just above "Worked for 2m 31s", so the turn reads plan, the
+   * code it wrote, the page it saw, the folded steps - and then the answer, last, where the
+   * person's eyes already are.
+   */
+  function settleCards(turn: HTMLElement): void {
+    if (turn.parentElement !== transcript) return;
+    for (const card of turnCards()) transcript.insertBefore(card, turn);
+  }
+
   function finishTimeline(outcome: Parameters<TurnTimeline["finish"]>[0] = "auto"): void {
     delete working.dataset["activity"];
     if (timeline === null) return;
+    const turn = timeline.element;
     timeline.finish(outcome);
+    settleCards(turn);
     timeline = null;
     scrollToEnd();
   }
@@ -4375,7 +4427,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       streamingBubble?.classList.remove("is-streaming");
       streamingBubble = null;
       transcript.append(liveWindow);
+      bringCardsDown();
       scrollToEnd();
+    } else if (event.kind !== "text" && live.chatWindow.current() !== null) {
+      // The window is in use - reading, typing, running: keep it beside the latest work.
+      bringCardsDown();
     }
     if (event.kind === "tool-draft") {
       const path = typeof event["path"] === "string" ? event["path"] : null;
@@ -4450,6 +4506,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
               transcript.append(planCard.element);
             }
             planCard.update(steps);
+            bringCardsDown();
           }
         }
         workingText.textContent = toolHeaderLabel(call.name);
@@ -4485,6 +4542,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
             transcript.append(viewCard.element);
           }
           viewCard.update({ image: `data:${picture.mediaType};base64,${picture.data}`, report: String(event["content"] ?? "") });
+          bringCardsDown();
         }
         ensureTimeline();
         // A delegation's result is its helpers' endings and reports, not one row's outcome.

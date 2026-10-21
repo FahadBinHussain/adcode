@@ -16,9 +16,10 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
   const modelFeedback = new Map<string, ModelFeedbackRecord>();
   let collectionStartedAt: number | null = null;
   const profiles = new Map<string,ModelAudienceProfile>();
+  const verificationSends = new Map<string, number>();
   const key = (uid: string, day: string): string => `${uid}\u0000${day}`;
   return {
-    resetTagflow() { config = null; policies.clear(); days.clear(); reservations.clear(); windows.clear(); minutes.clear(); modelRequests.clear(); modelFeedback.clear(); profiles.clear(); collectionStartedAt = null; },
+    resetTagflow() { config = null; policies.clear(); days.clear(); reservations.clear(); windows.clear(); minutes.clear(); modelRequests.clear(); modelFeedback.clear(); profiles.clear(); verificationSends.clear(); collectionStartedAt = null; },
     async getModelAudienceProfile(uid) { return structuredClone(profiles.get(uid) ?? null); },
     async putModelAudienceProfile(profile) { profiles.set(profile.uid,structuredClone(profile)); },
     async deleteModelAudienceProfile(uid) { profiles.delete(uid); },
@@ -71,6 +72,11 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
         week: settleWindow(current.week, reservation.weekStartedAt, held, used),
       });
       reservations.delete(id);
+    },
+    async claimVerificationSend(uid, now, gapMs) {
+      const last = verificationSends.get(uid);
+      if (last !== undefined && last > now - gapMs) return false;
+      verificationSends.set(uid, now); return true;
     },
   };
 }

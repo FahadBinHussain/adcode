@@ -164,7 +164,7 @@ body[data-workspace-mode="code"] .activitybar,
 body[data-workspace-mode="code"] .sidebar { background: var(--bg-chrome); }
 body[data-workspace-mode="code"] .main { background: var(--bg-editor); }
 body[data-workspace-mode="code"] .tabs { background: var(--bg-chrome); }
-body[data-workspace-mode="code"] .tab[aria-selected="true"] { background: var(--bg-editor); }
+body[data-workspace-mode="code"] .tab[aria-selected="true"] { background: color-mix(in srgb, var(--bg-app) 86%, var(--text-primary)); }
 body[data-workspace-mode="code"]:not([data-session-ready="true"])::after {
   content: "Opening your IDE…";
   position: fixed;

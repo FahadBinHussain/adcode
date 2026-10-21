@@ -111,6 +111,7 @@ import {
   type SidebarViewId,
 } from "./workbench/workbenchLayout.ts";
 import { animateLayoutFlip, type LayoutInput } from "./workbench/motion.ts";
+import { markLowEndDevice } from "./motion.ts";
 import {
   initialPopupLayer,
   reducePopupLayer,
@@ -3236,6 +3237,7 @@ const isIdeWindow = window.location.hash === "#/ide";
  * the same attribute for itself when it boots (`boot.ts`); setting it twice is setting it once.
  */
 if (!isIdeWindow) document.documentElement.dataset["frame"] = "web";
+markLowEndDevice();
 
 /** Record the folder and the open editors, so the next launch can reopen them. */
 function rememberSession(): void {
@@ -5920,6 +5922,8 @@ function registerCommands(): void {
   // The assistant looks at the running app in its own browser and fixes what it finds.
   add("ai.checkApp", "AI: Check My Running App", () => chat.ask(CHECK_APP_PROMPT.trim()));
   add("ai.mentionFile", "AI: Add a File to the Conversation", () => chat.openComposerMenu("@"));
+  // The assistant operates ADCode itself: it lists, adds and connects MCP servers (adcodeAppTools.ts).
+  add("ai.setUpConnector", "AI: Set Up a Connector for Me", () => chat.ask("List my MCP connectors and the ready-made presets, then help me connect the one I need. Do the setup yourself and tell me only the steps you cannot do."));
   add("workspace.vibe", "Open Vibe Window", () => void window.adcode.window.openVibe());
   add("workspace.code", "Open Code Window", () => void window.adcode.window.openIde());
   add("workspace.openIde", "Open IDE in a Separate Window", () => void window.adcode.window.openIde());

@@ -36,7 +36,10 @@ const evenDown = (value) => Math.max(2, Math.floor(value / 2) * 2);
  * @param {{ mp4: string, webm: string, poster: string }} options.out
  * @param {number} [options.posterFrame]  index of the poster frame; default the last
  */
-export async function encodeScreencast({ frames, ffmpeg, sharp, crop, viewportWidth, width, out, posterFrame }) {
+export async function encodeScreencast({ frames: live, ffmpeg, sharp, crop, viewportWidth, width, out, posterFrame }) {
+  // A snapshot: a screencast that is still running keeps appending to the caller's array while
+  // the frames are written out, and the loop below would run past the names made for them.
+  const frames = live.slice();
   if (frames.length < 10) throw new Error(`Only ${frames.length} frames were captured`);
   const dir = await mkdtemp(join(tmpdir(), "adcode-frames-"));
   try {

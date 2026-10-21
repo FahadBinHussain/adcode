@@ -25,6 +25,8 @@ export interface ChatLiveWindow {
   finish(ok: boolean): void;
   /** Characters typed in this turn's window, for checks. */
   typed(): number;
+  /** This turn's window, once there is one - so the chat can keep it beside the latest work. */
+  current(): HTMLElement | null;
 }
 
 export interface ChatLiveWindowOptions {
@@ -108,5 +110,6 @@ export function createChatLiveWindow(options: ChatLiveWindowOptions): ChatLiveWi
       }
     },
     typed: () => typedBefore + (window_?.typed() ?? 0),
+    current: () => window_?.element ?? null,
   };
 }

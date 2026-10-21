@@ -100,6 +100,165 @@ describe("included Tagflow AI", () => {
     expect(await usage()).toMatchObject({ requests: 0, inputTokens: 0, outputTokens: 0, reservedTokens: 0 });
   });
 
+  describe("how long an answer may stream", () => {
+    const encoder = new TextEncoder();
+    /** An upstream that sends `pieces`, `gapMs` apart, and stops dead (but stays open) after `stallAfter` of them. */
+    const drip = (pieces: number, gapMs: number, stallAfter = Infinity) => async (_url: unknown, init?: RequestInit): Promise<Response> => {
+      const signal = init?.signal ?? undefined;
+      const body = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          signal?.addEventListener("abort", () => { try { controller.error(new Error("aborted")); } catch { /* already closed */ } }, { once: true });
+          for (let i = 0; i < pieces; i++) {
+            if (i >= stallAfter) return;
+            await new Promise((resolve) => setTimeout(resolve, gapMs));
+            if (signal?.aborted) return;
+            controller.enqueue(encoder.encode(event({ choices: [{ delta: { content: `part${i} ` }, finish_reason: null }] })));
+          }
+          controller.enqueue(encoder.encode(event({ choices: [{ delta: {}, finish_reason: "stop" }] }) + event({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 30 } }) + "data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    };
+
+    it("lets a long answer keep streaming past the time allowed to start", async () => {
+      handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, rateLimitWaitsMs: [0, 0], timeouts: { firstMs: 150, idleMs: 120, maxMs: 5000 } } });
+      upstream.mockImplementation(drip(10, 40));
+      const response = await chat();
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(text).toContain("part0"); expect(text).toContain("part9"); expect(text).toContain("[DONE]");
+    });
+
+    it("cuts an answer that goes silent mid-stream", async () => {
+      handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, rateLimitWaitsMs: [0, 0], timeouts: { firstMs: 150, idleMs: 120, maxMs: 5000 } } });
+      upstream.mockImplementation(drip(10, 30, 3));
+      const response = await chat();
+      expect(response.status).toBe(200);
+      await expect(response.text()).rejects.toThrow();
+    });
+  });
+
+  describe("when the account's email is not verified yet", () => {
+    let live: { email: string | null; emailVerified: boolean } | null;
+    let sends: string[];
+    const unverifying: TokenVerifier = {
+      async verify(token) {
+        if (token.startsWith("unverified")) return { uid: "stuck", claims: { email: "stuck@adcode.test", email_verified: false } };
+        return verifier.verify(token);
+      },
+    };
+    beforeEach(() => {
+      live = { email: "stuck@adcode.test", emailVerified: false }; sends = [];
+      handle = createFetchHandler({ store, verifier: unverifying, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, rateLimitWaitsMs: [0, 0],
+        identity: { async lookup() { return live; }, async sendVerification(idToken) { sends.push(idToken); return true; } } } });
+    });
+
+    it("emails a verification link once an hour and says where it went", async () => {
+      const first = await chat("unverified-1");
+      expect(first.status).toBe(403);
+      expect(await first.json()).toMatchObject({ error: { code: "verify-account", message: expect.stringContaining("We sent a verification link to stuck@adcode.test") } });
+      expect(sends).toEqual(["unverified-1"]);
+      const again = await chat("unverified-2");
+      expect((await again.json() as { error: { message: string } }).error.message).toContain("Open the verification link we emailed to stuck@adcode.test");
+      expect(sends).toHaveLength(1);
+      now += 3_600_001;
+      await (await chat("unverified-3")).text();
+      expect(sends).toHaveLength(2);
+      expect(upstream).not.toHaveBeenCalled();
+    });
+
+    it("lets someone in the moment they open the link, and an older token does not lock them out again", async () => {
+      expect((await chat("unverified-1")).status).toBe(403);
+      live = { email: "stuck@adcode.test", emailVerified: true };
+      const opened = await chat("unverified-2");
+      expect(opened.status).toBe(200); await opened.text();
+      expect(await store.getUser("stuck")).toMatchObject({ emailVerified: true });
+      live = null;
+      const stale = await chat("unverified-3");
+      expect(stale.status).toBe(200); await stale.text();
+      expect(await store.getUser("stuck")).toMatchObject({ emailVerified: true });
+    });
+
+    it("says so when Firebase would not send the link, instead of pointing at an email that never went", async () => {
+      handle = createFetchHandler({ store, verifier: unverifying, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, rateLimitWaitsMs: [0, 0],
+        identity: { async lookup() { return live; }, async sendVerification() { return false; } } } });
+      const response = await chat("unverified-1");
+      expect((await response.json() as { error: { message: string } }).error.message).toContain("could not be sent just now");
+    });
+
+    it("asks an account with no email to sign in, and sends nothing", async () => {
+      live = { email: null, emailVerified: false };
+      const response = await chat("anonymous");
+      expect(response.status).toBe(403);
+      expect((await response.json() as { error: { message: string } }).error.message).toContain("Sign in to use included AI");
+      expect(sends).toHaveLength(0);
+    });
+  });
+
+  describe("when the chosen model is overloaded", () => {
+    const backup = { id: "backup", name: "Backup", contextWindow: 65_536, maxOutput: 4096, inputPrice: 0.1, outputPrice: 0.2, creditRate: 0.5 };
+    const pricey = { id: "pricey", name: "Pricey", contextWindow: 65_536, maxOutput: 4096, inputPrice: 0.1, outputPrice: 0.2, creditRate: 2 };
+    const refuseCoder = (): void => {
+      upstream.mockImplementation(async (_url, init) => JSON.parse(String(init?.body)).model === "coder" ? new Response("busy", { status: 429 }) : reply());
+    };
+    const calledWith = (model: string): number => upstream.mock.calls.filter(([, init]) => JSON.parse(String(init?.body)).model === model).length;
+    /** The last state written for each request id, in the order the requests began. */
+    const recorded = (spy: { mock: { calls: unknown[][] } }) => {
+      const byId = new Map<string, { modelId: string; outcome: string; errorCode: string | null }>();
+      for (const [record] of spy.mock.calls as [{ id: string; modelId: string; outcome: string; errorCode: string | null }][]) byId.set(record.id, record);
+      return [...byId.values()];
+    };
+
+    it("answers from a healthy included model, records both attempts honestly, and charges the lower rate", async () => {
+      await save({ ...config, models: [{ ...config.models[0]!, creditRate: 1 }, backup] });
+      refuseCoder();
+      const writes = vi.spyOn(store, "putModelRequest");
+      const response = await chat();
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-adcode-fallback-model")).toBe("backup");
+      expect(await response.text()).toContain("Hello");
+      expect(calledWith("coder")).toBe(3); expect(calledWith("backup")).toBe(1);
+      expect(recorded(writes).map(({ modelId, outcome, errorCode }) => [modelId, outcome, errorCode])).toEqual([["coder", "provider_error", "upstream-rate-limit"], ["backup", "success", null]]);
+      const credits = (await (await call("/ai/tagflow/usage", "user")).json() as { credits: { session: { used: number } } }).credits.session.used;
+      expect(credits).toBeGreaterThan(0); expect(credits).toBeLessThan(0.015);
+    });
+
+    it("cools a model that keeps refusing, so later requests skip it instead of waiting to be refused", async () => {
+      await save({ ...config, models: [config.models[0]!, backup] });
+      refuseCoder();
+      for (let i = 0; i < 3; i++) { const response = await chat(); expect(response.status).toBe(200); await response.text(); }
+      expect(calledWith("coder")).toBe(9);
+      const writes = vi.spyOn(store, "putModelRequest");
+      const cooled = await chat();
+      expect(cooled.status).toBe(200); expect(cooled.headers.get("x-adcode-fallback-model")).toBe("backup"); await cooled.text();
+      expect(calledWith("coder")).toBe(9);
+      expect(recorded(writes)[0]).toMatchObject({ modelId: "coder", outcome: "rejected", errorCode: "model-busy" });
+      now += 61_000;
+      upstream.mockImplementation(async () => reply());
+      const recovered = await chat(); expect(recovered.status).toBe(200); await recovered.text();
+      expect(recovered.headers.get("x-adcode-fallback-model")).toBeNull();
+      expect(calledWith("coder")).toBe(10);
+    });
+
+    it("never moves a person to a model that costs more credits", async () => {
+      await save({ ...config, models: [config.models[0]!, pricey] });
+      refuseCoder();
+      const response = await chat();
+      expect(response.status).toBe(429); await response.text();
+      expect(calledWith("pricey")).toBe(0);
+    });
+
+    it("keeps the plain refusal when fallback is switched off", async () => {
+      handle = createFetchHandler({ store, verifier, clock: { now: () => now }, tagflow: { apiKey: "server-secret", fetchImpl: upstream, rateLimitWaitsMs: [0, 0], fallback: false } });
+      await save({ ...config, models: [config.models[0]!, backup] });
+      refuseCoder();
+      const response = await chat();
+      expect(response.status).toBe(429); await response.text();
+      expect(calledWith("backup")).toBe(0);
+    });
+  });
+
   it("publishes models without exposing the credential, upstream address or prices", async () => {
     const response = await call("/ai/tagflow/config");
     expect(response.headers.get("cache-control")).toBe("no-store");

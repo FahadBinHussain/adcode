@@ -641,6 +641,25 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
 
   /* ── The assistant ───────────────────────────────────────────────────── */
 
+  "ai-operates-adcode": {
+    steps: [
+      "Open the assistant and say what you want done in ADCode, in plain words: \"connect Roblox Studio\", \"switch to the light theme\", \"show my AI usage\". Or run AI: Set Up a Connector for Me from the command palette.",
+      "The assistant looks the feature up in ADCode's own feature list, so its answer about what ADCode can do is checked, not guessed.",
+      "It runs the command or changes the setting itself. For a connector it saves the server, connects it and reads its tools.",
+      "When a step needs your yes - starting a connector's program, letting it use that connector's tools, a setting that changes ads, updates or where its edits land - a dialog asks you. Nothing in those categories happens without it.",
+      "For Roblox Studio, turn on Enable Studio as MCP server inside Studio (Assistant, then ..., then Manage MCP Servers). That switch lives in Roblox, so the assistant tells you to flip it instead of claiming it did.",
+      "Once the tools are enabled, ask for the actual work - \"add a leaderboard script\", \"list what is in Workspace\" - and the assistant calls the connector, showing each call before it runs.",
+    ],
+    benefits: [
+      "You never have to learn where a switch lives to use it. Ask, and it is done.",
+      "Connecting an MCP server - Roblox Studio, Playwright, Figma, Context7 or your own - is one sentence, not a JSON file and a restart.",
+      "The assistant does not invent limits. It answers \"ADCode can't do that\" only after looking, and says \"I don't know\" when it does not.",
+      "Approvals stay where they matter: programs that start, tools that act outside your project, and settings that change money, updates or how edits land.",
+    ],
+    betterThan:
+      "Most AI editors' assistants know the code but not the editor they live in, so they send you hunting through settings - and sometimes confidently say a feature does not exist. ADCode's assistant reads the same feature catalogue its Feature library is built from, and acts through the same commands and settings you would use. Other MCP clients need you to paste a config and restart; here the assistant adds and connects the server while you watch.",
+  },
+
   "ai-terminal-team": {
     steps: [
       "Open a terminal in ADCode, right-click anywhere in it, and choose Start a Team here.",

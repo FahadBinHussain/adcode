@@ -386,10 +386,13 @@
   font-size: var(--text-xs);
 }
 
+/* The design system's ring (a lifted border and a soft halo) is the focus; an outline on top of
+   it drew the box twice. */
 .search-input:focus,
 .search-glob:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 .search-options {
@@ -541,6 +544,33 @@
   color: var(--accent);
   font-weight: 700;
 }
+
+/*
+ * The palette's shape - Raycast's and Claude's: a 14px card with rows inset on a 6px gutter,
+ * each row an 8px-round tint when chosen, file names in the interface's own type. No entrance
+ * motion: it opens from the keyboard dozens of times a day, and anything but instant is lag.
+ */
+.quickopen { background: rgb(0 0 0 / 0.3); }
+.quickopen-box {
+  border-color: var(--border-subtle);
+  border-radius: 14px;
+}
+.quickopen-input {
+  padding: 14px 18px;
+  font-size: 15px;
+}
+.quickopen-list {
+  padding: 6px;
+  scroll-padding-block: 6px;
+}
+.quickopen-list:empty { padding: 0; }
+.quickopen-row {
+  border-radius: 8px;
+  padding-inline: 12px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.quickopen-row .palette-id { font-size: 11px; }
 
 /* ── File timeline ────────────────────────────────────────────────────── */
 

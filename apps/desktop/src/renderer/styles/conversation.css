@@ -39,7 +39,10 @@
   --control-md: 32px;
   --control-lg: 36px;
   --control-radius: 8px;
-  --chat-bubble-fill: color-mix(in srgb, var(--text-primary) 7%, var(--bg-app));
+  /* Your own words sit in a tint of the accent, the way Claude's desktop app shows them: the one
+     colour in the transcript says "this is what you asked", and everything else is the reply. */
+  --chat-bubble-fill: color-mix(in srgb, var(--accent) 20%, var(--bg-app));
+  --chat-bubble-ink: color-mix(in srgb, var(--accent) 28%, var(--text-primary));
 }
 
 /* ── The column ────────────────────────────────────────────────────────── */
@@ -107,8 +110,9 @@
   max-width: min(85%, 640px);
   padding: 10px 16px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--chat-bubble-fill);
+  color: var(--chat-bubble-ink);
   line-height: 1.6;
 }
 
@@ -433,12 +437,105 @@
   margin-top: 12px;
 }
 
+/*
+ * The starters: Kimi's chips - an icon and a few words in a hairline pill, centred under the box.
+ * The hint each one carries stays in the DOM for screen readers and out of the pill.
+ */
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-quick-actions {
+  justify-content: center;
+}
+
 :is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-quick-action {
-  min-height: var(--control-md);
-  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 15px 0 13px;
+  border: 1px solid var(--border-subtle);
   border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, scale 120ms cubic-bezier(0.23, 1, 0.32, 1), translate 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-quick-action:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-quick-action > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-quick-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-quick-action small { display: none; }
+
+/* An empty chat opens centred, like the three it is modelled on: greeting, box, starters. The
+   setup checklist keeps its own left edge - it is a list, not a headline. */
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-conversation[data-empty="true"] > .chat-welcome {
+  text-align: center;
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-conversation[data-empty="true"] > .chat-welcome > h2 {
+  justify-content: center;
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-conversation[data-empty="true"] > .chat-welcome > p {
+  max-width: 54ch;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-welcome .chat-setup-steps {
+  text-align: left;
+}
+
+/* The open folder, above an IDE assistant's chat: one slim row, its two actions as quiet words
+   rather than two 36px buttons crowding the folder's name. */
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-folder-banner {
+  box-sizing: border-box;
+  min-height: 40px;
+  gap: 6px;
+  padding: 4px 4px 4px 12px;
+  border-color: var(--border-subtle);
+  border-radius: 10px;
+  background: transparent;
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-folder-banner .ghost-button {
+  flex: none;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-folder-banner .ghost-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* ── The welcome and Connect dialogs ───────────────────────────────────── */
@@ -777,40 +874,51 @@
 
 /* ── Helpers (sub-agents) ── */
 
+/*
+ * Each helper is a pill of its own, the way Claude lists the agents it started: its state, what
+ * kind of helper it is, then its job - one quiet surface per helper, so six of them read as six
+ * workers rather than six lines of log.
+ */
 .chat-card .chat-step-helpers {
   display: grid;
-  gap: 2px;
-  margin: 0;
+  justify-items: start;
+  gap: 6px;
+  margin: 2px 0 4px;
   padding: 0;
   list-style: none;
 }
 
 .chat-card .chat-helper {
   min-width: 0;
+  max-width: 100%;
 }
 
 .chat-card .chat-helper-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 9px;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
-  min-height: 24px;
-  padding: 2px 4px 2px 0;
+  min-height: 36px;
+  padding: 7px 12px;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   color: var(--text-tertiary);
-  font: 400 12px/18px var(--font-ui);
+  font: 400 13px/20px var(--font-ui);
   text-align: left;
   cursor: default;
+  transition: background-color 140ms ease;
 }
 
 .chat-card .chat-helper[data-has-report="true"] .chat-helper-row { cursor: pointer; }
+.chat-card .chat-helper[data-has-report="true"] .chat-helper-row:hover { background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
 .chat-card .chat-helper[data-has-report="true"] .chat-helper-row:hover .chat-helper-title { color: var(--text-primary); }
 .chat-card .chat-helper-row:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .chat-card .chat-helper-mark {
+  order: -2;
   display: inline-grid;
   place-items: center;
   flex: none;
@@ -825,9 +933,9 @@
 .chat-card .chat-helper-title {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 45%;
+  max-width: 48ch;
   overflow: hidden;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -836,14 +944,15 @@
 
 .chat-card .chat-helper-mode {
   flex: none;
-  padding: 0 6px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 999px;
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 16px;
-  letter-spacing: 0.02em;
+  order: -1;
+  padding: 0;
+  border: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-transform: capitalize;
 }
 
 .chat-card .chat-helper-detail {

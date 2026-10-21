@@ -25,3 +25,21 @@ export function reveal(element: HTMLElement, state: string): void {
   void element.offsetHeight;
   element.dataset["state"] = state;
 }
+
+/**
+ * Lite rendering, for the machines that need it.
+ *
+ * Four cores or fewer, or 4 GB of memory or less (`deviceMemory` is Chromium's rounded
+ * figure), puts `data-perf="lite"` on <html>. `tokens.css` answers it by doing what the
+ * reduced-transparency setting does - opaque chrome, no backdrop blur, which is the single
+ * most expensive thing this interface paints - and by stopping the loops that only decorate.
+ * Everything that says something keeps moving: spinners, the working pixel grid, the press
+ * and hover feedback, all of which are compositor-only and cost a low-end machine nothing.
+ */
+export function markLowEndDevice(root: HTMLElement = document.documentElement): boolean {
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const cores = navigator.hardwareConcurrency;
+  const lite = (typeof memory === "number" && memory > 0 && memory <= 4) || (typeof cores === "number" && cores > 0 && cores <= 4);
+  if (lite) root.dataset["perf"] = "lite";
+  return lite;
+}

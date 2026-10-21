@@ -128,13 +128,17 @@ The signed-in areas — the dashboard, advertiser portal, and admin panel — us
 
 ## Optional product emails
 
-Product updates, project ideas, and reminders after time away are optional. The email checkbox in [your dashboard](/dashboard#email-preferences) starts unchecked. A verified account email is required, and creating an account does not subscribe you.
+Product updates (new releases and new docs), project ideas, and reminders after time away are optional. So are status emails, which tell you when free AI has an outage and when it is fixed, and model emails, which tell you when a new free model arrives and how the included models have been performing. They are three separate checkboxes in [your dashboard](/dashboard#email-preferences), and all start unchecked. A verified account email is required, and creating an account does not subscribe you to any of them.
+
+If you send a report from the app, a person on the team may answer it by email at your account's address. That reply is about your report only; it is not a newsletter and does not subscribe you to anything. Replies are recorded with the report.
 
 For subscribers, we store the email preference, consent date and wording version, and the most recent account or editor activity time. We use those records to choose reminders and stop follow-ups when you return. We also keep delivery status and opt-out, bounce, or complaint records so that we can avoid unwanted email.
 
 Resend delivers these messages. It receives the recipient email address and the email content and reports delivery events. We do not send Resend your source code, prompts, projects, or earnings details. Email open and click tracking are disabled; links can contain general campaign labels without an account identifier.
 
-Every product email includes an unsubscribe link that works without signing in. You can also change your preference in the dashboard. Unsubscribing stops future product emails and reminders without changing your ADCode account or service notices.
+Every product email includes an unsubscribe link that works without signing in. You can also change your preference in the dashboard. Unsubscribing stops future product emails, reminders, status emails and model emails without changing your ADCode account or service notices. A status email's own link stops only status emails, and a model email's own link stops only model emails.
+
+When ADCode asks you to verify your email before using free AI, the verification link is sent by Firebase Authentication from the project's Firebase address, at most once an hour.
 
 ## Sharing
 

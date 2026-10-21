@@ -297,3 +297,48 @@ button {
     -webkit-backdrop-filter: none !important;
   }
 }
+
+/*
+ * Lite - a low-end machine (`markLowEndDevice` in motion.ts sets the attribute).
+ *
+ * The same two moves as reduced transparency, for a different reason: a backdrop blur
+ * re-samples everything behind the surface on every frame anything under it changes, and on a
+ * four-core laptop with integrated graphics that is the difference between scrolling a long
+ * chat smoothly and not. The decorative loops stop too - a blinking mascot, the shimmer across
+ * "Working" - while spinners and the press and hover feedback, which say something and run on
+ * the compositor, stay. Light first, then the dark themes, each at a weight that outranks it.
+ */
+:root[data-perf="lite"] {
+  --bg-chrome: #f6f6f8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-perf="lite"]:not([data-theme="light"]) {
+    --bg-chrome: #100f0c;
+  }
+}
+
+:root[data-perf="lite"][data-theme="dark"] {
+  --bg-chrome: #100f0c;
+}
+
+:root[data-perf="lite"][data-theme="midnight"] {
+  --bg-chrome: #060809;
+}
+
+:root[data-perf="lite"] *,
+:root[data-perf="lite"] *::before,
+:root[data-perf="lite"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:root[data-perf="lite"] .agent-mascot path[data-part="eye"] {
+  animation: none !important;
+}
+
+:root[data-perf="lite"] .chat-card :is(.chat-turn[data-state="running"] .chat-turn-lead, .chat-step.is-thinking[data-state="running"] .chat-step-label) {
+  animation: none;
+  background: none;
+  color: var(--text-primary);
+}

@@ -809,24 +809,31 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
   padding-bottom: 8px;
 }
 
+/* The idea box is the composer's first cousin: the same 14px round, hairline and quiet focus -
+   a lift of the border and a faint ring, not a 2px accent outline and a resize grip. */
 .onboarding-idea {
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 84px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-md);
+  min-height: 92px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
   background: var(--bg-editor);
   color: var(--text-primary);
   font: inherit;
-  font-size: var(--text-base, 14px);
-  line-height: 1.5;
-  resize: vertical;
+  font-size: 15px;
+  line-height: 1.55;
+  resize: none;
+  transition: border-color 160ms ease, box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+.onboarding-idea::placeholder { color: var(--text-tertiary); }
+
 .onboarding-idea:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  border-color: color-mix(in srgb, var(--text-primary) 26%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .onboarding-ideas {
@@ -837,8 +844,8 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 }
 
 .onboarding-idea-chip {
-  padding: 5px 11px;
-  border: 1px solid var(--border-hairline);
+  padding: 5px 12px;
+  border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);

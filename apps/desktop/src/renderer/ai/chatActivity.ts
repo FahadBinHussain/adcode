@@ -54,6 +54,9 @@ export function toolHeaderLabel(toolName: string): string {
   if (clean === "run_project_checks") return "Checking the project";
   if (clean === "audit_page") return "Checking layout and accessibility";
   if (clean === "call_mcp") return "Using an MCP tool";
+  if (clean === "adcode_features") return "Checking what ADCode can do";
+  if (clean === "adcode_action") return "Using ADCode";
+  if (clean === "adcode_connectors") return "Setting up a connector";
   if (clean === "read_file") return "Reading files";
   if (clean === "edit_file" || clean === "propose_edit") return "Editing files";
   if (clean === "project_context" || /^memory/i.test(clean)) return "Reading project notes";

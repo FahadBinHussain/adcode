@@ -61,14 +61,58 @@ body { grid-template-rows: var(--ui-chrome-height) minmax(0, 1fr) var(--ui-statu
 }
 .activity[aria-pressed="true"]::after, .activity[aria-selected="true"]::after { opacity: .9; transform: translateY(-50%) scaleY(1); }
 .sidebar { margin: 0; border: 0; border-radius: 0; box-shadow: none; grid-template-rows: 54px minmax(0, 1fr); }
-.sidebar-header { padding-inline: 16px 10px; gap: 10px; border: 0; }
-.sidebar-title { text-transform: none; letter-spacing: 0; font-size: var(--text-sm); }
+.sidebar-header { padding-inline: 14px 8px; gap: 8px; border: 0; }
+.sidebar-title { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.sidebar-subtitle { font-size: 11px; }
+/* The header's buttons are one family: 26px squares for the icons, a 26px hairline pill for
+   Open, so the row reads as a toolbar rather than three sizes of thing. */
+.sidebar-header :is(.sidebar-actions .tree-action, .sidebar-close) { width: 26px; height: 26px; min-height: 26px; border-radius: 7px; }
+.sidebar-header .sidebar-actions .ghost-button {
+  min-height: 26px;
+  height: 26px;
+  margin-left: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 550;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-header :is(.sidebar-actions .tree-action, .sidebar-close):hover { background: var(--bg-hover); color: var(--text-primary); }
+  .sidebar-header .sidebar-actions .ghost-button:hover { border-color: var(--border-strong); background: var(--bg-hover); color: var(--text-primary); }
+}
 .sidebar-focus-ribbon { display: none; }
 .tree-row { min-height: var(--density-row); border-radius: 6px; }
 .main { margin: 0; border: 0; border-radius: 0; box-shadow: none; background: var(--bg-editor); }
-.tabs { gap: 0; padding: 0; background: var(--bg-app); }
-.tab { min-height: 38px; padding-inline: 16px 12px; gap: 8px; border-radius: 0; }
-.tab[aria-selected="true"] { background: var(--bg-editor); box-shadow: inset 0 -2px var(--accent); }
+/*
+ * Editor tabs, the way Freebuff and Claude draw theirs: rounded tabs floating in a quiet strip,
+ * the open one raised on a hairline and a sheen, the rest just words until the pointer finds
+ * them. A tab's close button shows on the open tab and under the pointer; the unsaved dot takes
+ * no room until there is something unsaved.
+ */
+.tabs { align-items: center; gap: 4px; padding: 5px 8px; min-height: 42px; box-sizing: border-box; background: var(--bg-app); }
+.tab {
+  min-height: 30px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.tab[aria-selected="true"] {
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-app) 86%, var(--text-primary));
+  color: var(--text-primary);
+  font-weight: 550;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent), 0 1px 2px rgb(0 0 0 / 0.2);
+}
+.tab:not([data-dirty="true"]) .tab-dirty { display: none; }
+.tab .tab-close { opacity: 0; }
+.tab:is(:hover, [aria-selected="true"], :focus-within) .tab-close { opacity: 1; }
 .editor-workspace { inset: 0 var(--preview-width, 0px) 0 0; }
 .editor-workspace[data-split="true"] { grid-template-columns: minmax(180px, var(--editor-first, 0.5fr)) 4px minmax(180px, var(--editor-second, 0.5fr)); }
 .editor-file-panel { grid-template-rows: 38px minmax(0, 1fr); border: 0; border-radius: 0; box-shadow: none; }
@@ -130,7 +174,10 @@ body { grid-template-rows: var(--ui-chrome-height) minmax(0, 1fr) var(--ui-statu
 .connect-view .connect-sidebar { padding: 16px; }
 .scm-panel { padding: 16px; gap: 14px; }
 .scm-changes-region, .scm-commit-region, .scm-history-region { padding: 18px; gap: 14px; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
-.quickopen-input, .search-input, .shortcuts-search { min-height: 38px; }
+.quickopen-input, .shortcuts-search { min-height: 38px; }
+/* Search across files: one 32px height for every box and the button beside them. */
+.search-input, .search-glob { min-height: 32px; border-radius: 8px; padding-inline: 10px; }
+.search-replace-all { min-height: 32px; height: 32px; padding-inline: 12px; border-radius: 8px; }
 .quickopen-row, .palette-row, .symbol-row { min-height: 36px; padding-block: 8px; }
 .prompt-card, .confirm-card, .report-card { border-radius: 8px; }
 .prompt-message, .confirm-message { line-height: 1.65; }
@@ -174,7 +221,7 @@ body { grid-template-rows: var(--ui-chrome-height) minmax(0, 1fr) var(--ui-statu
 :is(.settings-body, .feature-library-workspace, .connect-detail) { scrollbar-gutter: stable; }
 @media (hover: hover) and (pointer: fine) {
   .tree-row:hover { transform: translateX(2px); }
-  .tab:hover:not([aria-selected="true"]) { transform: translateY(-1px); }
+  .tab:hover:not([aria-selected="true"]) { background: var(--bg-hover); color: var(--text-primary); }
   .project-toolbar-action:hover { transform: translateY(-1px); }
 }
 

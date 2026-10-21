@@ -180,10 +180,10 @@ describe("public documentation navigation", () => {
     expect(recent.length).toBe(4);
     expect(recent.every((page) => page.authored)).toBe(true);
     expect(recent.map((page) => page.slug)).toEqual([
-      "first-commit-name-and-email",
-      "installing-adcode",
-      "every-feature-the-full-tour",
-      "adcode-vs-vs-code-vs-cursor",
+      "adcode-in-your-browser",
+      "connectors",
+      "chats-that-keep-working",
+      "free-ai-without-the-meter",
     ]);
   });
 
@@ -191,14 +191,14 @@ describe("public documentation navigation", () => {
     const markup = await renderDocsIndex();
 
     expect(markup).toContain("New in the docs");
-    expect(markup).toContain("Sep 16, 2026");
+    expect(markup).toContain("Oct 20, 2026");
     // The sidebar links older pages earlier in the document, so compare positions
     // inside the shelf itself rather than across the whole page.
     const shelf = markup.slice(markup.indexOf("New in the docs"));
-    const first = shelf.indexOf("/docs/first-commit-name-and-email");
-    const installing = shelf.indexOf("/docs/installing-adcode");
+    const first = shelf.indexOf("/docs/adcode-in-your-browser");
+    const second = shelf.indexOf("/docs/connectors");
     expect(first).toBeGreaterThan(-1);
-    expect(installing).toBeGreaterThan(-1);
-    expect(first).toBeLessThan(installing);
+    expect(second).toBeGreaterThan(-1);
+    expect(first).toBeLessThan(second);
   });
 });

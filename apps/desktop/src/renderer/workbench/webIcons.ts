@@ -1,5 +1,5 @@
 /** Official Lucide icons, imported individually so unused icons are excluded from the bundle. */
-import { MessageSquarePlus, FileDiff, PanelsTopLeft, CalendarClock, CircleUserRound, Users, PanelTop, Menu, FolderOpen, ChevronDown, ChevronRight, MessageSquare, Bot, Wrench, Bell, Settings, CodeXml, Search, Sparkles, Gift, MonitorDown, BookOpen, LayoutGrid, PanelLeft, Wallet, X, Ellipsis, MessageSquareText, Globe, GitBranch, Plug, GraduationCap, BookMarked, Keyboard } from "lucide";
+import { MessageSquarePlus, FileDiff, PanelsTopLeft, CalendarClock, CircleUserRound, Users, PanelTop, Menu, FolderOpen, ChevronDown, ChevronRight, MessageSquare, Bot, Wrench, Bell, Settings, CodeXml, Search, Sparkles, Gift, MonitorDown, BookOpen, LayoutGrid, PanelLeft, Wallet, X, Ellipsis, MessageSquareText, Globe, GitBranch, Plug, GraduationCap, BookMarked, Keyboard, Hammer, Bug, Lightbulb, Gamepad2, ListChecks, UserRound, History } from "lucide";
 
 export const WEB_ICON = {
   newChat: MessageSquarePlus,
@@ -36,4 +36,12 @@ export const WEB_ICON = {
   servers: Plug,
   skills: GraduationCap,
   memory: BookMarked,
+  // The empty chat's starters (chatWidget.ts), one mark each the way Kimi's chips carry them.
+  build: Hammer,
+  bug: Bug,
+  idea: Lightbulb,
+  game: Gamepad2,
+  todo: ListChecks,
+  person: UserRound,
+  resume: History,
 } as const;

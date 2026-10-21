@@ -1,10 +1,11 @@
 /** Streaming relay to approved providers, with atomic account allowances. */
 import { randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
-import { authenticate, type TokenVerifier } from "./auth.ts";
+import { authenticate, bearerFrom, type TokenVerifier } from "./auth.ts";
+import type { AccountIdentity } from "./accountIdentity.ts";
 import { corsHeaders } from "./cors.ts";
 import { DEFAULT_TAGFLOW_CONFIG, isTagflowUrl, parseTagflowConfig, parseTagflowLimits, tagflowCost } from "./tagflowConfig.ts";
-import type { Clock, Store } from "./store.ts";
+import type { Clock, Store, UserRecord } from "./store.ts";
 import type { TagflowConfig, TagflowModel, TagflowSettlement } from "./tagflowTypes.ts";
 import { createWorkerSecrets, type WorkerSecrets } from "./workerSecrets.ts";
 import { includedProvider, isCustomProviderUrl, modelProvider, providerConnections, type IncludedProviderId } from "./includedProviders.ts";
@@ -24,10 +25,49 @@ export interface TagflowOptions {
   workerSecrets?: WorkerSecrets;
   /** The waits before retrying a provider's 429; tests pass zeros. */
   rateLimitWaitsMs?: readonly number[];
+  /** Overrides for the relay's clocks; tests use short ones. */
+  timeouts?: Partial<{ firstMs: number; idleMs: number; maxMs: number }>;
+  /** Answer from another included model when the chosen one is overloaded. On unless false. */
+  fallback?: boolean;
+  /** Reads an account's live verification state and sends Firebase's verification email. */
+  identity?: AccountIdentity;
 }
 
 /** Two retries of a provider's rate limit, then the person hears about it. */
 export const UPSTREAM_RATE_LIMIT_WAITS_MS: readonly number[] = [700, 1600];
+
+/**
+ * Which models are overloaded right now, as this isolate has seen it.
+ *
+ * On 2026-10-20 one included model's provider refused 84-90% of requests with 429 for four
+ * hours while the other three models answered normally. Retrying the refused model does not
+ * help when the provider is saturated - it only makes every person wait two more seconds to be
+ * refused - so three refusals in a row (each already retried) put a model on a one-minute
+ * cooldown. While it cools, its requests go straight to a healthy included model; one answer
+ * clears the strikes. Per isolate is enough: each isolate learns within three requests, and a
+ * model that recovers is tried again within a minute everywhere.
+ */
+/** Waiting for a provider to start answering; then silence allowed mid-stream; then the longest any answer may run. */
+export const RELAY_TIMEOUTS = { firstMs: 180_000, idleMs: 120_000, maxMs: 1_200_000 } as const;
+
+/** How soon the gate may send the same account another verification link. */
+export const VERIFICATION_RESEND_MS = 3_600_000;
+
+export const MODEL_COOLDOWN_STRIKES = 3;
+export const MODEL_COOLDOWN_MS = 60_000;
+export function createModelHealth(): { strike(id: string, now: number): void; answered(id: string): void; cooling(id: string, now: number): boolean } {
+  const health = new Map<string, { strikes: number; until: number }>();
+  return {
+    strike(id, now) {
+      const entry = health.get(id) ?? { strikes: 0, until: 0 };
+      entry.strikes += 1;
+      if (entry.strikes >= MODEL_COOLDOWN_STRIKES) { entry.until = now + MODEL_COOLDOWN_MS; entry.strikes = 0; }
+      health.set(id, entry);
+    },
+    answered(id) { health.delete(id); },
+    cooling(id, now) { return (health.get(id)?.until ?? 0) > now; },
+  };
+}
 
 export function isTagflowPath(path: string): boolean {
   return path === "/v1/ai/tagflow/config" || path === "/v1/ai/tagflow/usage" || path === "/v1/ai/tagflow/chat/completions" ||
@@ -179,6 +219,49 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
     const model = config.models.find((one) => one.id === config.defaultModel);
     return model !== undefined && providerKey(config, modelProvider(model)).length > 0;
   };
+  const health = createModelHealth();
+  /**
+   * Where a parsed request goes: its model's provider, address and key, or null when the model
+   * cannot be served (no key, or an address that is not allowed). Shared by the chosen model and
+   * any fallback, so a fallback passes exactly the checks the chosen model did.
+   */
+  const target = (config: TagflowConfig, parsed: Extract<ChatBody, { model: TagflowModel }>, signal: AbortSignal): { providerId: IncludedProviderId; send: () => Promise<Response> } | null => {
+    const providerId = modelProvider(parsed.model);
+    const connection = includedProvider(providerId, config.providers);
+    const apiKey = providerKey(config, providerId);
+    const baseUrl = providerId === "tagflow" ? config.baseUrl : connection?.baseUrl ?? "";
+    if (connection === undefined || apiKey.length === 0 || (providerId === "tagflow" ? !isTagflowUrl(baseUrl) : connection.custom && !isCustomProviderUrl(baseUrl))) return null;
+    parsed.body["model"] = parsed.model.upstreamModel ?? parsed.model.id;
+    if (connection.outputTokenField === "max_completion_tokens") {
+      parsed.body["max_completion_tokens"] = parsed.output;
+      delete parsed.body["max_tokens"];
+    }
+    // Built-in providers have fixed hosts, Tagflow stays on its domain, and custom hosts are
+    // public HTTPS addresses only an administrator can register. Redirects are refused, so a
+    // credential cannot travel to another host.
+    const keyHeader: Record<string, string> = connection.authentication === "bearer" ? { authorization: `Bearer ${apiKey}` } : { [connection.authentication]: apiKey };
+    const fetchImpl = deps.fetchImpl ?? fetch;
+    return { providerId, send: () => fetchImpl(`${baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...keyHeader }, body: JSON.stringify(parsed.body), redirect: "manual", signal }) };
+  };
+  /**
+   * A healthy included model to answer instead, in the administrator's own model order: offered,
+   * not cooling, never at a higher credit rate than the person chose (they are never charged more
+   * than they agreed to), and able to take this exact request - the same validation, context
+   * check and output cap the chosen model passed.
+   */
+  const fallbackFor = (config: TagflowConfig, raw: Record<string, unknown>, chosen: Extract<ChatBody, { model: TagflowModel }>, maxRate: number, signal: AbortSignal, now: number) => {
+    if (deps.fallback === false) return null;
+    // The same request with the same output ceiling, so the answer fits the reservation made for it.
+    const { max_completion_tokens: _unused, ...rest } = raw;
+    for (const model of config.models) {
+      if (model.id === chosen.model.id || model.enabled === false || health.cooling(model.id, now) || modelCreditRate(model, config) > maxRate) continue;
+      const parsed = chatBody({ ...rest, model: model.id, max_tokens: chosen.output }, config);
+      if ("error" in parsed) continue;
+      const route = target(config, parsed, signal);
+      if (route !== null) return { parsed, route };
+    }
+    return null;
+  };
   return async (request) => {
     const url = new URL(request.url);
     if (!isTagflowPath(url.pathname)) return null;
@@ -200,6 +283,31 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       metric.outcome = outcome; metric.errorCode = code;
       metric.durationMs = metric.providerStartedAt === null ? null : Math.max(0,metric.finishedAt-metric.providerStartedAt);
       await writeMetric();
+    };
+    /**
+     * Free AI needs a verified email - and the refusal used to be a dead end. GitHub and
+     * email/password sign-ins arrive unverified, and nothing in the desktop or on the website sent
+     * a verification link: on 2026-10-20, 11 of 15 people who reported "Sign in to use free AI"
+     * were signed in and stuck. Now the gate (1) reads the account's live state, so someone who has
+     * just opened the link is let straight in, and (2) otherwise has Firebase email them a link, at
+     * most once an hour, and says where it went. Null means the person may continue.
+     */
+    const verificationRefusal = async (user: UserRecord | null, uid: string, idToken: string | null): Promise<Response | null> => {
+      const live = idToken !== null && deps.identity !== undefined ? await deps.identity.lookup(idToken) : null;
+      if (user !== null && live?.emailVerified === true && live.email !== null) {
+        await deps.store.putUser({ ...user, email: live.email, emailVerified: true });
+        return null;
+      }
+      const email = live?.email ?? user?.email ?? null;
+      if (email === null) return fail(403, "verify-account", "Sign in to use included AI - it takes a few seconds and no API key is needed.");
+      const identity = deps.identity;
+      const claimed = idToken !== null && identity !== undefined && await deps.store.claimVerificationSend(uid, deps.clock.now(), VERIFICATION_RESEND_MS);
+      const sent = claimed && idToken !== null && identity !== undefined ? await identity.sendVerification(idToken) : false;
+      return fail(403, "verify-account", sent
+        ? `Free AI needs a verified email. We sent a verification link to ${email} - open it, then send your message again. No API key is needed.`
+        : claimed
+          ? `Free AI needs a verified email, and the verification email to ${email} could not be sent just now. Try again in an hour, or sign in with Google, which verifies the address for you.`
+          : `Free AI needs a verified email. Open the verification link we emailed to ${email}, then send your message again. Not there? Check spam - a new link can be sent an hour after the last one.`);
     };
     try {
       const saved = await deps.store.getTagflowConfig();
@@ -316,7 +424,10 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       }
       if (url.pathname !== "/v1/ai/tagflow/chat/completions" || request.method !== "POST") return fail(405, "method", "Unsupported method.");
       const user = await deps.store.getUser(auth.uid);
-      if (!user?.email || user.emailVerified !== true) return fail(403, "verify-account", "Sign in and verify your email in Account to use included AI. No API key is needed.");
+      if (!user?.email || user.emailVerified !== true) {
+        const refusal = await verificationRefusal(user, auth.uid, bearerFrom(request.headers.get("authorization") ?? undefined));
+        if (refusal !== null) return refusal;
+      }
       const raw = await readJson(request);
       const selected = isRecord(raw) ? config.models.find(model => model.id === raw["model"]) : undefined;
       if (selected !== undefined) {
@@ -337,16 +448,10 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       const parsed = chatBody(raw, config);
       if ("error" in parsed) { await finishMetric("rejected",parsed.error.code); return fail(parsed.error.status, parsed.error.code, parsed.error.message); }
       if (metric !== null) { metric.requestedOutput = parsed.output; metric.estimatedInput = parsed.contextInput; }
-      const providerId = modelProvider(parsed.model);
-      const connection = includedProvider(providerId, config.providers);
-      const apiKey = providerKey(config, providerId);
-      const baseUrl = providerId === "tagflow" ? config.baseUrl : connection?.baseUrl ?? "";
-      if (connection === undefined || apiKey.length === 0 || (providerId === "tagflow" ? !isTagflowUrl(baseUrl) : connection.custom && !isCustomProviderUrl(baseUrl))) { await finishMetric("rejected","unavailable"); return fail(503, "unavailable", "This included model is unavailable. Choose another model."); }
-      parsed.body["model"] = parsed.model.upstreamModel ?? parsed.model.id;
-      if (connection.outputTokenField === "max_completion_tokens") {
-        parsed.body["max_completion_tokens"] = parsed.output;
-        delete parsed.body["max_tokens"];
-      }
+      const abort = new AbortController();
+      const chosenRoute = target(config, parsed, abort.signal);
+      if (chosenRoute === null) { await finishMetric("rejected","unavailable"); return fail(503, "unavailable", "This included model is unavailable. Choose another model."); }
+      let route = chosenRoute;
       // Every included model draws from the account's one credit balance, at its own rate.
       // Tokens are no longer a limit; the day keeps its spending and request ceilings.
       const rate = modelCreditRate(parsed.model, config);
@@ -380,15 +485,19 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         return fail(429,reserved,message,daily ? remainingDay : { "retry-after":"60" },{ retryable,...(daily ? { resetsAt } : {}) });
       }
       const observer = new UsageObserver(() => { if (metric !== null && metric.streamed && metric.firstTokenMs === null && metric.providerStartedAt !== null) metric.firstTokenMs = Math.max(0,deps.clock.now()-metric.providerStartedAt); });
+      // The model that actually answers: the chosen one, or a fallback when it is overloaded.
+      // Settlement charges what was served, never more than the reservation held for the choice.
+      let served = parsed;
+      let servedRate = rate;
       let settled = false;
       let settlementFailed = false;
       const settle = async (failed = false, complete = false): Promise<void> => {
         if (settled) return;
         const reported = observer.completed ? observer.reported : null;
         // An incomplete stream may have consumed its full allocation upstream.
-        const inputTokens = failed ? 0 : reported?.input ?? parsed.input;
-        const outputTokens = failed ? 0 : reported?.output ?? (complete && observer.completed ? Math.min(parsed.output, Math.ceil(observer.outputBytes / 3) + (observer.toolCalls.size > 0 ? 16 * observer.toolCalls.size : 0)) : parsed.output);
-        const result: TagflowSettlement = { inputTokens, outputTokens, costMicros: failed ? 0 : tagflowCost(parsed.model, inputTokens, outputTokens), estimated: reported === null, failed, millicredits: failed ? 0 : millicreditsFor(inputTokens + outputTokens, rate) };
+        const inputTokens = failed ? 0 : reported?.input ?? served.input;
+        const outputTokens = failed ? 0 : reported?.output ?? (complete && observer.completed ? Math.min(served.output, Math.ceil(observer.outputBytes / 3) + (observer.toolCalls.size > 0 ? 16 * observer.toolCalls.size : 0)) : served.output);
+        const result: TagflowSettlement = { inputTokens, outputTokens, costMicros: failed ? 0 : tagflowCost(served.model, inputTokens, outputTokens), estimated: reported === null, failed, millicredits: failed ? 0 : millicreditsFor(inputTokens + outputTokens, servedRate) };
         if (metric !== null) {
           metric.finishedAt ??= deps.clock.now();
           metric.inputTokens = inputTokens; metric.outputTokens = outputTokens; metric.costMicros = result.costMicros; metric.estimated = !failed && result.estimated;
@@ -398,32 +507,76 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         catch (error) { settlementFailed = true; throw error; }
         settled = true;
       };
-      const abort = new AbortController();
       const onAbort = (): void => abort.abort();
       request.signal.addEventListener("abort", onAbort, { once: true });
       if (request.signal.aborted) abort.abort();
-      const timeout = setTimeout(() => abort.abort(), 180_000);
-      const cleanup = (): void => { clearTimeout(timeout); request.signal.removeEventListener("abort", onAbort); };
-      let upstream: Response;
-      try {
-        if (metric !== null) metric.providerStartedAt = deps.clock.now();
-        await writeMetric();
-        // Built-in providers have fixed hosts, Tagflow stays on its domain, and custom hosts are
-        // public HTTPS addresses only an administrator can register. Redirects are refused, so a
-        // credential cannot travel to another host.
-        const keyHeader: Record<string, string> = connection.authentication === "bearer" ? { authorization: `Bearer ${apiKey}` } : { [connection.authentication]: apiKey };
-        const send = (): Promise<Response> => fetchImpl(`${baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...keyHeader }, body: JSON.stringify(parsed.body), redirect: "manual", signal: abort.signal });
-        upstream = await send();
+      /*
+       * Three clocks, not one. A single 180-second limit from the start of the request cut 420
+       * answers in three days (2026-10-18 to -21) mid-stream, at exactly 180.0 s, while tokens were
+       * still arriving - long max-effort answers, every one charged in full and reported as
+       * "terminated". Now a provider has `firstMs` to start answering; once it is answering, the
+       * stream lives as long as it keeps sending, cut only after `idleMs` of silence, and never
+       * beyond `maxMs`.
+       */
+      const clocks = { ...RELAY_TIMEOUTS, ...deps.timeouts };
+      let timeout = setTimeout(() => abort.abort(), clocks.firstMs);
+      const hardStop = setTimeout(() => abort.abort(), clocks.maxMs);
+      const stillSending = (): void => { clearTimeout(timeout); timeout = setTimeout(() => abort.abort(), clocks.idleMs); };
+      const cleanup = (): void => { clearTimeout(timeout); clearTimeout(hardStop); request.signal.removeEventListener("abort", onAbort); };
+      /**
+       * Hand the request to a fallback model. The chosen model's attempt is finished as what it
+       * was - refused, or skipped while cooling - so its own figures stay honest, and the answer is
+       * recorded as a new request against the model that gave it. The header lets the desktop say so.
+       */
+      const switchTo = async (fallback: NonNullable<ReturnType<typeof fallbackFor>>, outcome: ModelRequestOutcome, code: string): Promise<void> => {
+        if (metric !== null) {
+          await finishMetric(outcome, code);
+          const model = fallback.parsed.model;
+          metric = { ...metric, id: randomUUID(), modelId: model.id, modelName: model.name, provider: modelProvider(model), upstreamModel: model.upstreamModel ?? model.id, contextWindow: model.contextWindow,
+            requestedOutput: fallback.parsed.output, estimatedInput: fallback.parsed.contextInput, providerStartedAt: deps.clock.now(), finishedAt: null, outcome: "pending", errorCode: null, upstreamStatus: null, durationMs: null, firstTokenMs: null };
+          metricFinished = false;
+          headers["x-adcode-request-id"] = metric.id;
+          await writeMetric();
+        }
+        headers["x-adcode-fallback-model"] = fallback.parsed.model.id;
+        route = fallback.route; served = fallback.parsed; servedRate = modelCreditRate(fallback.parsed.model, config);
+      };
+      const retryRateLimit = async (response: Response): Promise<Response> => {
+        let current = response;
         // A provider's 429 is usually a burst limit, not a quota: on 2026-10-20 one included model
         // refused 21% of requests with 429 while answering thousands beside them. Two short waits
         // (the provider's Retry-After when it asks for under 4 s) turn most into an answer.
         for (const wait of deps.rateLimitWaitsMs ?? UPSTREAM_RATE_LIMIT_WAITS_MS) {
-          if (upstream.status !== 429 || abort.signal.aborted) break;
-          const asked = Number(upstream.headers.get("retry-after"));
-          await upstream.body?.cancel();
+          if (current.status !== 429 || abort.signal.aborted) break;
+          const asked = Number(current.headers.get("retry-after"));
+          await current.body?.cancel();
           await new Promise((resolve) => setTimeout(resolve, Number.isFinite(asked) && asked > 0 && asked <= 4 && wait > 0 ? asked * 1000 : wait));
           if (abort.signal.aborted) break;
-          upstream = await send();
+          current = await route.send();
+        }
+        return current;
+      };
+      let upstream: Response;
+      try {
+        if (metric !== null) metric.providerStartedAt = deps.clock.now();
+        await writeMetric();
+        const body = raw as Record<string, unknown>;
+        // A model that keeps refusing is cooling: skip it rather than make this person wait to be refused.
+        if (health.cooling(parsed.model.id, deps.clock.now())) {
+          const fallback = fallbackFor(config, body, parsed, rate, abort.signal, deps.clock.now());
+          if (fallback !== null) await switchTo(fallback, "rejected", "model-busy");
+        }
+        upstream = await retryRateLimit(await route.send());
+        if (upstream.status === 429 && !abort.signal.aborted) {
+          health.strike(served.model.id, deps.clock.now());
+          const fallback = served === parsed ? fallbackFor(config, body, parsed, rate, abort.signal, deps.clock.now()) : null;
+          if (fallback !== null) {
+            if (metric !== null) metric.upstreamStatus = 429;
+            await upstream.body?.cancel();
+            await switchTo(fallback, "provider_error", "upstream-rate-limit");
+            upstream = await retryRateLimit(await route.send());
+            if (upstream.status === 429) health.strike(served.model.id, deps.clock.now());
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
@@ -436,7 +589,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
           : /Illegal invocation|receiver/i.test(message) ? "fetch-binding"
           : /resolve|DNS/i.test(message) ? "dns" : "network";
         // Never log the upstream error message: malformed-header errors can contain a key.
-        console.warn("Included AI connection failed", { provider: providerId, reason });
+        console.warn("Included AI connection failed", { provider: route.providerId, reason });
         cleanup(); await settle(); await finishMetric(reason === "request-ended" ? "cancelled" : ["key-format","cache-mode","request-context","fetch-binding"].includes(reason) ? "relay_error" : "provider_error",reason);
         const explanation = reason === "request-ended" ? "The request ended before the provider answered. Try again."
           : reason === "timeout" ? "The included AI provider took too long to answer. Try later."
@@ -452,6 +605,8 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         if (upstream.status === 429) return fail(429, "upstream-rate-limit", "This free model's provider reached a temporary rate limit. Your credits may still have room. Try again shortly, or choose a different model.", { "retry-after": "60" }, { retryable:true });
         return fail(502, "upstream", "The included AI provider refused the request. Try another model or try later.");
       }
+      health.answered(served.model.id);
+      stillSending();
       if (parsed.body["stream"] === false) {
         try {
           const raw = await readJson(new Request("https://relay.invalid", { method: "POST", body: upstream.body, duplex: "half" } as RequestInit));
@@ -475,6 +630,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
           try {
             for (;;) {
               const chunk = await reader.read();
+              if (!chunk.done) stillSending();
               if (chunk.done) { await settle(false, true); await finishMetric(observer.completed ? "success" : "provider_error",observer.completed ? null : "incomplete-stream"); cleanup(); reader.releaseLock(); controller.close(); break; }
               const safe = observer.push(chunk.value);
               if (safe !== null) { controller.enqueue(safe); break; }
@@ -492,7 +648,8 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
     } catch (error) {
       await finishMetric("relay_error","storage-or-relay");
       if (error instanceof SyntaxError || error instanceof URIError) return fail(400, "bad-request", "Send a valid request.");
-      if (error instanceof Error && error.message === "body-too-large") return fail(413, "body-too-large", "The request is too large.");
+      // Over 1 MB is past every included model's context window, so waiting or retrying cannot help.
+      if (error instanceof Error && error.message === "body-too-large") return fail(413, "body-too-large", "This conversation is larger than any included model can read. Compact it (type /compact) or start a new conversation.");
       return fail(503, "unavailable", "Included AI is temporarily unavailable. Try another connected model.");
     }
   };

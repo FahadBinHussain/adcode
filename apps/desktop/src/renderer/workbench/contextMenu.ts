@@ -39,11 +39,21 @@ export interface ContextMenu {
    * scroll. A button that opens this menu needs that to put `aria-expanded` back, and
    * there is no other moment it can learn the menu is gone.
    */
-  open(x: number, y: number, nodes: readonly ContextMenuNode[], onClose?: () => void): void;
+  open(x: number, y: number, nodes: readonly ContextMenuNode[], onClose?: () => void, options?: ContextMenuOptions): void;
   close(): void;
   isOpen(): boolean;
   /** Move focus by `step` entries, wrapping. Skips disabled ones. */
   focusStep(step: number): void;
+}
+
+export interface ContextMenuOptions {
+  /**
+   * "above": the panel's bottom edge sits at `y`, so a menu opened from a control at the foot
+   * of the window - the composer's model and mode buttons - rises out of it instead of
+   * dropping down over the control that opened it. It still flips below when there is no
+   * room above.
+   */
+  readonly prefer?: "below" | "above";
 }
 
 /** Keeps the panel off the window edge when it has to flip back the other way. */
@@ -136,7 +146,7 @@ export function createContextMenu(host: HTMLElement): ContextMenu {
   }
 
   return {
-    open(x, y, nodes, onClose) {
+    open(x, y, nodes, onClose, options) {
       close();
       if (nodes.length === 0) {
         onClose?.();
@@ -155,7 +165,9 @@ export function createContextMenu(host: HTMLElement): ContextMenu {
 
       const { width, height } = built.getBoundingClientRect();
       const flipX = x + width > window.innerWidth - MARGIN;
-      const flipY = y + height > window.innerHeight - MARGIN;
+      const flipY = options?.prefer === "above"
+        ? y - height >= MARGIN || y + height > window.innerHeight - MARGIN
+        : y + height > window.innerHeight - MARGIN;
 
       const left = flipX ? Math.max(MARGIN, x - width) : x;
       const top = flipY ? Math.max(MARGIN, y - height) : y;

@@ -5,8 +5,10 @@
  * quiet, a bug here is obvious the first time anyone calls the endpoint. All the logic
  * worth testing hard lives in the modules this one wires together.
  */
-import { UNSUBSCRIBE_TOKEN, type MailingStore } from "./mailing.ts";
+import { UNSUBSCRIBE_TOKEN, type MailingStore, type SendResult } from "./mailing.ts";
+import { handleAnnounce } from "./announcements.ts";
 import { verifyMailingWebhook } from "./mailingDelivery.ts";
+import type { AccountIdentity } from "./accountIdentity.ts";
 import type { WorkerSecrets } from "./workerSecrets.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
@@ -57,6 +59,7 @@ import {
 import {
   handleAdminListReports,
   handleDeleteReport,
+  handleReportReply,
   handleSetReportStatus,
   handleSubmitReport,
 } from "./reports.ts";
@@ -265,10 +268,12 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 }
 
 export interface ApiOptions {
-  tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined; workerSecrets?: WorkerSecrets; rateLimitWaitsMs?: readonly number[] };
+  tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined; workerSecrets?: WorkerSecrets; rateLimitWaitsMs?: readonly number[]; fallback?: boolean; identity?: AccountIdentity; timeouts?: Partial<{ firstMs: number; idleMs: number; maxMs: number }> };
   websiteAnalytics?: WebsiteAnalyticsStore;
   mailing?: MailingStore;
   mailingWebhookSecret?: () => string | undefined;
+  /** Renders and sends an administrator's reply to a report (Resend, in production). */
+  reportReplyMailer?: (input: { replyId: string; to: string; reportTitle: string; reportedAt: number; message: string }) => Promise<SendResult>;
   port?: number;
   store?: Store;
   verifier?: TokenVerifier;
@@ -587,9 +592,36 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
         "x-robots-tag": "noindex, nofollow",
       };
       const shell = (content: string) => '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADCode email preferences</title><body style="margin:0;background:#f1efea;color:#292820;font:16px/1.7 Arial,Helvetica,sans-serif"><main style="max-width:480px;margin:12vh auto;padding:28px"><p style="font-weight:bold">adcode.</p>' + content + '</main></body></html>';
+      // A status or model email's link stops that kind of email and nothing else; every other link stops all updates.
+      const statusOnly = url.searchParams.get("topic") === "status";
+      const modelsOnly = url.searchParams.get("topic") === "models";
       if (req.method === "GET") {
         res.writeHead(200, htmlHeaders);
-        res.end(shell('<h1>Make room in your inbox.</h1><p>Stop ADCode product updates and project reminders. Your account stays just as it is.</p><form method="post" action="?token=' + token + '"><button style="padding:14px 24px;background:#292820;color:#fcfbf7;border:0;border-radius:8px;font:inherit;cursor:pointer">Unsubscribe</button></form>'));
+        res.end(modelsOnly
+          ? shell('<h1>Stop model emails?</h1><p>You will no longer hear from ADCode about new free models or how the models are performing. Your other email choices and your account stay as they are.</p><form method="post" action="?token=' + token + '&amp;topic=models"><button style="padding:14px 24px;background:#292820;color:#fcfbf7;border:0;border-radius:8px;font:inherit;cursor:pointer">Stop model emails</button></form>')
+          : statusOnly
+          ? shell('<h1>Stop status emails?</h1><p>You will no longer hear from ADCode when free AI has an outage or when it is fixed. Your other email choices and your account stay as they are.</p><form method="post" action="?token=' + token + '&amp;topic=status"><button style="padding:14px 24px;background:#292820;color:#fcfbf7;border:0;border-radius:8px;font:inherit;cursor:pointer">Stop status emails</button></form>')
+          : shell('<h1>Make room in your inbox.</h1><p>Stop ADCode product updates and project reminders. Your account stays just as it is.</p><form method="post" action="?token=' + token + '"><button style="padding:14px 24px;background:#292820;color:#fcfbf7;border:0;border-radius:8px;font:inherit;cursor:pointer">Unsubscribe</button></form>'));
+      } else if (req.method === "POST" && modelsOnly) {
+        const form = new URLSearchParams(await readBody(req));
+        await options.mailing.unsubscribeModels(token, clock.now());
+        if (form.get("List-Unsubscribe") === "One-Click") {
+          res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+          res.end("");
+          return;
+        }
+        res.writeHead(200, htmlHeaders);
+        res.end(shell('<h1>Model emails are off.</h1><p>You can turn them back on in your account whenever you like. How each model is doing is always on the <a href="/status" style="color:#292820">status page</a>.</p><a href="/dashboard#email-preferences" style="color:#292820">Return to ADCode</a>'));
+      } else if (req.method === "POST" && statusOnly) {
+        const form = new URLSearchParams(await readBody(req));
+        await options.mailing.unsubscribeStatus(token, clock.now());
+        if (form.get("List-Unsubscribe") === "One-Click") {
+          res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+          res.end("");
+          return;
+        }
+        res.writeHead(200, htmlHeaders);
+        res.end(shell('<h1>Status emails are off.</h1><p>You can turn them back on in your account whenever you like. The status page is always at <a href="/status" style="color:#292820">adcode.bluethenics.com/status</a>.</p><a href="/dashboard#email-preferences" style="color:#292820">Return to ADCode</a>'));
       } else if (req.method === "POST") {
         const form = new URLSearchParams(await readBody(req));
         await options.mailing.unsubscribe(token, clock.now());
@@ -774,14 +806,22 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
       if (req.method === "PATCH") {
         const raw = await jsonBodyOr400();
         if (raw === undefined) return;
-        if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
-            typeof (raw as Record<string, unknown>)["subscribed"] !== "boolean" ||
-            Object.keys(raw).some((key) => key !== "subscribed")) {
+        // Any of the choices: ADCode updates (`subscribed`), status updates and model emails are separate yeses.
+        const fields = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+        const keys = fields === null ? [] : Object.keys(fields);
+        if (fields === null || keys.length === 0 || keys.some((key) => key !== "subscribed" && key !== "statusUpdates" && key !== "modelUpdates") ||
+            keys.some((key) => typeof fields[key] !== "boolean")) {
           send(res, 400, { error: "malformed-preferences" }, cors); return;
         }
         const prefs = await options.mailing.preferences(auth.uid);
         if (!prefs.eligible) { send(res, 409, { error: "verified-email-required" }, cors); return; }
-        await options.mailing.consent(auth.uid, (raw as { subscribed: boolean }).subscribed, clock.now());
+        // Consent first: turning updates off records an unsubscribe, which a status yes in the same
+        // save then lifts again for the status emails it asked for.
+        if (typeof fields["subscribed"] === "boolean") await options.mailing.consent(auth.uid, fields["subscribed"], clock.now());
+        const statusUpdates = typeof fields["statusUpdates"] === "boolean" ? fields["statusUpdates"] : fields["subscribed"] === false && prefs.statusUpdates ? true : null;
+        if (statusUpdates !== null) await options.mailing.setStatusUpdates(auth.uid, statusUpdates, clock.now());
+        const modelUpdates = typeof fields["modelUpdates"] === "boolean" ? fields["modelUpdates"] : fields["subscribed"] === false && prefs.modelUpdates ? true : null;
+        if (modelUpdates !== null) await options.mailing.setModelUpdates(auth.uid, modelUpdates, clock.now());
       }
       await options.mailing.touch(auth.uid, clock.now());
       send(res, 200, await options.mailing.preferences(auth.uid), { ...cors, "cache-control": "no-store" });
@@ -976,7 +1016,31 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
     }
 
     if (path === "/v1/admin/reports" && req.method === "GET") {
-      send(res, 200, await handleAdminListReports({ store, clock, ids }, auth.uid, pageFrom(url)), cors);
+      const page = await handleAdminListReports({ store, clock, ids }, auth.uid, pageFrom(url));
+      // When each report was last answered, so the queue shows who already heard back. Mail being
+      // unavailable must not take the list down with it.
+      const repliedAt = options.mailing === undefined ? {} : await options.mailing.repliedAt(page.rows.map((row) => row.reportId)).catch(() => ({}));
+      send(res, 200, { ...page, repliedAt }, cors);
+      return;
+    }
+
+    const reportReply = /^\/v1\/admin\/reports\/([^/]+)\/reply$/.exec(path);
+    if (reportReply !== null && req.method === "POST") {
+      const raw = await jsonBodyOr400();
+      if (raw === undefined) return;
+      const outcome = await handleReportReply(
+        { store, clock, ...(options.mailing === undefined ? {} : { mailing: options.mailing }), ...(options.reportReplyMailer === undefined ? {} : { mailer: options.reportReplyMailer }) },
+        auth.uid, decodeURIComponent(reportReply[1] ?? ""), raw,
+      );
+      send(res, outcome.status, outcome.body, cors);
+      return;
+    }
+
+    if (path === "/v1/admin/email/announce" && req.method === "POST") {
+      const raw = await jsonBodyOr400();
+      if (raw === undefined) return;
+      const outcome = await handleAnnounce({ store, clock, siteOrigin, ...(options.mailing === undefined ? {} : { mailing: options.mailing }) }, auth.uid, raw);
+      send(res, outcome.status, outcome.body, cors);
       return;
     }
 

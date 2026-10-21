@@ -265,7 +265,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "workbench.toolsPage": {
     actions: [command("tools.open", "Open Tools"), command("tools.addServer", "Add a connector"), command("tools.servers", "Connectors"), command("tools.skills", "Skills")],
-    keywords: ["tools", "mcp", "mcp server", "model context protocol", "connectors", "skills", "plugins", "integrations", "marketplace", "playwright", "context7", "figma", "netlify", "chrome devtools", "tool access", "server not working", "agents and tools", "claude desktop extension", ".mcpb", "claude code plugin", "chatgpt plugin", "gpt actions", "openapi", "import from cursor", "import from vs code", "windsurf", "api token", "encrypted values"],
+    keywords: ["tools", "mcp", "mcp server", "model context protocol", "connectors", "skills", "plugins", "integrations", "marketplace", "playwright", "context7", "figma", "netlify", "chrome devtools", "roblox", "roblox studio", "tool access", "server not working", "agents and tools", "claude desktop extension", ".mcpb", "claude code plugin", "chatgpt plugin", "gpt actions", "openapi", "import from cursor", "import from vs code", "windsurf", "api token", "encrypted values"],
   },
   "ai.seesYourApp": {
     actions: [command("ai.checkApp", "Check my running app"), command("workspace.browser", "Open browser")],
@@ -274,6 +274,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   "ai.agentTools": {
     actions: [command("tools.builtIn", "Show the built-in tools")],
     keywords: ["delete file", "move file", "rename file", "dev server", "background command", "npm run dev", "long command", "timeout", "plan", "checklist", "todo list", "undo delete", "agent tools", "what can the ai do", "assistant abilities", "question", "ask me", "asks me", "choose an option", "multiple choice", "pick one", "which one", "type your own answer", "dismiss the question", "answer a question"],
+  },
+  "ai.operatesAdcode": {
+    actions: [command("ai.setUpConnector", "Set up a connector for me")],
+    keywords: ["do it for me", "ai does it", "connect roblox", "roblox studio", "roblox mcp", "connect mcp", "add mcp server", "change a setting for me", "open a view", "ai settings", "ai can't", "ai said it cannot", "does adcode support", "ai lied", "honest", "operate adcode", "use adcode"],
   },
   "ai.memoryEditor": {
     actions: [command("tools.memory", "Open project memory")],
@@ -422,7 +426,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "adcode.formatting.organizeImportsOnSave": {
     actions: [command("edit.organizeImports", "Organize now")],
-    keywords: ["sort imports", "unused import", "tidy imports"],
+    // Plural on purpose. electron-vite finds the main bundle's last import statement with a
+    // regex, and the singular word followed by a closing quote reads to it as one - it then
+    // splices its CommonJS shim into the middle of this string and the build fails.
+    keywords: ["sort imports", "unused imports", "tidy imports"],
   },
   "adcode.navigation.fuzzyFileOpen": {
     actions: [command("go.file", "Go to a file")],

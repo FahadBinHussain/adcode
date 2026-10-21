@@ -13,6 +13,7 @@
  * appears without a deploy.
  */
 import { readApi } from "./apiRead";
+import { WEB_DOCS } from "./webDocs";
 
 export interface Post {
   slug: string;
@@ -49,6 +50,7 @@ interface PostSource {
 const REVALIDATE_SECONDS = 60;
 
 const SOURCES: readonly PostSource[] = [
+  ...WEB_DOCS.map((doc) => ({ ...doc, surface: "docs" as const })),
   {
     slug: "installing-adcode",
     title: "Installing ADCode",

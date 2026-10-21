@@ -13,8 +13,11 @@ import { createConnectorSecrets } from "./connectorSecrets.ts";
 import { createConnectorSources, type PendingDraft } from "./connectorImport.ts";
 import { extensionRoot, installArchive, installFolder, pluginRoot, removeInstalled } from "./connectorInstall.ts";
 import { confirmInWindow } from "./themedConfirm.ts";
+import { setFeatureSurface } from "@adcode/help";
+import { ADCODE_APP_TOOLS, createAdcodeAppTools } from "./adcodeAppTools.ts";
+import { currentSettings, writeSetting } from "./settings.ts";
 
-export { ASSISTANT_EXTENSION_TOOLS };
+export { ASSISTANT_EXTENSION_TOOLS, ADCODE_APP_TOOLS };
 let service: ReturnType<typeof createAssistantControlsService> | null = null;
 function announce(): void {
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CHANNELS.aiControlsChanged);
@@ -62,8 +65,38 @@ export function assistantControls() {
   }
   return service;
 }
+/** The web host runs this same code with no desktop; its features and connectors are the web's. */
+const onWeb = process.env["ADCODE_PLATFORM"] === "web";
+if (onWeb) setFeatureSurface("web");
+
+let appTools: ToolRunner | null = null;
+/** ADCode itself as tools: its features, its settings, its connectors. */
+function adcodeAppTools(): ToolRunner {
+  appTools ??= createAdcodeAppTools({
+    controls: assistantControls(),
+    confirm: (title, detail, signal) =>
+      confirmInWindow(BrowserWindow.getFocusedWindow(), { title, body: detail, confirmLabel: "Allow", cancelLabel: "Cancel" }, signal),
+    platform: onWeb ? "linux" : process.platform,
+    settings: currentSettings,
+    writeSetting,
+    // The window the person is using; the menu's own channel, so it runs like a menu choice.
+    runCommand: (command) => {
+      const target = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((window) => !window.isDestroyed()) ?? null;
+      if (target === null || target.isDestroyed()) return false;
+      target.webContents.send(CHANNELS.menuCommand, command);
+      return true;
+    },
+  });
+  return appTools;
+}
+
 export function withAssistantExtensions(base: ToolRunner): ToolRunner {
   const names = new Set(ASSISTANT_EXTENSION_TOOLS.map(tool => tool.name));
-  return { run: (call, signal) => names.has(call.name) ? assistantControls().runner.run(call, signal) : base.run(call, signal) };
+  const appNames = new Set(ADCODE_APP_TOOLS.map(tool => tool.name));
+  return {
+    run: (call, signal) => names.has(call.name) ? assistantControls().runner.run(call, signal)
+      : appNames.has(call.name) ? adcodeAppTools().run(call, signal)
+      : base.run(call, signal),
+  };
 }
 export async function closeAssistantControls(): Promise<void> { await service?.close(); }

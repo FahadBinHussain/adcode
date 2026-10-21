@@ -70,17 +70,21 @@ export function ReportsBody({ initialQuery = "" }: { initialQuery?: string }) {
   const [awarding, setAwarding] = useState<string | null>(null);
   const [awarded, setAwarded] = useState<Record<string, string>>({});
   const [customAward, setCustomAward] = useState("");
+  // Replies by email: which report has the box open, its draft, and when each report was answered.
+  const [replying, setReplying] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [repliedAt, setRepliedAt] = useState<Record<string, number>>({});
   // Open first, because the queue is the reason to be here. A pasted id widens it, or the
   // row somebody followed a link to would be hidden by a filter they did not choose.
   const [filter, setFilter] = useState<Filter>(initialQuery === "" ? "open" : "all");
   const [query, setQuery] = useState(initialQuery);
 
   const load = useCallback(async () => {
-    const found = await apiFetch<{ rows: ReportRow[] }>({
+    const found = await apiFetch<{ rows: ReportRow[]; repliedAt?: Record<string, number> }>({
       path: "/admin/reports?limit=100",
       token: await token(),
     });
-    if (found.ok) setRows(found.value.rows);
+    if (found.ok) { setRows(found.value.rows); setRepliedAt(found.value.repliedAt ?? {}); }
     else setError(MESSAGES[found.error]);
     setLoading(false);
   }, [token]);
@@ -133,6 +137,37 @@ export function ReportsBody({ initialQuery = "" }: { initialQuery?: string }) {
     }
     setAwarded((current) => ({ ...current, [reportId]: result.value.micros }));
     setRows((current) => current.map((r) => (r.reportId === reportId ? { ...r, status: "closed" } : r)));
+  };
+
+  /*
+   * Answer the person by email, at their account's address (the server chooses it, never this
+   * page). Sending moves the report to in progress, or to done with the second button.
+   */
+  const reply = async (reportId: string, close: boolean): Promise<void> => {
+    const message = replyText.trim();
+    if (message.length === 0) return;
+    setBusy(reportId);
+    const result = await apiFetch<{ ok: true; status: string; repliedAt: number }>({
+      path: `/admin/reports/${encodeURIComponent(reportId)}/reply`,
+      token: await token(),
+      method: "POST",
+      body: { message, close },
+    });
+    setBusy(null);
+    if (!result.ok) {
+      setError(
+        result.error === "invalid-state"
+          ? "No reply can go to this person: the account has no email address, or the address bounced or marked ADCode as spam."
+          : result.error === "provider-unavailable"
+            ? "The email service refused the reply or is not set up. Nothing was sent."
+            : MESSAGES[result.error],
+      );
+      return;
+    }
+    setReplying(null);
+    setReplyText("");
+    setRepliedAt((current) => ({ ...current, [reportId]: result.value.repliedAt }));
+    setRows((current) => current.map((r) => (r.reportId === reportId ? { ...r, status: result.value.status } : r)));
   };
 
   const remove = async (reportId: string): Promise<void> => {
@@ -225,15 +260,51 @@ export function ReportsBody({ initialQuery = "" }: { initialQuery?: string }) {
                   </span>
                 </p>
               </div>
-              <span className="pill" data-tone={STATUS_TONE[report.status] ?? "neutral"}>
-                {STATUS_LABEL[report.status] ?? report.status}
+              <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                {repliedAt[report.reportId] !== undefined && (
+                  <span className="pill" data-tone="live" title="The person was answered by email">Replied {when(repliedAt[report.reportId] ?? 0)}</span>
+                )}
+                <span className="pill" data-tone={STATUS_TONE[report.status] ?? "neutral"}>
+                  {STATUS_LABEL[report.status] ?? report.status}
+                </span>
               </span>
             </div>
 
             {/* Whitespace preserved: people paste stack traces and steps into this box. */}
             <p style={{ whiteSpace: "pre-wrap", color: "var(--text)" }}>{report.body}</p>
 
+            {replying === report.reportId && (
+              <div style={{ display: "grid", gap: 8, margin: "4px 0 12px" }}>
+                <label className="field-hint" htmlFor={`reply-${report.reportId}`}>
+                  Reply by email - it goes to the account&apos;s own address, from adcode@bluethenics.com, and their answer comes back to the team inbox.
+                </label>
+                <textarea
+                  id={`reply-${report.reportId}`}
+                  className="input"
+                  rows={5}
+                  maxLength={5000}
+                  value={replyText}
+                  placeholder="What was wrong, what changed, and what they can do now."
+                  onChange={(event) => setReplyText(event.target.value)}
+                />
+                <div className="actions">
+                  <button className="btn btn-primary btn-small" disabled={busy === report.reportId || replyText.trim() === ""} onClick={() => void reply(report.reportId, true)}>
+                    Send and mark done
+                  </button>
+                  <button className="btn btn-outline btn-small" disabled={busy === report.reportId || replyText.trim() === ""} onClick={() => void reply(report.reportId, false)}>
+                    Send
+                  </button>
+                  <button className="btn btn-outline btn-small" onClick={() => { setReplying(null); setReplyText(""); }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
             <div className="actions">
+              {replying !== report.reportId && (
+                <button className="btn btn-outline btn-small" onClick={() => { setReplying(report.reportId); setReplyText(""); }}>
+                  Reply by email
+                </button>
+              )}
               {report.status !== "triaged" && (
                 <button
                   className="btn btn-outline btn-small"

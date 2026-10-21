@@ -78,6 +78,7 @@ export function StatusBody() {
   const [body, setBody] = useState("");
 
   const [drafts, setDrafts] = useState<Record<string, { status: string; body: string }>>({});
+  const [emailed, setEmailed] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const found = await apiFetch<{ incidents: StatusIncident[] }>({ path: "/admin/status", token: await token() });
@@ -150,6 +151,24 @@ export function StatusBody() {
     setPosted(`${result.value.title} — ${STATE_LABEL[result.value.status] ?? result.value.status}`);
     setDrafts((current) => ({ ...current, [incidentId]: { status: draft.status, body: "" } }));
     void load();
+  };
+
+  /** Queues the incident's newest update for status subscribers; the server refuses a repeat. */
+  const emailSubscribers = async (incidentId: string): Promise<void> => {
+    setBusy(true);
+    const result = await apiFetch<{ queued: number; sendingEnabled: boolean }>({
+      path: "/admin/email/announce",
+      token: await token(),
+      method: "POST",
+      body: { topic: "status", incident: incidentId },
+    });
+    setBusy(false);
+    const said = !result.ok
+      ? result.error === "invalid-state" ? "This update was already emailed." : "Could not queue the email. Try again."
+      : result.value.sendingEnabled
+        ? `Queued for ${result.value.queued} ${result.value.queued === 1 ? "person" : "people"}; the hourly sender delivers it.`
+        : `Queued for ${result.value.queued}, but sending is switched off until a postal address is set.`;
+    setEmailed((current) => ({ ...current, [incidentId]: said }));
   };
 
   const setDraft = (incidentId: string, patch: Partial<{ status: string; body: string }>): void =>
@@ -245,6 +264,8 @@ export function StatusBody() {
         </div>
       </form>
 
+      <ModelEmails />
+
       <h3 style={{ fontSize: 18, marginBottom: 12 }}>Incidents</h3>
 
       {rows.length === 0 ? (
@@ -281,6 +302,14 @@ export function StatusBody() {
                     </li>
                   ))}
                 </ol>
+
+                {/* Status emails go only to people who ticked "email me about outages", once per update. */}
+                <div className="actions" style={{ marginTop: 12 }}>
+                  <button type="button" className="btn btn-outline btn-small" disabled={busy || incident.updates.length === 0} onClick={() => void emailSubscribers(incident.incidentId)}>
+                    Email status subscribers about the latest update
+                  </button>
+                  {emailed[incident.incidentId] !== undefined && <span className="field-hint">{emailed[incident.incidentId]}</span>}
+                </div>
 
                 <details className="admin-status-compose" style={{ marginTop: 16 }}>
                   <summary>{incident.status === "resolved" ? "Reopen or add an update" : "Add an update"}</summary>
@@ -331,5 +360,70 @@ export function StatusBody() {
         posting the correction, the way it works for everyone reading.
       </p>
     </>
+  );
+}
+
+/**
+ * Model emails go only to people who ticked "email me about the AI models". A new-model email names
+ * a model from the included catalog with the administrator's one-paragraph summary; the performance
+ * report is built by the server from the same measurements as /status and cannot be typed over.
+ */
+function ModelEmails() {
+  const { token } = useAuth();
+  const [models, setModels] = useState<Array<{ model: string; name: string }>>([]);
+  const [model, setModel] = useState("");
+  const [summary, setSummary] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const found = await apiFetch<{ models: Array<{ model: string; name: string }> }>({ path: "/status", token: await token() });
+      if (found.ok) setModels(found.value.models.map(({ model: id, name }) => ({ model: id, name })));
+    })();
+  }, [token]);
+
+  const send = async (body: Record<string, unknown>, what: string): Promise<void> => {
+    setBusy(true);
+    setSaid(null);
+    const result = await apiFetch<{ queued: number; sendingEnabled: boolean }>({ path: "/admin/email/announce", token: await token(), method: "POST", body: { topic: "models", ...body } });
+    setBusy(false);
+    setSaid(!result.ok
+      ? result.error === "invalid-state" ? `${what} was already emailed today, or there is no model data yet.` : `Could not queue ${what}. Try again.`
+      : result.value.sendingEnabled
+        ? `${what}: queued for ${result.value.queued} ${result.value.queued === 1 ? "person" : "people"}; the hourly sender delivers it.`
+        : `${what}: queued for ${result.value.queued}, but sending is switched off until a postal address is set.`);
+  };
+
+  return (
+    <section style={{ maxWidth: 620, marginBottom: 40 }}>
+      <h3 style={{ fontSize: 18, marginBottom: 6 }}>Email model subscribers</h3>
+      <p className="field-hint" style={{ marginBottom: 14 }}>
+        Only people who ticked &ldquo;email me about the AI models&rdquo; receive these. Each one goes out once.
+      </p>
+      <div className="actions" style={{ marginBottom: 18 }}>
+        <button type="button" className="btn btn-outline btn-small" disabled={busy} onClick={() => void send({ performance: true }, "The performance report")}>
+          Email the last 30 days of model performance
+        </button>
+      </div>
+      <form onSubmit={(event) => { event.preventDefault(); if (model !== "" && summary.trim() !== "") void send({ model, summary: summary.trim() }, "The new-model email"); }}>
+        <div className="field">
+          <label htmlFor="m-model">New free model</label>
+          <select id="m-model" className="select" value={model} onChange={(event) => setModel(event.target.value)}>
+            <option value="">Choose a model</option>
+            {models.map((entry) => <option key={entry.model} value={entry.model}>{entry.name}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="m-summary">What it is good at</label>
+          <span className="field-hint">{summary.length}/600. One short paragraph, written for someone choosing a model.</span>
+          <textarea id="m-summary" className="textarea" maxLength={600} value={summary} onChange={(event) => setSummary(event.target.value)} />
+        </div>
+        <div className="actions">
+          <button type="submit" className="btn btn-outline btn-small" disabled={busy || model === "" || summary.trim() === ""}>Email the new model</button>
+        </div>
+      </form>
+      {said !== null && <p className="field-hint" role="status" style={{ marginTop: 10 }}>{said}</p>}
+    </section>
   );
 }

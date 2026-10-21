@@ -106,6 +106,9 @@ const STEP_LABELS: Readonly<Record<string, string>> = {
   load_skill: "Read skill",
   load_builtin_skill: "Read skill",
   call_mcp: "Use MCP tool",
+  adcode_features: "Look up ADCode",
+  adcode_action: "Use ADCode",
+  adcode_connectors: "Set up connector",
   message_teammate: "Message teammate",
   read_messages: "Read messages",
 };
@@ -127,7 +130,8 @@ export type ToolStepIcon = "search" | "globe" | "file" | "edit" | "terminal" | "
 export function toolStepIcon(name: string): ToolStepIcon {
   const clean = name.trim();
   if (clean === "update_plan" || clean === "delegate_task") return "checklist";
-  if (clean === "call_mcp" || clean === "discover_capabilities") return "plug";
+  if (clean === "call_mcp" || clean === "discover_capabilities" || clean === "adcode_connectors") return "plug";
+  if (clean === "adcode_features" || clean === "adcode_action") return "tool";
   if (clean === "view_page" || clean === "audit_page" || clean === "open_preview") return "eye";
   if (/fetch|url|web/i.test(clean)) return "globe";
   if (/search|grep|glob|find/i.test(clean)) return "search";

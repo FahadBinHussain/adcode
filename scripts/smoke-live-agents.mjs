@@ -165,7 +165,10 @@ async function encodeRecording(frames, box, ms) {
 const env = { ...process.env, ADCODE_AD_SERVER: "http://127.0.0.1:9" };
 delete env.ELECTRON_RUN_AS_NODE;
 const port = Number(process.env.ADCODE_LIVE_SMOKE_PORT ?? 9471);
-const child = spawn(require("electron"), ["apps/desktop", `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
+// A covered or minimised window stops sending screencast frames (a 2026-10-21 take caught 7), so
+// a recording keeps the renderer painting the way scripts/record-hero.mjs does.
+const filming = record ? ["--disable-features=CalculateNativeWinOcclusion", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"] : [];
+const child = spawn(require("electron"), ["apps/desktop", `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`, ...filming], {
   cwd: root, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
 });
 let log = "";

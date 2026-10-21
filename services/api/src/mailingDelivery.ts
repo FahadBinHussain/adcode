@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   MAILING_CAMPAIGN, MAILING_REPLY_TO, MAILING_SENDER,
-  type MailingStore, type EmailJob,
+  type MailingStore, type EmailJob, type AnnouncementJob, type SendResult,
 } from "./mailing.ts";
 
 export function verifyMailingWebhook(body: string, headers: Record<string, string | undefined>, secret: string, now: number): boolean {
@@ -80,4 +80,82 @@ export async function runMailingBatch(options: MailerOptions): Promise<{ status:
     await new Promise((resolve) => setTimeout(resolve, 600));
   }
   return { status: "complete", sent, failed };
+}
+
+/** One Resend send. Retryable: rate limits, server errors and ambiguous network failures. */
+async function resendEmail(fetcher: typeof fetch, apiKey: string, idempotencyKey: string, body: Record<string, unknown>): Promise<SendResult> {
+  try {
+    const response = await fetcher("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: "Bearer " + apiKey, "content-type": "application/json", "Idempotency-Key": idempotencyKey },
+      signal: AbortSignal.timeout(20_000),
+      body: JSON.stringify({ from: MAILING_SENDER, reply_to: MAILING_REPLY_TO, ...body }),
+    });
+    if (response.ok) {
+      const data = await response.json() as { id?: string };
+      return typeof data.id === "string" ? { providerId: data.id } : { retry: true, code: "invalid-provider-response" };
+    }
+    return { retry: response.status === 429 || response.status >= 500, code: "provider-" + response.status };
+  } catch {
+    return { retry: true, code: "provider-timeout" };
+  }
+}
+
+export interface AnnouncementMailerOptions {
+  store: MailingStore;
+  apiKey?: string;
+  webhookSecret?: string;
+  siteOrigin: string;
+  render(job: AnnouncementJob, unsubscribeUrl: string, postalAddress: string): Promise<RenderedMail>;
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+}
+
+/**
+ * Announcements and status updates, in the same bounded way as the return campaign: the
+ * database owns consent, suppressions, leases and the one daily budget all bulk mail shares, and
+ * nothing goes out until sending is switched on with a postal address.
+ */
+export async function runAnnouncementBatch(options: AnnouncementMailerOptions): Promise<{ status: string; sent: number; failed: number }> {
+  const { store, apiKey, webhookSecret } = options;
+  const settings = await store.settings();
+  if (!settings.enabled) return { status: "disabled", sent: 0, failed: 0 };
+  if (!apiKey || !webhookSecret || !settings.postalAddress || settings.postalAddress.trim().length < 10) {
+    return { status: "configuration-required", sent: 0, failed: 0 };
+  }
+  if (!settings.senderVerified) return { status: "domain-not-verified", sent: 0, failed: 0 };
+  const origin = new URL(options.siteOrigin);
+  if (origin.protocol !== "https:") return { status: "https-required", sent: 0, failed: 0 };
+  const fetcher = options.fetchImpl ?? fetch, now = options.now ?? Date.now;
+  const jobs = await store.claimAnnouncements(now(), 10);
+  let sent = 0, failed = 0;
+  for (const job of jobs) {
+    // A status or model email's link stops only that kind; every other announcement's link stops all updates.
+    const unsubscribeUrl = origin.origin + "/v1/email/unsubscribe?token=" + encodeURIComponent(job.unsubscribeToken) + (job.topic === "product" ? "" : "&topic=" + job.topic);
+    const mail = await options.render(job, unsubscribeUrl, settings.postalAddress);
+    const outcome = await resendEmail(fetcher, apiKey, "announce/" + job.id, {
+      to: [job.email], ...mail,
+      headers: { "List-Unsubscribe": "<" + unsubscribeUrl + ">", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+      tags: [{ name: "campaign", value: job.topic === "product" ? "announcement" : job.topic }],
+    });
+    await store.finishAnnouncement(job.id, outcome, now());
+    if ("providerId" in outcome) sent += 1;
+    else failed += 1;
+    if (!("providerId" in outcome) && outcome.code === "provider-429") break;
+    await new Promise((resolve) => setTimeout(resolve, 600));
+  }
+  return { status: "complete", sent, failed };
+}
+
+/**
+ * A direct answer to one person's report. Not bulk mail and not marketing, so it does not wait
+ * for the sending switch or the postal address - but it needs the verified sender, it never goes
+ * to an address that bounced or complained, and the idempotency key makes a double click one email.
+ */
+export async function sendReportReply(options: { apiKey?: string; senderVerified: boolean; fetchImpl?: typeof fetch }, input: { replyId: string; to: string; mail: RenderedMail }): Promise<SendResult> {
+  if (!options.apiKey) return { retry: false, code: "configuration-required" };
+  if (!options.senderVerified) return { retry: false, code: "domain-not-verified" };
+  return resendEmail(options.fetchImpl ?? fetch, options.apiKey, "report-reply/" + input.replyId, {
+    to: [input.to], ...input.mail, tags: [{ name: "campaign", value: "report-reply" }],
+  });
 }

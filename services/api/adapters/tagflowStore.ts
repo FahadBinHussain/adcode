@@ -57,5 +57,9 @@ export function createTagflowStore(lazy: () => Promise<SupabaseClient>): Tagflow
       const { error } = await (await lazy()).rpc("settle_included_ai", { p_id: id, p_input: usage.inputTokens, p_output: usage.outputTokens, p_cost: usage.costMicros, p_credits: usage.failed ? 0 : usage.millicredits ?? 0, p_estimated: usage.estimated, p_failed: usage.failed });
       check(error);
     },
+    async claimVerificationSend(uid, now, gapMs) {
+      const { data, error } = await (await lazy()).rpc("claim_verification_send", { p_uid: uid, p_now: now, p_gap_ms: gapMs });
+      check(error); return data === true;
+    },
   };
 }

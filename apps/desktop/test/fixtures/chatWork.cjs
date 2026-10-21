@@ -68,6 +68,17 @@ app.whenReady().then(async () => {
       emit('ai.onEvent', { kind: 'tool-draft', id: 'write-2', name: 'edit_file', path: 'styles.css', edit: 0, append: '\\nmain { display: grid; }' });
       await pause(120);
       const oneWindowPerTurn = transcript.querySelectorAll('.live-window-inline').length === 2;
+      // The turn's cards follow the work: something lands below them, the next update brings
+      // them back under it - plan first, then the live window.
+      emit('ai.onEvent', { kind: 'tool-call', call: { id: 'plan-1', name: 'update_plan', input: { steps: [{ step: 'Style the page', status: 'in_progress' }, { step: 'Check it', status: 'pending' }] } } });
+      await pause(40);
+      const landed = document.createElement('p'); landed.className = 'landed-below'; transcript.append(landed);
+      emit('ai.onEvent', { kind: 'tool-draft', id: 'write-2', name: 'edit_file', path: 'styles.css', edit: 0, append: '\\nfooter { gap: 8px; }' });
+      await pause(120);
+      const plan = transcript.querySelector('.chat-plan'), secondWindow = transcript.querySelectorAll('.live-window-inline')[1];
+      const below = (a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      const lastTurn = () => [...transcript.querySelectorAll('.chat-turn')].at(-1);
+      const cardsFollowTheWork = !!plan && !!lastTurn() && below(landed, plan) && below(plan, secondWindow) && below(lastTurn(), plan);
       emit('ai.onEvent', { kind: 'text', text: '| File | Purpose |\\n|---|---|\\n| index.html | App shell |\\n| styles.css | Styling |\\n| app.js | Logic |\\n\\n| A | B | C | D | E | F |\\n|---|---|---|---|---|---|\\n|1|2|3|4|5|6|' });
       await waitFor(() => transcript.querySelectorAll('table').length === 2, 'Real tables');
       const table = transcript.querySelector('table');
@@ -75,7 +86,10 @@ app.whenReady().then(async () => {
       document.querySelector('#fixture').style.width = '420px'; await pause(120);
       const wide = transcript.querySelectorAll('.chat-md-table-wrap')[1];
       const narrowTable = wide.scrollWidth > wide.clientWidth && getComputedStyle(wide).overflowX === 'auto' && wide.tabIndex === 0;
-      emit('ai.onEvent', { kind: 'turn-end' });
+      emit('ai.onEvent', { kind: 'turn-end' }); await pause(60);
+      // Settled: plan, the code it wrote, then the folded steps - and the answer last.
+      const finishedTurn = lastTurn();
+      const cardsSettleAboveTheTurn = below(plan, finishedTurn) && below(secondWindow, finishedTurn) && below(finishedTurn, transcript.querySelectorAll('table')[1]);
       widget.newConversation(); await pause(100);
       const continueButton = [...document.querySelectorAll('.chat-quick-action')].find(button => button.textContent.startsWith('Continue'));
       if (!continueButton) throw new Error('Missing continue saved chat control');
@@ -83,7 +97,7 @@ app.whenReady().then(async () => {
       const card = transcript.querySelector('.chat-checkpoint');
       const restoredCard = card.querySelector('.chat-checkpoint-file').textContent === 'app.js' && !!card.querySelector('.chat-checkpoint-review') && transcript.textContent.indexOf('Built three files.') < transcript.textContent.indexOf('Undid edits');
       const restoredUndoState = card.dataset.state === 'undone' && card.querySelector('.chat-checkpoint-undo').hidden;
-      return { typingInline, followsGrowingCode, respectsScrollUp, settlesCode, oneWindowPerTurn, realTable, narrowTable, restoredCard, restoredUndoState, errors };
+      return { typingInline, followsGrowingCode, respectsScrollUp, settlesCode, oneWindowPerTurn, cardsFollowTheWork, cardsSettleAboveTheTurn, realTable, narrowTable, restoredCard, restoredUndoState, errors };
     })()`);
     console.log('CHAT_WORK_RESULTS=' + JSON.stringify(results)); win.destroy(); app.exit(0);
   } catch (error) { console.error(error); win.destroy(); app.exit(1); }

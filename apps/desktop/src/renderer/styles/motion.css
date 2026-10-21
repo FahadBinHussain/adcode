@@ -160,6 +160,35 @@
   :root:not([data-reduced-motion="true"]) .composer-meter-fill {
     transition: stroke-dashoffset 300ms cubic-bezier(0.23, 1, 0.32, 1), stroke 200ms ease;
   }
+
+  /*
+   * Every control answers the pointer, everywhere - not only inside the five surfaces listed
+   * above. Hover is a colour fade (cheap: paint only, no layout); a press gives a hair under
+   * the finger. `:where()` keeps this at zero weight, so any control that already names its
+   * own transition keeps it. Lists you walk with the arrow keys - menus, the palette, Go to
+   * File, the tree - are left out on purpose: a fade on every keystroke reads as lag.
+   */
+  :root:not([data-reduced-motion="true"]) :where(button, summary, [role="button"], [role="tab"]):not(:where(.menu-item, .palette-row, .quickopen-row, [role="option"], [role="menuitem"], [role="treeitem"], .tree-row)) {
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease, scale 120ms var(--motion-curve), translate 160ms var(--motion-curve);
+  }
+  :root:not([data-reduced-motion="true"]) :is(.ghost-button, .icon-button, .ad-btn, .chat-send, .chat-team-button, .composer-tools > summary, .chat-model-pill, .chat-mode-pill, .chat-quick-action, .chat-setup-action, .chat-message-action, .composer-help, .tree-action, .sidebar-close, .titlebar-action, .web-sidebar-search, .web-tab-close, .tab-close, .floating-panel-actions button, .project-toolbar button, .code-vibe-button, .workspace-tab-add, .workspace-tab-close):active:not(:disabled) {
+    scale: var(--motion-press);
+  }
+
+  /*
+   * The popovers built on <details> - Tools in the composer, the chat's ⋯ - open out of the
+   * button that holds them, the way the menus above do. Pointer-opened and occasional, so they
+   * earn the 150ms; the command palette, opened from the keyboard a hundred times a day, does
+   * not and stays instant.
+   */
+  :root:not([data-reduced-motion="true"]) .composer-tools[open] > .composer-tools-menu {
+    transform-origin: left bottom;
+    animation: motion-grow 150ms var(--motion-curve) backwards;
+  }
+  :root:not([data-reduced-motion="true"]) .chat-more-actions[open] > .chat-more-menu {
+    transform-origin: right top;
+    animation: motion-grow 150ms var(--motion-curve) backwards;
+  }
 }
 
 @keyframes motion-rise {

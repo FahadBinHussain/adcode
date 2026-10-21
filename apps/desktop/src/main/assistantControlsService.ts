@@ -593,7 +593,14 @@ export function createAssistantControlsService(deps: AssistantControlsDeps) {
         // Keep JSON valid even when an unusually large schema cannot fit the response budget.
         const selected: object[] = [];
         for (const item of matches.slice(0, 8)) if (JSON.stringify([...selected, item.value]).length <= 24_000) selected.push(item.value);
-        return result(JSON.stringify({ matches: selected, totalMatches: matches.length, hint: "Use a narrower query if the capability you need is missing. Only connected, enabled tools and enabled skills are searched." }));
+        // Say what exists but is off, so "nothing found" is never read as "ADCode cannot".
+        const idle = prefs.servers.filter(server => live.get(server.id)?.status !== "connected").map(server => server.id);
+        const hint = [
+          "Use a narrower query if the capability you need is missing. Only connected, enabled tools and enabled skills are searched.",
+          idle.length > 0 ? `Saved connectors not connected now: ${idle.join(", ")}.` : "",
+          "To add, connect or enable an MCP server, use adcode_connectors.",
+        ].filter(Boolean).join(" ");
+        return result(JSON.stringify({ matches: selected, totalMatches: matches.length, hint }));
       }
       if (call.name === "load_skill") {
         const root = deps.workspace();

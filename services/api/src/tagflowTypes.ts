@@ -115,4 +115,9 @@ export interface TagflowStore {
   getCreditWindows(uid: string): Promise<CreditWindows>;
   /** Atomic and idempotent. A failed settlement leaves its reservation charged. */
   settleTagflow(id: string, usage: TagflowSettlement): Promise<void>;
+  /**
+   * Claims the right to send this account one verification email: true when it has never had one
+   * from the included-AI gate, or its last one is at least `gapMs` old. Atomic across workers.
+   */
+  claimVerificationSend(uid: string, now: number, gapMs: number): Promise<boolean>;
 }

@@ -22,7 +22,7 @@ import type {
   AssistantSkillView,
   ConnectorDraftView,
 } from "../../shared/assistantControls.ts";
-import { MCP_CATALOGUE } from "../../shared/mcpCatalogue.ts";
+import { mcpCatalogueFor } from "../../shared/mcpCatalogue.ts";
 import { MCP_NODE_REQUIREMENT, mcpNodeNote } from "../../shared/mcpNode.ts";
 import { AGENT_PROFILES_SETTING, parseAgentProfiles, type AgentProfile } from "../ai/agentProfiles.ts";
 import { askThemed } from "../dialogs/confirmDialog.ts";
@@ -614,7 +614,9 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     const catalogue = el("ul", "tools-catalogue");
     catalogue.setAttribute("role", "list");
     const existing = new Set((controls?.servers ?? []).map((server) => server.id));
-    for (const entry of MCP_CATALOGUE) {
+    // On the web, servers start in the Linux cloud workspace, whatever the browser runs on.
+    const platform = web ? "linux" : navigator.userAgent.includes("Mac") ? "darwin" : navigator.userAgent.includes("Windows") ? "win32" : "linux";
+    for (const entry of mcpCatalogueFor(platform)) {
       const item = el("li", "tools-catalogue-item");
       const text = el("div", "tools-catalogue-text");
       text.append(el("strong", "", entry.name), el("p", "", entry.purpose));

@@ -21,6 +21,20 @@ export interface McpCatalogueEntry {
   /** Anything to do before it works, or null when adding it is enough. */
   readonly before: string | null;
   readonly homepage: string;
+  /**
+   * A different command on macOS, for a server that ships inside an app rather than on npm.
+   * `endpoint` and `args` above are then the Windows command.
+   */
+  readonly mac?: { readonly endpoint: string; readonly args: readonly string[] };
+  /** The platforms it exists on, when not every one. */
+  readonly platforms?: readonly ("win32" | "darwin" | "linux")[];
+}
+
+/** The entries for one platform, each with the command that platform runs. */
+export function mcpCatalogueFor(platform: string): readonly McpCatalogueEntry[] {
+  return MCP_CATALOGUE
+    .filter((entry) => entry.platforms === undefined || (entry.platforms as readonly string[]).includes(platform))
+    .map((entry) => (platform === "darwin" && entry.mac !== undefined ? { ...entry, endpoint: entry.mac.endpoint, args: entry.mac.args } : entry));
 }
 
 export const MCP_CATALOGUE: readonly McpCatalogueEntry[] = [
@@ -83,5 +97,18 @@ export const MCP_CATALOGUE: readonly McpCatalogueEntry[] = [
     args: [],
     before: "Open the Figma desktop app and turn on the Dev Mode MCP server in its preferences.",
     homepage: "https://help.figma.com/hc/en-us/articles/32132100833559",
+  },
+  {
+    // The commands are the ones Roblox's own setup page gives every client.
+    id: "roblox-studio",
+    name: "Roblox Studio",
+    purpose: "Read and edit Luau scripts, explore the place's instance tree, run code and playtest in the Roblox Studio you have open.",
+    transport: "stdio",
+    endpoint: "cmd.exe",
+    args: ["/c", "%LOCALAPPDATA%\\Roblox\\mcp.bat"],
+    before: "Open Roblox Studio, then Assistant > ... > Manage MCP Servers, and turn on Enable Studio as MCP server.",
+    homepage: "https://create.roblox.com/docs/studio/mcp",
+    mac: { endpoint: "/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP", args: [] },
+    platforms: ["win32", "darwin"],
   },
 ];
