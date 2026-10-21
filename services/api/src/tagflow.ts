@@ -33,7 +33,7 @@ export interface TagflowOptions {
   identity?: AccountIdentity;
 }
 
-/** Two retries of a provider's rate limit, then the person hears about it. */
+/** Two retries of a provider's rate limit when no other included model can answer, then the person hears about it. */
 export const UPSTREAM_RATE_LIMIT_WAITS_MS: readonly number[] = [700, 1600];
 
 /**
@@ -566,10 +566,14 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
           const fallback = fallbackFor(config, body, parsed, rate, abort.signal, deps.clock.now());
           if (fallback !== null) await switchTo(fallback, "rejected", "model-busy");
         }
-        upstream = await retryRateLimit(await route.send());
+        upstream = await route.send();
+        // A saturated provider is slow to refuse - each 429 from GLM took ~16 s on 2026-10-21, so
+        // two retries held people ~48 s before a backup that answers in ~3 s. With a backup to
+        // hand, the first refusal moves on; the retries are for when nothing else can answer.
+        const fallback = upstream.status === 429 && !abort.signal.aborted && served === parsed ? fallbackFor(config, body, parsed, rate, abort.signal, deps.clock.now()) : null;
+        if (fallback === null) upstream = await retryRateLimit(upstream);
         if (upstream.status === 429 && !abort.signal.aborted) {
           health.strike(served.model.id, deps.clock.now());
-          const fallback = served === parsed ? fallbackFor(config, body, parsed, rate, abort.signal, deps.clock.now()) : null;
           if (fallback !== null) {
             if (metric !== null) metric.upstreamStatus = 429;
             await upstream.body?.cancel();

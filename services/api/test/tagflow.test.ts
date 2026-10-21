@@ -218,7 +218,7 @@ describe("included Tagflow AI", () => {
       expect(response.status).toBe(200);
       expect(response.headers.get("x-adcode-fallback-model")).toBe("backup");
       expect(await response.text()).toContain("Hello");
-      expect(calledWith("coder")).toBe(3); expect(calledWith("backup")).toBe(1);
+      expect(calledWith("coder")).toBe(1); expect(calledWith("backup")).toBe(1);
       expect(recorded(writes).map(({ modelId, outcome, errorCode }) => [modelId, outcome, errorCode])).toEqual([["coder", "provider_error", "upstream-rate-limit"], ["backup", "success", null]]);
       const credits = (await (await call("/ai/tagflow/usage", "user")).json() as { credits: { session: { used: number } } }).credits.session.used;
       expect(credits).toBeGreaterThan(0); expect(credits).toBeLessThan(0.015);
@@ -228,17 +228,35 @@ describe("included Tagflow AI", () => {
       await save({ ...config, models: [config.models[0]!, backup] });
       refuseCoder();
       for (let i = 0; i < 3; i++) { const response = await chat(); expect(response.status).toBe(200); await response.text(); }
-      expect(calledWith("coder")).toBe(9);
+      expect(calledWith("coder")).toBe(3);
       const writes = vi.spyOn(store, "putModelRequest");
       const cooled = await chat();
       expect(cooled.status).toBe(200); expect(cooled.headers.get("x-adcode-fallback-model")).toBe("backup"); await cooled.text();
-      expect(calledWith("coder")).toBe(9);
+      expect(calledWith("coder")).toBe(3);
       expect(recorded(writes)[0]).toMatchObject({ modelId: "coder", outcome: "rejected", errorCode: "model-busy" });
       now += 61_000;
       upstream.mockImplementation(async () => reply());
       const recovered = await chat(); expect(recovered.status).toBe(200); await recovered.text();
       expect(recovered.headers.get("x-adcode-fallback-model")).toBeNull();
-      expect(calledWith("coder")).toBe(10);
+      expect(calledWith("coder")).toBe(4);
+    });
+
+    it("moves on at the first refusal instead of retrying the busy model", async () => {
+      // A refusal from a saturated provider is slow: on 2026-10-21 each 429 took ~16 s, so two
+      // retries kept people waiting ~48 s before the backup that answers in ~3 s.
+      await save({ ...config, models: [config.models[0]!, backup] });
+      upstream.mockImplementationOnce(async () => new Response("busy", { status: 429 }));
+      const response = await chat();
+      expect(response.status).toBe(200); expect(response.headers.get("x-adcode-fallback-model")).toBe("backup"); await response.text();
+      expect(calledWith("coder")).toBe(1); expect(calledWith("backup")).toBe(1);
+    });
+
+    it("still retries a busy model when nothing else can answer", async () => {
+      await save({ ...config, models: [config.models[0]!, pricey] });
+      upstream.mockImplementationOnce(async () => new Response("busy", { status: 429 }));
+      const response = await chat();
+      expect(response.status).toBe(200); expect(response.headers.get("x-adcode-fallback-model")).toBeNull(); await response.text();
+      expect(calledWith("coder")).toBe(2); expect(calledWith("pricey")).toBe(0);
     });
 
     it("never moves a person to a model that costs more credits", async () => {
