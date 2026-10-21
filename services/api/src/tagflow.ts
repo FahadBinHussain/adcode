@@ -10,6 +10,7 @@ import type { TagflowConfig, TagflowModel, TagflowSettlement } from "./tagflowTy
 import { createWorkerSecrets, type WorkerSecrets } from "./workerSecrets.ts";
 import { includedProvider, isCustomProviderUrl, modelProvider, providerConnections, type IncludedProviderId } from "./includedProviders.ts";
 import { DEFAULT_CREDIT_PLAN, creditCharge, creditsView, millicreditsFor, modelCreditRate, parseCreditPlan, untilText, type CreditPlan } from "./credits.ts";
+import { DEFAULT_PAID_CONFIG, isPaidModel } from "./paidTokens.ts";
 import { MODEL_FEEDBACK_CATEGORIES, type ModelRequestOutcome, type ModelRequestRecord, type ModelRequestSource } from "./tagflowReportTypes.ts";
 import { completeModelReport, parseReportRange } from "./tagflowReports.ts";
 import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, AI_PERSONAS, audienceChoice, audienceCountry, observedUse, type ModelAudienceProfile } from "./modelAudience.ts";
@@ -324,7 +325,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       const resetsAt = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
       const remainingDay = { "retry-after": String(Math.max(1, Math.ceil((resetsAt - deps.clock.now()) / 1000))) };
       if (url.pathname === "/v1/ai/tagflow/config" && request.method === "GET") {
-        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI", contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens), creditRate: modelCreditRate(model, config) })) : [], requiresVerifiedAccount: true, unlimited: true, credits: config.credits ?? DEFAULT_CREDIT_PLAN });
+        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI", contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens), creditRate: modelCreditRate(model, config), paid: isPaidModel(model, config.paid) })) : [], requiresVerifiedAccount: true, unlimited: true, credits: config.credits ?? DEFAULT_CREDIT_PLAN, paid: config.paid ?? DEFAULT_PAID_CONFIG });
       }
       const auth = await authenticate(deps, request.headers.get("authorization") ?? undefined);
       if (!auth.ok) return fail(auth.failure === "banned" ? 403 : 401, auth.failure, "Sign in to use included AI. Banned accounts cannot use it.");

@@ -8,6 +8,7 @@ import { createApiServer } from "../src/server.ts";
 import { INCLUDED_PROVIDERS } from "../src/includedProviders.ts";
 import { createTagflowMemoryStore } from "../src/tagflowMemoryStore.ts";
 import { DEFAULT_CREDIT_PLAN } from "../src/credits.ts";
+import { DEFAULT_PAID_CONFIG } from "../src/paidTokens.ts";
 
 const config: TagflowConfig = { ...DEFAULT_TAGFLOW_CONFIG, enabled: true, baseUrl: "https://api.tagflow-ai.com/v1", defaultModel: "coder", models: [{ id: "coder", name: "Coder", contextWindow: 65_536, maxOutput: 4096, inputPrice: 0.1, outputPrice: 0.2 }] };
 const body = { model: "coder", messages: [{ role: "user", content: "Hello" }], max_tokens: 100, stream: true };
@@ -79,6 +80,26 @@ describe("included Tagflow AI", () => {
     now += 6 * 3_600_000;
     const response = await chat(); expect(response.status).toBe(200); await response.text();
     expect(await (await call("/ai/tagflow/usage", "user")).json()).toMatchObject({ unlimited: true, credits: { weekly: { used: 1.015 } } });
+  });
+
+  describe("paid tokens in the published config", () => {
+    const heabsy = { id: "glm", name: "GLM", provider: "custom-heabsy" as const, contextWindow: 65_536, maxOutput: 4096, inputPrice: 0, outputPrice: 0 };
+    const withHeabsy = (paid: unknown) => ({ ...config, providers: [{ id: "custom-heabsy", name: "Heabsy", baseUrl: "https://api.heabsy.com/v1" }], models: [config.models[0]!, heabsy], paid }) as unknown as TagflowConfig;
+
+    it("marks the paid provider's models and publishes the packs", async () => {
+      vi.stubEnv("INCLUDED_AI_CUSTOM_HEABSY_API_KEY", "k");
+      await save(withHeabsy({ ...DEFAULT_PAID_CONFIG, enabled: true }));
+      const published = await (await call("/ai/tagflow/config")).json() as { paid: { enabled: boolean; packs: unknown[] }; models: { id: string; paid: boolean }[] };
+      expect(published.paid).toMatchObject({ enabled: true, freeWeeklyTokens: 10_000_000 });
+      expect(published.paid.packs).toHaveLength(3);
+      expect(published.models.map(({ id, paid }) => [id, paid])).toEqual([["coder", false], ["glm", true]]);
+    });
+
+    it("rejects a config whose paid section is malformed", () => {
+      expect(parseTagflowConfig(withHeabsy({ ...DEFAULT_PAID_CONFIG, freeWeeklyTokens: -1 }))).toBeNull();
+      expect(parseTagflowConfig(withHeabsy(DEFAULT_PAID_CONFIG))?.paid).toEqual(DEFAULT_PAID_CONFIG);
+      expect(parseTagflowConfig(config)?.paid).toBeUndefined();
+    });
   });
 
   describe("what stands between a message and the model", () => {

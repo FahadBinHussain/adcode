@@ -3,6 +3,7 @@ import type { CustomProvider, IncludedProviderId, TagflowLimits } from "./includ
 import type { ModelFeedbackRecord, ModelReportData, ModelReportRange, ModelRequestRecord } from "./tagflowReportTypes.ts";
 import type { ModelAudienceProfile } from "./modelAudience.ts";
 import type { CreditCharge, CreditPlan, CreditWindows } from "./credits.ts";
+import type { PaidConfig } from "./paidTokens.ts";
 // Defined beside the providers, which can carry their own allowance, so neither file imports the other.
 export type { TagflowLimits } from "./includedProviders.ts";
 
@@ -36,6 +37,8 @@ export interface TagflowConfig {
   providers?: CustomProvider[];
   /** Credits per rolling window; missing uses DEFAULT_CREDIT_PLAN. */
   credits?: CreditPlan;
+  /** Paid tokens on some providers' models; missing means none are paid. See paidTokens.ts. */
+  paid?: PaidConfig;
 }
 
 export interface TagflowConfigRecord {
