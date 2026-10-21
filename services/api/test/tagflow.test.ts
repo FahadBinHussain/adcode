@@ -102,6 +102,70 @@ describe("included Tagflow AI", () => {
     });
   });
 
+  describe("paid Heabsy tokens", () => {
+    const glm = { id: "glm", name: "GLM", provider: "custom-heabsy" as const, contextWindow: 65_536, maxOutput: 4096, inputPrice: 0, outputPrice: 0 };
+    const mimo = { ...glm, id: "mimo", name: "Mimo" };
+    const paidConfig = (enabled = true, freeWeeklyTokens = 1000) => ({ ...config, providers: [{ id: "custom-heabsy", name: "Heabsy", baseUrl: "https://api.heabsy.com/v1" }],
+      models: [config.models[0]!, glm, mimo], paid: { ...DEFAULT_PAID_CONFIG, enabled, freeWeeklyTokens } }) as unknown as TagflowConfig;
+    const ask = (model: string) => chat("user", { ...body, model });
+    beforeEach(() => { vi.stubEnv("INCLUDED_AI_CUSTOM_HEABSY_API_KEY", "k"); });
+
+    it("refuses a paid model once the free week is spent, in words an old desktop understands", async () => {
+      await save(paidConfig(true, 1));
+      const first = await ask("glm"); expect(first.status).toBe(200); await first.text();
+      const refused = await ask("glm");
+      expect(refused.status).toBe(429);
+      const { error } = await refused.json() as { error: { code: string; limit: string; retryable: boolean; resetsAt: number; buyUrl: string; message: string } };
+      expect(error).toMatchObject({ code: "daily-limit", limit: "paid", retryable: true, buyUrl: "https://adcode.bluethenics.com/ai-tokens" });
+      expect(error.resetsAt).toBeGreaterThan(now);
+      expect(error.message).toContain("https://adcode.bluethenics.com/ai-tokens");
+      expect(error.message).toContain("Tagflow");
+      expect(refused.headers.get("retry-after")).not.toBeNull();
+    });
+
+    it("never charges Tagflow, and charges nothing while the switch is off", async () => {
+      await save(paidConfig(true, 1));
+      for (let i = 0; i < 3; i++) { const r = await ask("coder"); expect(r.status).toBe(200); await r.text(); }
+      await save(paidConfig(false, 1));
+      for (let i = 0; i < 3; i++) { const r = await ask("glm"); expect(r.status).toBe(200); await r.text(); }
+      expect((await store.getPaidTokens("user")).free).toBeNull();
+    });
+
+    it("uses purchased tokens after the free week", async () => {
+      await save(paidConfig(true, 1));
+      await store.grantTokens("user", 1_000_000, "admin-1", "test", now);
+      for (let i = 0; i < 3; i++) { const r = await ask("glm"); expect(r.status).toBe(200); await r.text(); }
+      expect((await store.getPaidTokens("user")).balance.purchased).toBeLessThan(1_000_000);
+    });
+
+    it("reports the free week and purchased tokens on the usage endpoint", async () => {
+      await save(paidConfig(true, 10_000_000));
+      await store.grantTokens("user", 50_000_000, "admin-1", "test", now);
+      const r = await ask("glm"); await r.text();
+      const view = await (await call("/ai/tagflow/usage", "user")).json() as { tokens: { enabled: boolean; free: { limit: number; used: number }; purchased: number } };
+      expect(view.tokens).toMatchObject({ enabled: true, free: { limit: 10_000_000, used: 15 }, purchased: 50_000_000 });
+    });
+
+    it("falls back from a busy paid model only to a free one", async () => {
+      // Mimo comes first in the administrator's order, so only the paid rule keeps it out.
+      const ordered = paidConfig(true, 10_000_000);
+      await save({ ...ordered, models: [glm, mimo, config.models[0]!] } as TagflowConfig);
+      upstream.mockImplementation(async (_url, init) => JSON.parse(String(init?.body)).model === "glm" ? new Response("busy", { status: 429 }) : reply());
+      const r = await ask("glm");
+      expect(r.status).toBe(200);
+      expect(r.headers.get("x-adcode-fallback-model")).toBe("coder");
+      await r.text();
+    });
+
+    it("settles requests held before the switch was turned off", async () => {
+      await save(paidConfig(true, 10_000_000));
+      const r = await ask("glm");
+      await save(paidConfig(false, 10_000_000));
+      await r.text();
+      expect((await store.getPaidTokens("user")).free).toMatchObject({ reservedTokens: 0, usedTokens: 15 });
+    });
+  });
+
   describe("what stands between a message and the model", () => {
     it("asks the provider while the request's telemetry write is still outstanding", async () => {
       let release!: () => void;
