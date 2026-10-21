@@ -1,4 +1,5 @@
-import type { TagflowConfigRecord, TagflowReservation, TagflowStore, TagflowUsage, TagflowUserPolicy } from "./tagflowTypes.ts";
+import type { TagflowConfigRecord, TagflowReservation, TagflowStore, TagflowUsage, TagflowUserPolicy, TokenLedgerEntry, TokenOrder, TokenSalesDay } from "./tagflowTypes.ts";
+import { chargeTokens, holdTokens, type FreeWindow, type PaidHold, type TokenBalance } from "./paidTokens.ts";
 import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE } from "./tagflowConfig.ts";
 import type { ModelFeedbackRecord, ModelRequestRecord } from "./tagflowReportTypes.ts";
 import { summarizeModelReports } from "./tagflowReports.ts";
@@ -17,9 +18,19 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
   let collectionStartedAt: number | null = null;
   const profiles = new Map<string,ModelAudienceProfile>();
   const verificationSends = new Map<string, number>();
+  // Paid tokens: the free week per account, purchased balances, each reservation's hold.
+  const freeWeeks = new Map<string, FreeWindow>();
+  const balances = new Map<string, TokenBalance>();
+  const holds = new Map<string, PaidHold>();
+  const orders = new Map<string, TokenOrder>();
+  const ledger: TokenLedgerEntry[] = [];
+  const seenWebhooks = new Set<string>();
+  const balanceOf = (uid: string): TokenBalance => balances.get(uid) ?? { purchased: 0, reserved: 0 };
+  const addLedger = (entry: Omit<TokenLedgerEntry, "id">): void => { ledger.unshift({ id: `l${ledger.length + 1}`, ...entry }); };
   const key = (uid: string, day: string): string => `${uid}\u0000${day}`;
   return {
-    resetTagflow() { config = null; policies.clear(); days.clear(); reservations.clear(); windows.clear(); minutes.clear(); modelRequests.clear(); modelFeedback.clear(); profiles.clear(); verificationSends.clear(); collectionStartedAt = null; },
+    resetTagflow() { config = null; policies.clear(); days.clear(); reservations.clear(); windows.clear(); minutes.clear(); modelRequests.clear(); modelFeedback.clear(); profiles.clear(); verificationSends.clear(); collectionStartedAt = null;
+      freeWeeks.clear(); balances.clear(); holds.clear(); orders.clear(); ledger.length = 0; seenWebhooks.clear(); },
     async getModelAudienceProfile(uid) { return structuredClone(profiles.get(uid) ?? null); },
     async putModelAudienceProfile(profile) { profiles.set(profile.uid,structuredClone(profile)); },
     async deleteModelAudienceProfile(uid) { profiles.delete(uid); },
@@ -47,8 +58,11 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
       if (!request.unlimited && ((request.limits.dailyRequests !== UNLIMITED_DAILY_REQUESTS && row.requests + 1 > request.limits.dailyRequests) || row.inputTokens + row.outputTokens + row.reservedTokens + request.tokens > request.limits.dailyTokens || row.costMicros + row.reservedCostMicros + request.costMicros > request.limits.dailyCostMicros)) return "daily-limit";
       const admitted = request.credits === undefined ? null : admitCredits(windows.get(request.uid) ?? { session: null, week: null }, request.credits, request.unlimited);
       if (admitted !== null && !admitted.ok) return admitted.limit;
+      const paid = request.paid === undefined ? null : holdTokens(freeWeeks.get(request.uid) ?? null, balanceOf(request.uid), request.paid.freeWeeklyTokens, request.tokens, request.paid.now);
+      if (paid !== null && !paid.ok) return "paid-limit";
       if (!request.unlimited && request.limits.requestsPerMinute !== UNLIMITED_REQUESTS_PER_MINUTE && (minutes.get(minuteKey) ?? 0) >= request.limits.requestsPerMinute) return "rate-limit";
       if (admitted !== null) windows.set(request.uid, admitted.windows);
+      if (paid !== null && paid.ok) { freeWeeks.set(request.uid, paid.window); balances.set(request.uid, paid.balance); holds.set(request.id, paid.hold); }
       days.set(key(request.uid, request.day), { ...row, requests: row.requests + 1, reservedTokens: row.reservedTokens + request.tokens, reservedCostMicros: row.reservedCostMicros + request.costMicros });
       minutes.set(minuteKey, (minutes.get(minuteKey) ?? 0) + 1);
       reservations.set(request.id, { ...request, sessionStartedAt: admitted?.ok ? admitted.windows.session.startedAt : null, weekStartedAt: admitted?.ok ? admitted.windows.week.startedAt : null });
@@ -71,7 +85,70 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
         session: settleWindow(current.session, reservation.sessionStartedAt, held, used),
         week: settleWindow(current.week, reservation.weekStartedAt, held, used),
       });
+      const hold = holds.get(id);
+      if (hold !== undefined) {
+        const done = chargeTokens(freeWeeks.get(reservation.uid) ?? null, balanceOf(reservation.uid), hold, usage.failed ? 0 : usage.inputTokens + usage.outputTokens);
+        if (done.window !== null) freeWeeks.set(reservation.uid, done.window);
+        balances.set(reservation.uid, done.balance);
+        if (done.paidCharged > 0) addLedger({ uid: reservation.uid, delta: -done.paidCharged, kind: "usage", ref: id, note: "", createdAt: Date.now() });
+        holds.delete(id);
+      }
       reservations.delete(id);
+    },
+    async getPaidTokens(uid) { return structuredClone({ free: freeWeeks.get(uid) ?? null, balance: balanceOf(uid) }); },
+    async createTokenOrder(value) {
+      if (orders.has(value.orderId)) throw new Error("Duplicate order");
+      orders.set(value.orderId, structuredClone(value));
+    },
+    async applyTokenEvent(event) {
+      const target = event.type === "purchase"
+        ? (event.orderId === null ? undefined : orders.get(event.orderId))
+        : [...orders.values()].find((one) => one.providerPaymentId === event.paymentId);
+      if (target === undefined) return "not-ai-tokens";
+      if (seenWebhooks.has(event.webhookId)) return "duplicate";
+      seenWebhooks.add(event.webhookId);
+      if (target.status !== (event.type === "purchase" ? "pending" : "paid")) return "duplicate";
+      const balance = balanceOf(target.uid);
+      if (event.type === "purchase") {
+        orders.set(target.orderId, { ...target, status: "paid", providerPaymentId: event.paymentId, paidAt: event.now, checkoutSession: event.sessionId ?? target.checkoutSession });
+        balances.set(target.uid, { ...balance, purchased: balance.purchased + target.tokens });
+        addLedger({ uid: target.uid, delta: target.tokens, kind: "purchase", ref: target.orderId, note: "", createdAt: event.now });
+        return "credited";
+      }
+      // Only what is left of the order comes back; tokens already used stay used.
+      const back = Math.min(target.tokens, Math.max(0, balance.purchased));
+      orders.set(target.orderId, { ...target, status: "refunded" });
+      balances.set(target.uid, { ...balance, purchased: balance.purchased - back });
+      if (back > 0) addLedger({ uid: target.uid, delta: -back, kind: "refund", ref: target.orderId, note: "", createdAt: event.now });
+      return "refunded";
+    },
+    async grantTokens(uid, tokens, adminUid, note, now) {
+      if (!Number.isSafeInteger(tokens) || tokens === 0) throw new Error("Invalid grant");
+      const balance = balanceOf(uid);
+      balances.set(uid, { ...balance, purchased: balance.purchased + tokens });
+      addLedger({ uid, delta: tokens, kind: "grant", ref: adminUid, note, createdAt: now });
+    },
+    async listTokenActivity(uid) {
+      return structuredClone({
+        orders: [...orders.values()].filter((one) => one.uid === uid).sort((a, b) => b.createdAt - a.createdAt).slice(0, 100),
+        ledger: ledger.filter((row) => row.uid === uid).slice(0, 100),
+      });
+    },
+    async tokenSales(sinceMs) {
+      const days = new Map<string, TokenSalesDay>();
+      const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+      const row = (day: string): TokenSalesDay => days.get(day) ?? { day, orders: 0, revenueCents: 0, tokensSold: 0, tokensUsed: 0 };
+      for (const one of orders.values()) {
+        if ((one.status !== "paid" && one.status !== "refunded") || one.paidAt === null || one.paidAt < sinceMs) continue;
+        const r = row(dayOf(one.paidAt));
+        days.set(r.day, { ...r, orders: r.orders + 1, revenueCents: r.revenueCents + one.priceCents, tokensSold: r.tokensSold + one.tokens });
+      }
+      for (const entry of ledger) {
+        if (entry.kind !== "usage" || entry.createdAt < sinceMs) continue;
+        const r = row(dayOf(entry.createdAt));
+        days.set(r.day, { ...r, tokensUsed: r.tokensUsed - entry.delta });
+      }
+      return [...days.values()].sort((a, b) => b.day.localeCompare(a.day));
     },
     async claimVerificationSend(uid, now, gapMs) {
       const last = verificationSends.get(uid);

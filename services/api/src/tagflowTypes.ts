@@ -3,7 +3,7 @@ import type { CustomProvider, IncludedProviderId, TagflowLimits } from "./includ
 import type { ModelFeedbackRecord, ModelReportData, ModelReportRange, ModelRequestRecord } from "./tagflowReportTypes.ts";
 import type { ModelAudienceProfile } from "./modelAudience.ts";
 import type { CreditCharge, CreditPlan, CreditWindows } from "./credits.ts";
-import type { PaidConfig } from "./paidTokens.ts";
+import type { FreeWindow, PaidConfig, TokenBalance } from "./paidTokens.ts";
 // Defined beside the providers, which can carry their own allowance, so neither file imports the other.
 export type { TagflowLimits } from "./includedProviders.ts";
 
@@ -81,6 +81,8 @@ export interface TagflowReservation {
   limits: TagflowLimits;
   /** The account's credit windows to check and hold; missing charges no credits. */
   credits?: CreditCharge;
+  /** Paid-model reservation: hold `tokens` from the free week, then purchased tokens. */
+  paid?: { freeWeeklyTokens: number; now: number };
 }
 
 export interface TagflowSettlement {
@@ -94,7 +96,15 @@ export interface TagflowSettlement {
   millicredits?: number;
 }
 
-export type TagflowReserveResult = "ok" | "daily-limit" | "rate-limit" | "session-limit" | "weekly-limit";
+export type TagflowReserveResult = "ok" | "daily-limit" | "rate-limit" | "session-limit" | "weekly-limit" | "paid-limit";
+
+export type TokenOrderStatus = "pending" | "paid" | "refunded" | "abandoned";
+export interface TokenOrder { orderId: string; uid: string; packId: string; priceCents: number; tokens: number; status: TokenOrderStatus; checkoutSession: string | null; providerPaymentId: string | null; createdAt: number; paidAt: number | null }
+export interface TokenLedgerEntry { id: string; uid: string; delta: number; kind: "purchase" | "usage" | "refund" | "grant"; ref: string; note: string; createdAt: number }
+export interface PaidTokenState { free: FreeWindow | null; balance: TokenBalance }
+export interface TokenEvent { type: "purchase" | "refund"; webhookId: string; orderId: string | null; paymentId: string; sessionId: string | null; now: number }
+export type TokenEventResult = "credited" | "refunded" | "duplicate" | "not-ai-tokens";
+export interface TokenSalesDay { day: string; orders: number; revenueCents: number; tokensSold: number; tokensUsed: number }
 
 export interface TagflowStore {
   getModelAudienceProfile(uid: string): Promise<ModelAudienceProfile | null>;
@@ -123,4 +133,13 @@ export interface TagflowStore {
    * from the included-AI gate, or its last one is at least `gapMs` old. Atomic across workers.
    */
   claimVerificationSend(uid: string, now: number, gapMs: number): Promise<boolean>;
+  /** The account's free paid-model week and purchased balance, as stored. */
+  getPaidTokens(uid: string): Promise<PaidTokenState>;
+  createTokenOrder(order: TokenOrder): Promise<void>;
+  /** Exactly once per webhook and per order state; refunds find the order by its payment id. */
+  applyTokenEvent(event: TokenEvent): Promise<TokenEventResult>;
+  grantTokens(uid: string, tokens: number, adminUid: string, note: string, now: number): Promise<void>;
+  /** The account's last 100 orders and ledger rows, newest first. */
+  listTokenActivity(uid: string): Promise<{ orders: TokenOrder[]; ledger: TokenLedgerEntry[] }>;
+  tokenSales(sinceMs: number): Promise<TokenSalesDay[]>;
 }

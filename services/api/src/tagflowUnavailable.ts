@@ -21,4 +21,10 @@ export const tagflowUnavailable: TagflowStore = {
   async reserveTagflow() { throw new Error("Tagflow requires the Supabase adapter"); },
   async settleTagflow() { throw new Error("Tagflow requires the Supabase adapter"); },
   async claimVerificationSend() { throw new Error("Tagflow requires the Supabase adapter"); },
+  async getPaidTokens() { throw new Error("Paid tokens require the Supabase adapter"); },
+  async createTokenOrder() { throw new Error("Paid tokens require the Supabase adapter"); },
+  async applyTokenEvent() { throw new Error("Paid tokens require the Supabase adapter"); },
+  async grantTokens() { throw new Error("Paid tokens require the Supabase adapter"); },
+  async listTokenActivity() { throw new Error("Paid tokens require the Supabase adapter"); },
+  async tokenSales() { throw new Error("Paid tokens require the Supabase adapter"); },
 };
