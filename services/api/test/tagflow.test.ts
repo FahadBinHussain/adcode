@@ -143,7 +143,7 @@ describe("included Tagflow AI", () => {
       await store.grantTokens("user", 50_000_000, "admin-1", "test", now);
       const r = await ask("glm"); await r.text();
       const view = await (await call("/ai/tagflow/usage", "user")).json() as { tokens: { enabled: boolean; free: { limit: number; used: number }; purchased: number } };
-      expect(view.tokens).toMatchObject({ enabled: true, free: { limit: 10_000_000, used: 15 }, purchased: 50_000_000 });
+      expect(view.tokens).toMatchObject({ enabled: true, free: { limit: 10_000_000, used: 15 }, purchased: 50_000_000, paidModels: ["glm", "mimo"] });
     });
 
     it("falls back from a busy paid model only to a free one", async () => {

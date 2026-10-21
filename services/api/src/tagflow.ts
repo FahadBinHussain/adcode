@@ -463,7 +463,8 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         // The day's usage row and the credit windows are what this view shows; a chat request
         // needs neither - its reservation checks both inside one database transaction.
         const [stored, windows, paidState] = await Promise.all([deps.store.getTagflowUsage(subject, day), deps.store.getCreditWindows(subject), deps.store.getPaidTokens(subject)]);
-        const tokens = tokensView(config.paid, paidState.free, paidState.balance, deps.clock.now());
+        // Which offered models draw on it, so the editor's meter shows tokens only for those.
+        const tokens = { ...tokensView(config.paid, paidState.free, paidState.balance, deps.clock.now()), paidModels: offeredModels.filter((model) => isPaidModel(model, config.paid)).map((model) => model.id) };
         const usage = stored ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
         const credits = creditsView(plan, windows, Object.fromEntries(offeredModels.map((model) => [model.id, modelCreditRate(model, config)])), deps.clock.now());
         if (userMatch !== null) return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true, unlimited: true, credits, tokens });

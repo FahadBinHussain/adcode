@@ -204,6 +204,7 @@ import {
 } from "./workbench/contextMenu.ts";
 import { createInlineEditor } from "./workbench/inlineEdit.ts";
 import { reconcileTreeChildren } from "./workbench/treeRefresh.ts";
+import { BUY_TOKENS_URL } from "../shared/tagflow.ts";
 import type {
   AdcodeApi,
   DirEntry,
@@ -5882,6 +5883,7 @@ function registerCommands(): void {
   add("ai.compactConversation", "AI: Compact Conversation", () => chat.compactConversation());
   add("ai.showUsage", "AI: Show Usage", () => void openUsageDialog());
   add("ai.showCredits", "AI: Show Free AI Credits", () => void openUsageDialog());
+  add("ai.buyTokens", "AI: Buy AI Tokens", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"));
   add("ai.showCacheSavings", "AI: Show Prompt Cache Savings", () => void openUsageDialog());
   add("ai.delegate", "AI: Split a Task Across Helpers", () => { showChatSurface(); chat.draft("/helpers "); });
   add("ai.initInstructions", "AI: Write Project Instructions (AGENTS.md)", () => { showChatSurface(); chat.ask("/init"); });

@@ -631,6 +631,17 @@ How to use it: Terminal sandboxes are cleaned oldest first. An applied task may 
 
 Access: `All Features → AI workspace storage`; `Settings`.
 
+<!-- feature:ai.buyTokens -->
+### Buying AI tokens
+
+Heabsy's models in ADCode include 10 million free tokens a week; after that you can buy more, or keep going on Tagflow AI, which stays free.
+
+Why use it: Keep working on the fastest included models during a heavy week without setting up your own provider key or a card with a model company.
+
+How to use it: Run AI: Buy AI Tokens, or press Buy tokens on the message that appears when your free week is used up. Sign in on the page that opens, choose $10 for 50M tokens, $25 for 140M or $50 for 300M, and pay with Dodo. The tokens appear within seconds and never expire. ADCode uses your free tokens first each week and purchased tokens only after them, and a task that paused carries on by itself. Your balance is in AI usage and on the composer's meter when a Heabsy model is selected. Tagflow AI is free with no weekly limit, so you can switch to it at any time instead. For a refund of unused tokens, contact the team from the same page.
+
+Access: `All Features → Buying AI tokens`; `Buy tokens`.
+
 <!-- feature:ai.sessions -->
 ### Chat history and memory
 
@@ -700,11 +711,11 @@ Access: `All Features → Edit with AI`; `Edit with AI`; `Keyboard → Ctrl+E`.
 <!-- feature:ai.credits -->
 ### Free AI credits
 
-Included AI has no personal request, token or credit quota.
+Tagflow AI has no personal quota. Heabsy's models include 10M free tokens a week per account, then use tokens you buy.
 
-Why use it: Build with included models without watching a personal quota. Provider availability and model context limits still apply.
+Why use it: Build with included models without watching a personal quota on Tagflow, and keep going on Heabsy's models through a heavy week if you need to. Provider availability and model context limits still apply.
 
-How to use it: Sign in with a verified account and choose an included model. There are no personal request, token, daily or weekly credit quotas. Provider availability and model context limits still apply. The Conversation menu lets you compact a long conversation or view its summary. Usage history remains available for understanding activity, without quota progress rings.
+How to use it: Sign in with a verified account and choose an included model. Tagflow AI has no personal request, token, daily or weekly quota. Heabsy's models (GLM 5.3 Flash, Qwen 3.8, Mimo) include 10M free tokens a week from your first request on them; after that they use tokens you buy - see Buying AI tokens - or you can switch to Tagflow AI. Provider availability and model context limits still apply. The Conversation menu lets you compact a long conversation or view its summary. Usage history remains available for understanding activity, without quota progress rings.
 
 Access: `All Features → Free AI credits`; `Show credits`.
 
@@ -737,7 +748,7 @@ Use the AI included with your verified ADCode account without buying or pasting 
 
 Why use it: Start with an allowance paid for by ADCode. You can still switch to your own provider or a local model when you need more capacity.
 
-How to use it: Open Account, sign in and verify your email, then send a message. If you send one before signing in, the chat offers Sign in and sends it again by itself once you are. If the connection drops mid-task, the task retries by itself for about two minutes and carries on where it was. Included AI is selected automatically for new installations when enabled, using the administrator's default model. Older installations with an unconnected default provider also switch automatically. In Connect a model, the Free · no API key tab lists included and ready local models; choose Use this model to switch. Bring your own key keeps your personal provider connections separate. Administrators manage Free models and BYOK models from separate linked catalogs: add new models, set defaults, and hide models. Free models can use Tagflow, OpenAI, Gemini, Groq, OpenRouter or any OpenAI-compatible provider an administrator registers, through configured server keys. Chat, completions and agents have no personal included-AI quota. Open AI usage to review activity. Provider availability and model context limits still apply. Prompts, project context and tool results pass through ADCode's server to the selected provider; the server stores usage counts, not prompts or replies. Included AI currently accepts text and tool calls, not image attachments.
+How to use it: Open Account, sign in and verify your email, then send a message. If you send one before signing in, the chat offers Sign in and sends it again by itself once you are. If the connection drops mid-task, the task retries by itself for about two minutes and carries on where it was. Included AI is selected automatically for new installations when enabled, using the administrator's default model. Older installations with an unconnected default provider also switch automatically. In Connect a model, the Free · no API key tab lists included and ready local models; choose Use this model to switch. Bring your own key keeps your personal provider connections separate. Administrators manage Free models and BYOK models from separate linked catalogs: add new models, set defaults, and hide models. Free models can use Tagflow, OpenAI, Gemini, Groq, OpenRouter or any OpenAI-compatible provider an administrator registers, through configured server keys. On Tagflow AI, chat, completions and agents have no personal quota; Heabsy's models include 10M free tokens a week, then use tokens you buy (see Buying AI tokens). Open AI usage to review activity. Provider availability and model context limits still apply. Prompts, project context and tool results pass through ADCode's server to the selected provider; the server stores usage counts, not prompts or replies. Included AI currently accepts text and tool calls, not image attachments.
 
 Access: `All Features → Included AI without a key`; `Choose included AI`.
 

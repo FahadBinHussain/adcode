@@ -48,6 +48,28 @@ export interface TagflowAllowanceView {
   pools?: { provider: string; name: string; models: string[]; limits: TagflowAllowanceView["limits"]; usage: TagflowAllowanceView["usage"] }[];
   /** Relays from 2026-10-15 meter free AI in credits; older ones omit it and count tokens per day. */
   credits?: CreditsAllowance;
+  /** Paid tokens (relays from 2026-10-21): the free week on paid models, purchased tokens, and which models draw on them. */
+  tokens?: { enabled: boolean; free: { limit: number; used: number; held: number; remaining: number; resetsAt: number | null }; purchased: number; paidModels?: string[] };
+}
+
+/** Where people buy AI tokens for paid models. */
+export const BUY_TOKENS_URL = "https://adcode.bluethenics.com/ai-tokens";
+
+const shortTokens = (tokens: number): string => {
+  const trim = (value: number): string => (value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10));
+  if (tokens >= 1_000_000) return `${trim(tokens / 1_000_000)}M`;
+  if (tokens >= 1_000) return `${trim(tokens / 1_000)}k`;
+  return String(Math.max(0, Math.round(tokens)));
+};
+
+/** The usage dialog's one line about paid tokens: the free week on Heabsy's models, then what was bought. */
+export function paidTokensSummary(tokens: NonNullable<TagflowAllowanceView["tokens"]>, now: number): string {
+  const free = tokens.free;
+  const week = free.resetsAt === null
+    ? `${shortTokens(free.limit)} free tokens a week, starting with your first request on them`
+    : `${shortTokens(free.remaining)} of ${shortTokens(free.limit)} free tokens left this week (refill in ${untilText(free.resetsAt, now)})`;
+  const bought = tokens.purchased > 0 ? `, then ${shortTokens(tokens.purchased)} purchased tokens` : "";
+  return `Heabsy models: ${week}${bought}. Tagflow AI stays unlimited.`;
 }
 
 /** "3 hr 12 min", "45 min", "under a minute": how long until a credit window refills. */

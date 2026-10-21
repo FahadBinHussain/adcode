@@ -111,3 +111,36 @@ describe("free AI sign-in token failures", () => {
     expect(includedTokenError("token refresh failed: TOKEN_EXPIRED").message).toBe("Sign in in Account to use included AI.");
   });
 });
+
+describe("the composer meter on a paid model", () => {
+  const tokens = { enabled: true, free: { limit: 10_000_000, used: 4_000_000, held: 0, remaining: 6_000_000, resetsAt: Date.now() + 3 * 86_400_000 }, purchased: 48_000_000, paidModels: ["heabsy-glm53-flash-unc"] };
+
+  it("shows the free week and purchased tokens on a paid model", () => {
+    const [free, purchased] = composerUsageModels(null, allowance({ unlimited: true, tokens }), true, "heabsy-glm53-flash-unc");
+    expect(free).toMatchObject({ label: "Free this week", value: "6M", detail: "6M of 10M free" });
+    expect(free.tooltip).toContain("48M purchased");
+    expect(purchased).toMatchObject({ label: "Purchased", value: "48M", detail: "48M purchased" });
+  });
+
+  it("warns when the free week and purchased tokens are both gone", () => {
+    const [free] = composerUsageModels(null, allowance({ unlimited: true, tokens: { ...tokens, free: { ...tokens.free, used: 10_000_000, remaining: 0 }, purchased: 0 } }), true, "heabsy-glm53-flash-unc");
+    expect(free.tone).toBe("full");
+    expect(free.tooltip).toContain("Buy tokens");
+  });
+
+  it("keeps the unlimited meter for a model that is not paid", () => {
+    const [free] = composerUsageModels(null, allowance({ unlimited: true, tokens }), true, "tagflow-code-27b");
+    expect(free).toMatchObject({ value: "∞", detail: "Unlimited" });
+  });
+});
+
+describe("the usage dialog's paid-token line", () => {
+  it("says what is left of the free week and what was bought", async () => {
+    const { paidTokensSummary } = await import("../src/shared/tagflow.ts");
+    const now = Date.parse("2026-10-21T00:00:00Z");
+    expect(paidTokensSummary({ enabled: true, free: { limit: 10_000_000, used: 4_000_000, held: 0, remaining: 6_000_000, resetsAt: now + 3 * 86_400_000 }, purchased: 48_000_000 }, now))
+      .toBe("Heabsy models: 6M of 10M free tokens left this week (refill in 3 days), then 48M purchased tokens. Tagflow AI stays unlimited.");
+    expect(paidTokensSummary({ enabled: true, free: { limit: 10_000_000, used: 0, held: 0, remaining: 10_000_000, resetsAt: null }, purchased: 0 }, now))
+      .toBe("Heabsy models: 10M free tokens a week, starting with your first request on them. Tagflow AI stays unlimited.");
+  });
+});

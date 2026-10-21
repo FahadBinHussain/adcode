@@ -1291,11 +1291,43 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Open Account and sign in with an email verified by your provider.",
       "Included AI is selected automatically on a new installation when enabled, using the administrator's default model. Send a message without entering an API key. To switch, open Connect a model → Free · no API key and choose Use this model.",
       "Choose a model and send your first message. You do not need a provider API key.",
-      "Included AI has no per-user token or request quota. Chats and agents can keep working across devices.",
+      "Tagflow AI has no per-user token or request quota. Heabsy's models (GLM 5.3 Flash, Qwen 3.8, Mimo) include 10M free tokens a week, then use tokens you buy at adcode.bluethenics.com/ai-tokens. Chats and agents keep working across devices.",
       "Provider availability and model context limits still apply. Clearing usage history does not change provider limits.",
     ],
-    benefits: ["Start without purchasing a provider key.", "Keep working without daily or weekly refills.", "Administrators manage models, provider connections, and account access."],
+    benefits: ["Start without purchasing a provider key.", "Keep working on Tagflow AI without daily or weekly refills.", "Administrators manage models, provider connections, and account access."],
     betterThan: "Included AI removes provider-key setup while keeping your own providers and local models available. Administrators can offer Tagflow, OpenAI, Gemini, Groq and OpenRouter models, or models from any OpenAI-compatible provider they register, using server keys, set their prices and default model, hide models, review usage, and save provider keys from the admin panel. Prompts and project context pass through ADCode's dedicated relay to the selected provider. The relay stores counts, not prompts or replies. Text and tool calls are supported; image attachments are not yet supported.",
+  },
+  "ai-buy-tokens": {
+    steps: [
+      "Use a Heabsy model (GLM 5.3 Flash, Qwen 3.8 or Mimo) as usual - every account gets 10M free tokens on them each week, starting with your first request.",
+      "When the week's free tokens are used up, the chat shows Buy tokens. Press it, or run AI: Buy AI Tokens, or open adcode.bluethenics.com/ai-tokens.",
+      "Sign in with the same account you use in ADCode, pick a pack - $10 for 50M tokens, $25 for 140M, $50 for 300M - and pay. Dodo handles the payment and any sales tax.",
+      "Back on the page, your tokens show as added within seconds. A task that paused carries on by itself; send your next message as usual.",
+      "Check your balance any time in AI usage or on the composer's meter. Purchased tokens never expire, and free tokens are always used first.",
+    ],
+    benefits: [
+      "Stay on the fastest included models through a heavy week instead of waiting for the refill.",
+      "Pay as you go - no subscription and nothing renews.",
+      "Tagflow AI stays free with no weekly limit, so paying is always optional.",
+    ],
+    betterThan: "Buying tokens from a model company means a separate account, a card on file, an API key to paste and a bill per provider. Here the tokens work in the editor you already use, on models already set up, and $10 buys 50M tokens - about 1,200 typical agent requests - with nothing to configure.",
+  },
+  "ai-status-alerts": {
+    steps: [
+      "Open adcode.bluethenics.com/status - or run Help: Get Status Alerts by Email in the editor - and scroll to Email alerts.",
+      "Enter your email address. Keep Model health ticked to hear when an included model degrades, fails or recovers; keep Incident updates ticked for the notes the team posts during an outage.",
+      "Press Get alerts, then open the email from noreply@bluethenics.com and press Confirm my alerts. Nothing else is sent until you confirm, and the link works for seven days.",
+      "From then on, the service checks every included model every 15 minutes and emails you when one starts failing requests, and again when it has been back to normal for two checks in a row.",
+      "To stop, use the one-click Stop status emails link at the bottom of any alert.",
+    ],
+    benefits: [
+      "You know within minutes whether a failing chat is the service or your own setup.",
+      "The all-clear arrives by itself, so you stop refreshing a status page to find out when to retry.",
+      "No account, no app, no password: one confirmed address and a one-click way out.",
+      "The alerts come from the same measurements as the public status page - nothing hand-picked to look better.",
+    ],
+    betterThan:
+      "Most status pages only email you when someone at the company writes an incident, which is often long after people noticed. ADCode's alerts are measured: the service judges each model on its real recent requests and emails you on the change, both ways, while hand-written incident updates still come through for the story behind it. Small samples never trigger an alert, and recovery waits for two good checks, so one bad minute does not fill your inbox.",
   },
   "ai-provider": {
     steps: [

@@ -126,6 +126,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
     actions: [command("ai.showCredits", "Show credits")],
     keywords: ["credits", "free credits", "ai credits", "5 hour", "five hour", "session limit", "weekly limit", "usage limit", "refill", "reset", "claude max", "allowance", "daily allowance", "quota", "out of credits", "heabsy", "rate"],
   },
+  "ai.buyTokens": {
+    actions: [command("ai.buyTokens", "Buy tokens")],
+    keywords: ["buy tokens", "buy credits", "top up", "pay", "purchase", "more tokens", "out of tokens", "glm", "qwen", "mimo", "50m", "pricing", "price", "paid ai", "dodo"],
+  },
   "ai.projectInstructions": {
     actions: [command("ai.initInstructions", "Write AGENTS.md")],
     keywords: ["agents.md", "claude.md", "gemini.md", "copilot instructions", "project rules", "instructions file", "init", "/init", "custom instructions", "coding standards", "conventions"],
