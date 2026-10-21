@@ -1,0 +1,73 @@
+/* The AI tokens page: the site's stats, fields, notices and buttons, plus the pack list. */
+.ai-tokens {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 48px 16px 80px;
+  display: grid;
+  /* A grid column grows to its widest child's minimum width unless allowed to shrink. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+.ai-tokens > * {
+  min-width: 0;
+}
+
+.ai-tokens-head h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.ai-tokens-head p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--muted, inherit);
+  line-height: 1.55;
+}
+
+.ai-tokens-country .input {
+  max-width: 100px;
+}
+
+.token-packs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.token-pack {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 20px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+  border-radius: 14px;
+}
+
+.token-pack-price {
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-pack-tokens {
+  font-weight: 550;
+}
+
+.token-pack .btn {
+  margin-top: 10px;
+}
+
+.ai-tokens-history h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.ai-tokens-history td:last-child {
+  font-variant-numeric: tabular-nums;
+}
