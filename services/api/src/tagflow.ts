@@ -10,7 +10,8 @@ import type { TagflowConfig, TagflowModel, TagflowSettlement } from "./tagflowTy
 import { createWorkerSecrets, type WorkerSecrets } from "./workerSecrets.ts";
 import { includedProvider, isCustomProviderUrl, modelProvider, providerConnections, type IncludedProviderId } from "./includedProviders.ts";
 import { DEFAULT_CREDIT_PLAN, creditCharge, creditsView, millicreditsFor, modelCreditRate, parseCreditPlan, untilText, type CreditPlan } from "./credits.ts";
-import { BUY_TOKENS_URL, DEFAULT_PAID_CONFIG, isPaidModel, tokensView } from "./paidTokens.ts";
+import { BUY_TOKENS_URL, DEFAULT_PAID_CONFIG, TOKEN_ORDER_PREFIX, isPaidModel, tokensView } from "./paidTokens.ts";
+import type { PaymentProvider } from "./payments.ts";
 import { MODEL_FEEDBACK_CATEGORIES, type ModelRequestOutcome, type ModelRequestRecord, type ModelRequestSource } from "./tagflowReportTypes.ts";
 import { completeModelReport, parseReportRange } from "./tagflowReports.ts";
 import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, AI_PERSONAS, audienceChoice, audienceCountry, observedUse, type ModelAudienceProfile } from "./modelAudience.ts";
@@ -22,6 +23,10 @@ export interface TagflowOptions {
   apiKey?: string;
   fetchImpl?: typeof fetch;
   country?: (request: Request) => string | undefined;
+  /** Dodo checkout for AI tokens; missing answers "not configured". */
+  payments?: PaymentProvider;
+  /** Where Dodo returns the browser after paying for tokens. */
+  siteOrigin?: string;
   /** Saves provider keys as this Worker's Cloudflare secrets from the admin panel. */
   workerSecrets?: WorkerSecrets;
   /** The waits before retrying a provider's 429; tests pass zeros. */
@@ -73,7 +78,8 @@ export function createModelHealth(): { strike(id: string, now: number): void; an
 export function isTagflowPath(path: string): boolean {
   return path === "/v1/ai/tagflow/config" || path === "/v1/ai/tagflow/usage" || path === "/v1/ai/tagflow/chat/completions" ||
     path === "/v1/ai/tagflow/feedback" || path === "/v1/ai/tagflow/audience" || path === "/v1/admin/tagflow/reports" ||
-    path === "/v1/admin/tagflow" || path === "/v1/admin/tagflow/usage" || path === "/v1/admin/tagflow/keys" || /^\/v1\/admin\/tagflow\/users\/[^/]+$/.test(path);
+    path === "/v1/admin/tagflow" || path === "/v1/admin/tagflow/usage" || path === "/v1/admin/tagflow/keys" || /^\/v1\/admin\/tagflow\/users\/[^/]+$/.test(path) ||
+    path === "/v1/ai/tokens/checkout" || path === "/v1/ai/tokens/orders" || path === "/v1/admin/ai-tokens/grant" || path === "/v1/admin/ai-tokens/sales";
 }
 
 /** Tokens are no longer a limit; credits are. Passed where the stores still compare a day's tokens. */
@@ -345,6 +351,41 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
           await deps.store.putModelAudienceProfile({ uid:auth.uid, role:raw["role"] as ModelAudienceProfile["role"], experience:raw["experience"] as ModelAudienceProfile["experience"], primaryUse:raw["primaryUse"] as ModelAudienceProfile["primaryUse"], updatedAt:deps.clock.now() });
           return json(200,{ ok:true });
         }
+      }
+      if (url.pathname === "/v1/ai/tokens/orders" && request.method === "GET") {
+        const [activity, state] = await Promise.all([deps.store.listTokenActivity(auth.uid), deps.store.getPaidTokens(auth.uid)]);
+        return json(200, { tokens: tokensView(config.paid, state.free, state.balance, deps.clock.now()), ...activity });
+      }
+      if (url.pathname === "/v1/ai/tokens/checkout" && request.method === "POST") {
+        const raw = await readJson(request);
+        const paid = config.paid;
+        if (paid?.enabled !== true) return json(409, { error: "paid-off" });
+        const pack = isRecord(raw) ? paid.packs.find((one) => one.id === raw["pack"]) : undefined;
+        if (pack === undefined) return json(400, { error: "bad-pack" });
+        const country = isRecord(raw) ? raw["billingCountry"] : undefined;
+        if (typeof country !== "string" || !/^[A-Z]{2}$/.test(country)) return json(400, { error: "bad-country" });
+        const buyer = await deps.store.getUser(auth.uid);
+        if (buyer?.email === undefined || buyer.emailVerified !== true) return json(403, { error: "verify-account" });
+        if (deps.payments === undefined) return json(503, { error: "not-configured" });
+        const orderId = `${TOKEN_ORDER_PREFIX}${randomUUID().replaceAll("-", "")}`;
+        const origin = deps.siteOrigin ?? "https://adcode.bluethenics.com";
+        const session = await deps.payments.createCheckout({ orderId, product: "ai-tokens", advertiserId: auth.uid, advertiserName: buyer.displayName ?? buyer.email, advertiserEmail: buyer.email,
+          billingCountry: country, amountMicros: BigInt(pack.priceCents) * 10_000n, returnUrl: `${origin}/ai-tokens?order=${orderId}`, cancelUrl: `${origin}/ai-tokens` });
+        if (session === null) return json(503, { error: "not-configured" });
+        await deps.store.createTokenOrder({ orderId, uid: auth.uid, packId: pack.id, priceCents: pack.priceCents, tokens: pack.tokens, status: "pending", checkoutSession: session.sessionId, providerPaymentId: null, createdAt: deps.clock.now(), paidAt: null });
+        return json(200, { orderId, checkoutUrl: session.checkoutUrl });
+      }
+      if (url.pathname === "/v1/admin/ai-tokens/grant" && request.method === "POST") {
+        const raw = await readJson(request);
+        if (!isRecord(raw) || typeof raw["uid"] !== "string" || raw["uid"].length === 0 || raw["uid"].length > 128 || typeof raw["tokens"] !== "number" || !Number.isSafeInteger(raw["tokens"]) ||
+          raw["tokens"] === 0 || Math.abs(raw["tokens"]) > 10_000_000_000 || typeof raw["note"] !== "string" || raw["note"].length > 500) return json(400, { error: "bad-grant" });
+        await audit("grant-ai-tokens", raw["uid"]);
+        await deps.store.grantTokens(raw["uid"], raw["tokens"], auth.uid, raw["note"].trim(), deps.clock.now());
+        return json(200, { ok: true });
+      }
+      if (url.pathname === "/v1/admin/ai-tokens/sales" && request.method === "GET") {
+        const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days") ?? 30) || 30));
+        return json(200, { days: await deps.store.tokenSales(deps.clock.now() - days * 86_400_000) });
       }
       if (url.pathname === "/v1/admin/tagflow") {
         if (request.method === "GET") return json(200, { config, updatedAt: saved?.updatedAt ?? 0, updatedBy: saved?.updatedBy ?? "", keyConfigured: defaultKeyConfigured(config), connections: connections(config), keysManageable: secrets.configured() });

@@ -15,6 +15,7 @@
  */
 import { verifyWebhook, type WebhookHeaders } from "./billing.ts";
 import { parseProviderEvent } from "./providerEvents.ts";
+import { TOKEN_ORDER_PREFIX } from "./paidTokens.ts";
 import type { Clock, Store } from "./store.ts";
 
 export interface FundingDeps {
@@ -54,6 +55,26 @@ export async function handleFundingWebhook(
     // Not an event we fund on. 200, so the provider stops retrying something we are
     // deliberately ignoring.
     return { ok: true, credited: false, reason: "ignored" };
+  }
+
+  /*
+   * AI-token orders first. A purchase is ours by its `ait_` order id; a refund names only the
+   * payment, so the token path is asked first and passes back anything that is not one of its
+   * orders - an advertiser refund is never applied twice and never lost.
+   */
+  const tokenPurchase = event.type === "purchase" && event.orderId.startsWith(TOKEN_ORDER_PREFIX);
+  if (tokenPurchase || event.type === "refund") {
+    const tokens = await deps.store.applyTokenEvent({
+      type: event.type === "purchase" ? "purchase" : "refund",
+      webhookId: event.webhookId,
+      orderId: event.type === "purchase" ? event.orderId : null,
+      paymentId: event.paymentId,
+      sessionId: event.type === "purchase" ? event.sessionId : null,
+      now: nowMs,
+    });
+    if (tokens === "credited") return { ok: true, credited: true, reason: "credited" };
+    if (tokens === "duplicate") return { ok: true, credited: false, reason: "duplicate" };
+    if (tokens === "refunded" || tokenPurchase) return { ok: true, credited: false, reason: "ignored" };
   }
 
   const result = await deps.store.applyCreditEvent(event);

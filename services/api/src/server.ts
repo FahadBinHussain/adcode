@@ -302,7 +302,8 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
 
   const store = options.store ?? createMemoryStore();
   const clock = options.clock ?? { now: () => Date.now() };
-  const tagflow = createTagflowHandler({ store, verifier, clock, ...options.tagflow });
+  const tagflow = createTagflowHandler({ store, verifier, clock,
+    ...(options.payments === undefined ? {} : { payments: options.payments }), ...(options.siteOrigin === undefined ? {} : { siteOrigin: options.siteOrigin }), ...options.tagflow });
 
   let counter = 0;
   const ids = options.ids ?? { next: (prefix: string) => `${prefix}-${++counter}-${Date.now()}` };

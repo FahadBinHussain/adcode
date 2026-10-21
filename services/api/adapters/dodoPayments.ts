@@ -26,7 +26,8 @@ export function createDodoProvider(): PaymentProvider {
   return {
     async createCheckout(request: CheckoutRequest): Promise<CheckoutSession | null> {
       const apiKey = process.env["DODO_API_KEY"];
-      const productId = process.env["DODO_PRODUCT_ID"];
+      // AI tokens are their own product, so they stay apart from advertiser deposits in Dodo's reports and tax category.
+      const productId = request.product === "ai-tokens" ? process.env["DODO_AI_PRODUCT_ID"] : process.env["DODO_PRODUCT_ID"];
       if (apiKey === undefined || productId === undefined) return null;
 
       try {

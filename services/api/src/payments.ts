@@ -23,6 +23,8 @@ export interface CheckoutRequest {
   /** Where Dodo returns the browser once payment finishes. */
   returnUrl: string;
   cancelUrl: string;
+  /** Which Dodo product the payment is for; missing is an advertiser deposit. */
+  product?: "advertiser" | "ai-tokens";
 }
 
 /** Two uppercase letters. Anything else is refused rather than sent on to the provider. */
