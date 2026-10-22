@@ -40,6 +40,15 @@ export function refillText(resetsAt: number, now: number): string {
   return unit(Math.max(1, Math.round(ms / 60_000)), "minute");
 }
 
+export type Arrival = "checking" | "added" | "not-yet";
+
+/** Back from Dodo: a payment is only "received" once the webhook has marked the order paid. */
+export function arrivalMessage(arrival: Arrival): string {
+  if (arrival === "checking") return "Checking your payment…";
+  if (arrival === "added") return "Your tokens are added. A task that paused carries on by itself.";
+  return "We haven't received this payment yet. If you paid, your tokens arrive within a few minutes - press Refresh to check again. If you closed the checkout, nothing was charged.";
+}
+
 const dollars = (cents: number): string => `$${Number.isInteger(cents / 100) ? cents / 100 : (cents / 100).toFixed(2)}`;
 
 export function PackList({ packs, busy, onBuy }: { packs: TokenPack[]; busy: string | null; onBuy: (pack: TokenPack) => void }) {
@@ -90,7 +99,7 @@ export default function AiTokens() {
   const [country, setCountry] = useState("US");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [arrival, setArrival] = useState<"waiting" | "added" | "slow" | null>(null);
+  const [arrival, setArrival] = useState<Arrival | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => { setCountry(guessCountry()); }, []);
@@ -116,12 +125,14 @@ export default function AiTokens() {
     if (user === null) return;
     const order = new URLSearchParams(window.location.search).get("order");
     if (order === null) return;
-    setArrival("waiting");
+    setArrival("checking");
     const started = Date.now();
+    // Once it is settled either way, the address loses ?order= so a reload days later says nothing.
+    const forget = (): void => window.history.replaceState(null, "", window.location.pathname);
     const timer = window.setInterval(() => {
       void load().then((view) => {
-        if (view?.orders.some((one) => one.orderId === order && one.status === "paid")) { setArrival("added"); window.clearInterval(timer); }
-        else if (Date.now() - started > POLL_FOR_MS) { setArrival("slow"); window.clearInterval(timer); }
+        if (view?.orders.some((one) => one.orderId === order && one.status === "paid")) { setArrival("added"); forget(); window.clearInterval(timer); }
+        else if (Date.now() - started > POLL_FOR_MS) { setArrival("not-yet"); forget(); window.clearInterval(timer); }
       });
     }, POLL_MS);
     return () => window.clearInterval(timer);
@@ -154,12 +165,10 @@ export default function AiTokens() {
       ) : (
         <>
           {error !== null && <div className="notice" data-tone="error" role="alert">{error}</div>}
-          {arrival === "waiting" && <div className="notice" role="status">Payment received. Adding your tokens…</div>}
-          {arrival === "added" && <div className="notice" data-tone="success" role="status">Your tokens are added. A task that paused carries on by itself.</div>}
-          {arrival === "slow" && (
-            <div className="notice" role="status">
-              Payment received - your tokens arrive within a few minutes.{" "}
-              <button type="button" className="btn btn-outline btn-small" onClick={() => void load()}>Refresh</button>
+          {arrival !== null && (
+            <div className="notice" data-tone={arrival === "added" ? "success" : undefined} role="status">
+              {arrivalMessage(arrival)}{" "}
+              {arrival === "not-yet" && <button type="button" className="btn btn-outline btn-small" onClick={() => void load()}>Refresh</button>}
             </div>
           )}
 

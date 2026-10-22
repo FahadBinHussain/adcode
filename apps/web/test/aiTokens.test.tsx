@@ -35,3 +35,14 @@ describe("the AI tokens page", () => {
     expect(html).toContain("refill in 4 days");
   });
 });
+
+describe("coming back from checkout", () => {
+  it("never says a payment arrived before the order is paid", async () => {
+    const { arrivalMessage } = await import("../src/app/ai-tokens/AiTokens");
+    expect(arrivalMessage("checking")).toBe("Checking your payment…");
+    expect(arrivalMessage("checking")).not.toMatch(/received/i);
+    expect(arrivalMessage("added")).toContain("Your tokens are added");
+    expect(arrivalMessage("not-yet")).toContain("We haven't received this payment yet");
+    expect(arrivalMessage("not-yet")).toContain("nothing was charged");
+  });
+});
