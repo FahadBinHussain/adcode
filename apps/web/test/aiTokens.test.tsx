@@ -46,3 +46,12 @@ describe("coming back from checkout", () => {
     expect(arrivalMessage("not-yet")).toContain("nothing was charged");
   });
 });
+
+describe("the AI tokens page for search engines and link previews", () => {
+  it("has a complete share card and a heading in the server-rendered page", async () => {
+    const { metadata, AiTokensHeading } = await import("../src/app/ai-tokens/page");
+    expect(metadata.openGraph).toBeDefined();
+    expect(metadata.twitter).toBeDefined();
+    expect(renderToStaticMarkup(<AiTokensHeading />)).toMatch(/<h1[^>]*>AI tokens<\/h1>/);
+  });
+});

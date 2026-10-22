@@ -150,16 +150,9 @@ export default function AiTokens() {
 
   if (authLoading) return <AdcodeLoader />;
 
+  // The heading and the offer are rendered by the page on the server (page.tsx).
   return (
-    <main className="ai-tokens">
-      <header className="ai-tokens-head">
-        <h1>AI tokens</h1>
-        <p>
-          Heabsy&apos;s models in ADCode - GLM 5.3 Flash, Qwen 3.8 and Mimo - include {formatTokens(offer?.freeWeeklyTokens ?? 10_000_000)} free tokens every week.
-          Buy more to keep using them through a heavy week. Tagflow AI stays free with no weekly limit.
-        </p>
-      </header>
-
+    <>
       {user === null ? (
         <SignInCard heading="Sign in with your ADCode account" />
       ) : (
@@ -207,6 +200,6 @@ export default function AiTokens() {
           )}
         </>
       )}
-    </main>
+    </>
   );
 }
