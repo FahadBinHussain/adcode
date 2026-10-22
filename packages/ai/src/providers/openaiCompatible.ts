@@ -331,7 +331,7 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
         // found", "insufficient credits", "does not support tool use"). A bare
         // status leaves the user with nothing to act on.
         let detail = "";
-        let limitMetadata: { code?: string; retryable?: boolean; resetsAt?: number; limit?: "session" | "weekly" } = {};
+        let limitMetadata: { code?: string; retryable?: boolean; resetsAt?: number; limit?: "session" | "weekly" | "paid"; buyUrl?: string } = {};
         try {
           const text = (await response.text()).trim().slice(0, 2000);
           if (text.length > 0) {
@@ -345,7 +345,9 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
                   ...(typeof fields["code"] === "string" ? { code: fields["code"] } : {}),
                   ...(typeof fields["retryable"] === "boolean" ? { retryable: fields["retryable"] } : {}),
                   ...(typeof fields["resetsAt"] === "number" && Number.isSafeInteger(fields["resetsAt"]) ? { resetsAt: fields["resetsAt"] } : {}),
-                  ...(fields["limit"] === "session" || fields["limit"] === "weekly" ? { limit: fields["limit"] } : {}),
+                  ...(fields["limit"] === "session" || fields["limit"] === "weekly" || fields["limit"] === "paid" ? { limit: fields["limit"] } : {}),
+                  // Paid tokens (relays from 2026-10-21): where to buy more, only ever an https address.
+                  ...(typeof fields["buyUrl"] === "string" && /^https:\/\/[^\s]+$/.test(fields["buyUrl"]) ? { buyUrl: fields["buyUrl"] } : {}),
                 };
               }
             } catch {

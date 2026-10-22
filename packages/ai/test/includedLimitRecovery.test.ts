@@ -84,3 +84,13 @@ it("recognises the desktop's token-refresh network failure and nothing that answ
   expect(networkFailure(new Error("Sign in in Account to use included AI."))).toBeNull();
   expect(networkFailure({status:503})).toBeNull();
 });
+it("names where to buy tokens on the paid limit, and checks again every two minutes instead of waiting days",async()=>{
+  vi.useFakeTimers();vi.setSystemTime(0);let calls=0;
+  const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){if(++calls<3)throw{status:429,code:"daily-limit",retryable:true,limit:"paid",resetsAt:3*86_400_000,buyUrl:"https://adcode.bluethenics.com/ai-tokens"};yield{kind:"stop",reason:"end-turn"};}};
+  const result=collect(recoverIncludedLimits(provider));await vi.advanceTimersByTimeAsync(119_999);expect(calls).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);expect(calls).toBe(2);
+  await vi.advanceTimersByTimeAsync(120_000);const events=await result;expect(calls).toBe(3);
+  const status=events.find(event=>event.kind==="status");
+  expect(status&&status.kind==="status"&&status.text).toContain("https://adcode.bluethenics.com/ai-tokens");
+  expect(status&&status.kind==="status"&&status.text).toContain("Tagflow");
+});

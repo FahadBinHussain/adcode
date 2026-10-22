@@ -1,7 +1,13 @@
 import type { Provider } from "./types.ts";
 
 /** `limit` names the credit window that ran out; older relays send a daily allowance without it. */
-type LimitError = { status?: number; code?: string; retryAfter?: string | null; retryable?: boolean; resetsAt?: number; message?: string; limit?: "session" | "weekly" };
+type LimitError = { status?: number; code?: string; retryAfter?: string | null; retryable?: boolean; resetsAt?: number; message?: string; limit?: "session" | "weekly" | "paid"; buyUrl?: string };
+
+/**
+ * How often a task paused on the paid-token limit asks again. Buying tokens ends that wait at
+ * once, so the task does not sit until the free week refills days later.
+ */
+export const PAID_RECHECK_MS = 120_000;
 
 /** Re-check wall time every minute so a sleeping computer resumes after the reset. */
 async function waitUntil(at: number, signal: AbortSignal): Promise<void> {
@@ -81,6 +87,11 @@ export function recoverIncludedLimits(provider: Provider): Provider {
           const code = error.code ?? /\(code (daily-limit|rate-limit|upstream-rate-limit)\)/.exec(error.message ?? "")?.[1];
           if (error.status !== 429 || error.retryable === false || !["daily-limit", "rate-limit", "upstream-rate-limit"].includes(code ?? "")) throw caught;
           const daily = code === "daily-limit";
+          if (error.limit === "paid") {
+            yield { kind: "status", text: `This week's free tokens for this model are used up. Buy tokens at ${error.buyUrl ?? "https://adcode.bluethenics.com/ai-tokens"}, or switch to Tagflow AI, which stays free. This task checks again every two minutes and carries on by itself once you have tokens. Press Stop to cancel.` };
+            await waitUntil(Math.min(resetTime(error, daily), Date.now() + PAID_RECHECK_MS), signal);
+            continue;
+          }
           const at = resetTime(error, daily);
           const when = new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
           yield { kind: "status", text: error.limit === "weekly"
