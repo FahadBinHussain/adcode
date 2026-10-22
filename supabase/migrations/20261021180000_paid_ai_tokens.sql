@@ -4,6 +4,11 @@
 -- settle_included_ai body settles old reservations exactly as before (their token holds are 0).
 begin;
 
+-- tagflow_reservations takes a write on every AI request. Adding its columns needs a brief
+-- exclusive lock: give up after five seconds rather than queue live requests behind it - the
+-- whole migration rolls back and can simply be run again.
+set local lock_timeout = '5s';
+
 -- A 'paid_week' row is the free paid-model allowance; in it the millicredit columns hold tokens.
 alter table public.ai_credit_windows drop constraint if exists ai_credit_windows_kind_check;
 alter table public.ai_credit_windows add constraint ai_credit_windows_kind_check check (kind in ('session', 'week', 'paid_week'));
