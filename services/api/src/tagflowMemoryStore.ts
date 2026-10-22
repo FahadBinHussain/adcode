@@ -87,7 +87,7 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
       });
       const hold = holds.get(id);
       if (hold !== undefined) {
-        const done = chargeTokens(freeWeeks.get(reservation.uid) ?? null, balanceOf(reservation.uid), hold, usage.failed ? 0 : usage.inputTokens + usage.outputTokens);
+        const done = chargeTokens(freeWeeks.get(reservation.uid) ?? null, balanceOf(reservation.uid), hold, usage.failed ? 0 : usage.tokenCharge ?? usage.inputTokens + usage.outputTokens);
         if (done.window !== null) freeWeeks.set(reservation.uid, done.window);
         balances.set(reservation.uid, done.balance);
         if (done.paidCharged > 0) addLedger({ uid: reservation.uid, delta: -done.paidCharged, kind: "usage", ref: id, note: "", createdAt: Date.now() });
@@ -105,10 +105,23 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
         ? (event.orderId === null ? undefined : orders.get(event.orderId))
         : [...orders.values()].find((one) => one.providerPaymentId === event.paymentId);
       if (target === undefined) return "not-ai-tokens";
+      // A payment that does not match its order is held for review, never credited blindly.
+      if (event.type === "purchase" && (event.amountMicros !== BigInt(target.priceCents) * 10_000n ||
+          (event.sessionId !== null && target.checkoutSession !== null && event.sessionId !== target.checkoutSession))) return "review";
       if (seenWebhooks.has(event.webhookId)) return "duplicate";
       seenWebhooks.add(event.webhookId);
-      if (target.status !== (event.type === "purchase" ? "pending" : "paid")) return "duplicate";
       const balance = balanceOf(target.uid);
+      if (event.type === "dispute-release") {
+        if (target.status !== "disputed") return "duplicate";
+        const taken = -(ledger.find((row) => row.uid === target.uid && row.kind === "refund" && row.ref.startsWith(`${target.orderId}:`))?.delta ?? 0);
+        orders.set(target.orderId, { ...target, status: "paid" });
+        if (taken > 0) {
+          balances.set(target.uid, { ...balance, purchased: balance.purchased + taken });
+          addLedger({ uid: target.uid, delta: taken, kind: "purchase", ref: `${target.orderId}:${event.webhookId}`, note: "", createdAt: event.now });
+        }
+        return "credited";
+      }
+      if (target.status !== (event.type === "purchase" ? "pending" : "paid")) return "duplicate";
       if (event.type === "purchase") {
         orders.set(target.orderId, { ...target, status: "paid", providerPaymentId: event.paymentId, paidAt: event.now, checkoutSession: event.sessionId ?? target.checkoutSession });
         balances.set(target.uid, { ...balance, purchased: balance.purchased + target.tokens });
@@ -116,10 +129,11 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
         return "credited";
       }
       // Only what is left of the order comes back; tokens already used stay used.
+      // A refund or a chargeback.
       const back = Math.min(target.tokens, Math.max(0, balance.purchased));
-      orders.set(target.orderId, { ...target, status: "refunded" });
+      orders.set(target.orderId, { ...target, status: event.type === "refund" ? "refunded" : "disputed" });
       balances.set(target.uid, { ...balance, purchased: balance.purchased - back });
-      if (back > 0) addLedger({ uid: target.uid, delta: -back, kind: "refund", ref: target.orderId, note: "", createdAt: event.now });
+      if (back > 0) addLedger({ uid: target.uid, delta: -back, kind: "refund", ref: event.type === "refund" ? target.orderId : `${target.orderId}:${event.webhookId}`, note: "", createdAt: event.now });
       return "refunded";
     },
     async grantTokens(uid, tokens, adminUid, note, now) {

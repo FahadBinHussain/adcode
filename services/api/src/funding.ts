@@ -58,23 +58,27 @@ export async function handleFundingWebhook(
   }
 
   /*
-   * AI-token orders first. A purchase is ours by its `ait_` order id; a refund names only the
-   * payment, so the token path is asked first and passes back anything that is not one of its
-   * orders - an advertiser refund is never applied twice and never lost.
+   * AI-token orders first. A purchase is ours by its `ait_` order id; a refund or dispute names
+   * only the payment, so the token path is asked first and passes back anything that is not one
+   * of its orders - an advertiser refund is never applied twice and never lost. A chargeback
+   * takes back what is left of the tokens, and a won dispute gives it back, as for advertisers.
    */
   const tokenPurchase = event.type === "purchase" && event.orderId.startsWith(TOKEN_ORDER_PREFIX);
-  if (tokenPurchase || event.type === "refund") {
+  const tokenType = event.type === "purchase" || event.type === "refund" || event.type === "dispute-opened" || event.type === "dispute-release" ? event.type : null;
+  if (tokenType !== null && (tokenPurchase || event.type !== "purchase")) {
     const tokens = await deps.store.applyTokenEvent({
-      type: event.type === "purchase" ? "purchase" : "refund",
+      type: tokenType,
       webhookId: event.webhookId,
       orderId: event.type === "purchase" ? event.orderId : null,
       paymentId: event.paymentId,
       sessionId: event.type === "purchase" ? event.sessionId : null,
+      amountMicros: event.amountMicros,
       now: nowMs,
     });
-    if (tokens === "credited") return { ok: true, credited: true, reason: "credited" };
+    if (tokens === "credited") return { ok: true, credited: event.type === "purchase", reason: event.type === "purchase" ? "credited" : "ignored" };
     if (tokens === "duplicate") return { ok: true, credited: false, reason: "duplicate" };
-    if (tokens === "refunded" || tokenPurchase) return { ok: true, credited: false, reason: "ignored" };
+    // "review": recorded for an administrator; not credited, and not retried by Dodo.
+    if (tokens === "refunded" || tokens === "review" || tokenPurchase) return { ok: true, credited: false, reason: "ignored" };
   }
 
   const result = await deps.store.applyCreditEvent(event);

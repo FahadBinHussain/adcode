@@ -8,7 +8,7 @@ const usageFrom = (row: UsageRow): TagflowUsage => ({ uid: row.uid, day: row.day
 type WindowRow = { kind: string; started_at: number | string; ends_at: number | string; used_millicredits: number | string; reserved_millicredits: number | string };
 const windowFrom = (row: WindowRow | undefined): CreditWindow | null => row === undefined ? null : { startedAt: Number(row.started_at), endsAt: Number(row.ends_at), usedMillicredits: Number(row.used_millicredits), reservedMillicredits: Number(row.reserved_millicredits) };
 const RESERVE_RESULTS = ["ok", "daily-limit", "rate-limit", "session-limit", "weekly-limit", "paid-limit"] as const;
-const TOKEN_EVENT_RESULTS = ["credited", "refunded", "duplicate", "not-ai-tokens"] as const;
+const TOKEN_EVENT_RESULTS = ["credited", "refunded", "duplicate", "review", "not-ai-tokens"] as const;
 type OrderRow = { order_id: string; uid: string; pack_id: string; price_cents: number | string; tokens: number | string; status: TokenOrder["status"]; checkout_session: string | null; provider_payment_id: string | null; created_at: number | string; paid_at: number | string | null };
 const orderFrom = (row: OrderRow): TokenOrder => ({ orderId: row.order_id, uid: row.uid, packId: row.pack_id, priceCents: Number(row.price_cents), tokens: Number(row.tokens), status: row.status, checkoutSession: row.checkout_session, providerPaymentId: row.provider_payment_id, createdAt: Number(row.created_at), paidAt: row.paid_at === null ? null : Number(row.paid_at) });
 type LedgerRow = { id: string; uid: string; delta: number | string; kind: TokenLedgerEntry["kind"]; ref: string; note: string; created_at: number | string };
@@ -60,7 +60,10 @@ export function createTagflowStore(lazy: () => Promise<SupabaseClient>): Tagflow
       return data as typeof RESERVE_RESULTS[number];
     },
     async settleTagflow(id, usage) {
-      const { error } = await (await lazy()).rpc("settle_included_ai", { p_id: id, p_input: usage.inputTokens, p_output: usage.outputTokens, p_cost: usage.costMicros, p_credits: usage.failed ? 0 : usage.millicredits ?? 0, p_estimated: usage.estimated, p_failed: usage.failed });
+      // Only a paid-model request names a token charge; every other one settles exactly as before.
+      const base = { p_id: id, p_input: usage.inputTokens, p_output: usage.outputTokens, p_cost: usage.costMicros, p_credits: usage.failed ? 0 : usage.millicredits ?? 0, p_estimated: usage.estimated, p_failed: usage.failed };
+      const { error } = await (await lazy()).rpc(usage.tokenCharge === undefined ? "settle_included_ai" : "settle_ai_with_tokens",
+        usage.tokenCharge === undefined ? base : { ...base, p_token_charge: usage.failed ? 0 : usage.tokenCharge });
       check(error);
     },
     async claimVerificationSend(uid, now, gapMs) {
@@ -84,7 +87,7 @@ export function createTagflowStore(lazy: () => Promise<SupabaseClient>): Tagflow
       check(error);
     },
     async applyTokenEvent(event) {
-      const { data, error } = await (await lazy()).rpc("apply_ai_token_event", { p_type: event.type, p_webhook: event.webhookId, p_order: event.orderId ?? "", p_payment: event.paymentId, p_session: event.sessionId, p_now: event.now });
+      const { data, error } = await (await lazy()).rpc("apply_ai_token_event", { p_type: event.type, p_webhook: event.webhookId, p_order: event.orderId ?? "", p_payment: event.paymentId, p_session: event.sessionId, p_amount_micros: event.amountMicros.toString(), p_now: event.now });
       check(error);
       if (!TOKEN_EVENT_RESULTS.includes(data)) throw new Error("Invalid AI token event result");
       return data as typeof TOKEN_EVENT_RESULTS[number];

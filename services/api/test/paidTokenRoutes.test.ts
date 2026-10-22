@@ -56,6 +56,13 @@ describe("buying AI tokens", () => {
     expect(checkouts).toHaveLength(0);
   });
 
+  it("refuses a sixth unpaid checkout inside ten minutes, so one account cannot flood Dodo", async () => {
+    for (let i = 0; i < 5; i++) expect((await call("/ai/tokens/checkout", "user", { pack: "50m", billingCountry: "DE" })).status).toBe(200);
+    const refused = await call("/ai/tokens/checkout", "user", { pack: "50m", billingCountry: "DE" });
+    expect(refused.status).toBe(429);
+    expect(checkouts).toHaveLength(5);
+  });
+
   it("answers not-configured when Dodo has no AI product", async () => {
     handle = make({ async createCheckout() { return null; } });
     const response = await call("/ai/tokens/checkout", "user", { pack: "50m", billingCountry: "DE" });
@@ -110,6 +117,25 @@ describe("the Dodo webhook and AI-token orders", () => {
   it("ignores a purchase for an ait_ order it never created", async () => {
     const raw = paid("ait_unknown");
     expect(await handleFundingWebhook(deps(), signed(raw, "evt_1"), raw)).toMatchObject({ ok: true, credited: false, reason: "ignored" });
+  });
+
+  it("does not credit a payment whose amount does not match the pack", async () => {
+    const raw = JSON.stringify({ type: "payment.succeeded", data: { payload_type: "Payment", payment_id: "pay_1", checkout_session_id: "cs_1", total_amount: 100, currency: "USD", metadata: { orderId: "ait_1" } } });
+    expect(await handleFundingWebhook(deps(), signed(raw, "evt_1"), raw)).toMatchObject({ ok: true, credited: false });
+    expect((await store.getPaidTokens("user")).balance.purchased).toBe(0);
+  });
+
+  it("takes tokens back on a chargeback for a token payment, without touching advertiser credit", async () => {
+    const raw = paid("ait_1");
+    await handleFundingWebhook(deps(), signed(raw, "evt_1"), raw);
+    const advertiser = vi.spyOn(store, "applyCreditEvent");
+    const dispute = JSON.stringify({ type: "dispute.opened", data: { payload_type: "Dispute", dispute_id: "dp_1", payment_id: "pay_1", amount: 1000, currency: "USD" } });
+    await handleFundingWebhook(deps(), signed(dispute, "evt_d1"), dispute);
+    expect(advertiser).not.toHaveBeenCalled();
+    expect((await store.getPaidTokens("user")).balance.purchased).toBe(0);
+    const won = JSON.stringify({ type: "dispute.won", data: { payload_type: "Dispute", dispute_id: "dp_1", payment_id: "pay_1", amount: 1000, currency: "USD" } });
+    await handleFundingWebhook(deps(), signed(won, "evt_d2"), won);
+    expect((await store.getPaidTokens("user")).balance.purchased).toBe(50_000_000);
   });
 
   it("takes back an AI-token refund, and hands every other refund to advertiser credit", async () => {

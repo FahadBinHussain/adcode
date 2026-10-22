@@ -94,16 +94,19 @@ export interface TagflowSettlement {
   failed: boolean;
   /** Credits actually used, in millicredits. */
   millicredits?: number;
+  /** Tokens charged to a paid-model hold: 0 when a free model answered instead. Missing charges input + output. */
+  tokenCharge?: number;
 }
 
 export type TagflowReserveResult = "ok" | "daily-limit" | "rate-limit" | "session-limit" | "weekly-limit" | "paid-limit";
 
-export type TokenOrderStatus = "pending" | "paid" | "refunded" | "abandoned";
+export type TokenOrderStatus = "pending" | "paid" | "refunded" | "disputed" | "abandoned";
 export interface TokenOrder { orderId: string; uid: string; packId: string; priceCents: number; tokens: number; status: TokenOrderStatus; checkoutSession: string | null; providerPaymentId: string | null; createdAt: number; paidAt: number | null }
 export interface TokenLedgerEntry { id: string; uid: string; delta: number; kind: "purchase" | "usage" | "refund" | "grant"; ref: string; note: string; createdAt: number }
 export interface PaidTokenState { free: FreeWindow | null; balance: TokenBalance }
-export interface TokenEvent { type: "purchase" | "refund"; webhookId: string; orderId: string | null; paymentId: string; sessionId: string | null; now: number }
-export type TokenEventResult = "credited" | "refunded" | "duplicate" | "not-ai-tokens";
+export interface TokenEvent { type: "purchase" | "refund" | "dispute-opened" | "dispute-release"; webhookId: string; orderId: string | null; paymentId: string; sessionId: string | null; amountMicros: bigint; now: number }
+/** "review": a payment that does not match its order, recorded for an administrator and not credited. */
+export type TokenEventResult = "credited" | "refunded" | "duplicate" | "review" | "not-ai-tokens";
 export interface TokenSalesDay { day: string; orders: number; revenueCents: number; tokensSold: number; tokensUsed: number }
 
 export interface TagflowStore {

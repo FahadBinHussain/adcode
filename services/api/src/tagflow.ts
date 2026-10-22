@@ -56,6 +56,10 @@ export const UPSTREAM_RATE_LIMIT_WAITS_MS: readonly number[] = [700, 1600];
 /** Waiting for a provider to start answering; then silence allowed mid-stream; then the longest any answer may run. */
 export const RELAY_TIMEOUTS = { firstMs: 180_000, idleMs: 120_000, maxMs: 1_200_000 } as const;
 
+/** Unpaid token checkouts one account may open in `CHECKOUT_WINDOW_MS`. */
+export const CHECKOUTS_PER_WINDOW = 5;
+export const CHECKOUT_WINDOW_MS = 600_000;
+
 /** How soon the gate may send the same account another verification link. */
 export const VERIFICATION_RESEND_MS = 3_600_000;
 
@@ -367,6 +371,9 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         const buyer = await deps.store.getUser(auth.uid);
         if (buyer?.email === undefined || buyer.emailVerified !== true) return json(403, { error: "verify-account" });
         if (deps.payments === undefined) return json(503, { error: "not-configured" });
+        // Every checkout opens a Dodo session on the merchant account advertisers pay through too.
+        const recent = (await deps.store.listTokenActivity(auth.uid)).orders.filter((one) => one.status === "pending" && one.createdAt > deps.clock.now() - CHECKOUT_WINDOW_MS);
+        if (recent.length >= CHECKOUTS_PER_WINDOW) return json(429, { error: "too-many-checkouts" }, { "retry-after": "600" });
         const orderId = `${TOKEN_ORDER_PREFIX}${randomUUID().replaceAll("-", "")}`;
         const origin = deps.siteOrigin ?? "https://adcode.bluethenics.com";
         const session = await deps.payments.createCheckout({ orderId, product: "ai-tokens", advertiserId: auth.uid, advertiserName: buyer.displayName ?? buyer.email, advertiserEmail: buyer.email,
@@ -462,7 +469,10 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       if (userMatch !== null || url.pathname === "/v1/ai/tagflow/usage" && request.method === "GET") {
         // The day's usage row and the credit windows are what this view shows; a chat request
         // needs neither - its reservation checks both inside one database transaction.
-        const [stored, windows, paidState] = await Promise.all([deps.store.getTagflowUsage(subject, day), deps.store.getCreditWindows(subject), deps.store.getPaidTokens(subject)]);
+        // Paid-token rows are read only while selling is on: no extra reads per poll otherwise, and a
+        // Worker deployed before its migration still answers this view for everyone.
+        const [stored, windows, paidState] = await Promise.all([deps.store.getTagflowUsage(subject, day), deps.store.getCreditWindows(subject),
+          config.paid?.enabled === true ? deps.store.getPaidTokens(subject) : Promise.resolve({ free: null, balance: { purchased: 0, reserved: 0 } })]);
         // Which offered models draw on it, so the editor's meter shows tokens only for those.
         const tokens = { ...tokensView(config.paid, paidState.free, paidState.balance, deps.clock.now()), paidModels: offeredModels.filter((model) => isPaidModel(model, config.paid)).map((model) => model.id) };
         const usage = stored ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
@@ -560,7 +570,9 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         // An incomplete stream may have consumed its full allocation upstream.
         const inputTokens = failed ? 0 : reported?.input ?? served.input;
         const outputTokens = failed ? 0 : reported?.output ?? (complete && observer.completed ? Math.min(served.output, Math.ceil(observer.outputBytes / 3) + (observer.toolCalls.size > 0 ? 16 * observer.toolCalls.size : 0)) : served.output);
-        const result: TagflowSettlement = { inputTokens, outputTokens, costMicros: failed ? 0 : tagflowCost(served.model, inputTokens, outputTokens), estimated: reported === null, failed, millicredits: failed ? 0 : millicreditsFor(inputTokens + outputTokens, servedRate) };
+        const result: TagflowSettlement = { inputTokens, outputTokens, costMicros: failed ? 0 : tagflowCost(served.model, inputTokens, outputTokens), estimated: reported === null, failed, millicredits: failed ? 0 : millicreditsFor(inputTokens + outputTokens, servedRate),
+          // A paid hold is charged only when a paid model answered: a fallback to a free model costs no tokens.
+          ...(reservation.paid === undefined ? {} : { tokenCharge: failed || !isPaidModel(served.model, config.paid) ? 0 : inputTokens + outputTokens }) };
         if (metric !== null) {
           metric.finishedAt ??= deps.clock.now();
           metric.inputTokens = inputTokens; metric.outputTokens = outputTokens; metric.costMicros = result.costMicros; metric.estimated = !failed && result.estimated;

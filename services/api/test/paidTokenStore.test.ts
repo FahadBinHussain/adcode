@@ -9,7 +9,7 @@ const reserve = (store: Memory, id: string, tokens: number, now = 1000) =>
 const settle = (store: Memory, id: string, used: number, failed = false) =>
   store.settleTagflow(id, { inputTokens: failed ? 0 : used, outputTokens: 0, costMicros: 0, estimated: false, failed });
 const order = (orderId: string) => ({ orderId, uid: "u", packId: "50m", priceCents: 1000, tokens: 1000, status: "pending" as const, checkoutSession: "cs_1", providerPaymentId: null, createdAt: 1, paidAt: null });
-const purchase = { type: "purchase" as const, webhookId: "wh_1", orderId: "ait_1", paymentId: "pay_1", sessionId: "cs_1", now: 5 };
+const purchase = { type: "purchase" as const, webhookId: "wh_1", orderId: "ait_1", paymentId: "pay_1", sessionId: "cs_1", amountMicros: 10_000_000n, now: 5 };
 
 describe("paid tokens in the memory store", () => {
   it("uses the free week, then refuses until tokens are bought", async () => {
@@ -46,8 +46,8 @@ describe("paid tokens in the memory store", () => {
     const store = createTagflowMemoryStore();
     await store.createTokenOrder(order("ait_1"));
     await store.applyTokenEvent(purchase);
-    expect(await store.applyTokenEvent({ type: "refund", webhookId: "wh_r", orderId: null, paymentId: "pay_other", sessionId: null, now: 6 })).toBe("not-ai-tokens");
-    expect(await store.applyTokenEvent({ type: "refund", webhookId: "wh_r2", orderId: null, paymentId: "pay_1", sessionId: null, now: 6 })).toBe("refunded");
+    expect(await store.applyTokenEvent({ type: "refund", webhookId: "wh_r", orderId: null, paymentId: "pay_other", sessionId: null, amountMicros: 10_000_000n, now: 6 })).toBe("not-ai-tokens");
+    expect(await store.applyTokenEvent({ type: "refund", webhookId: "wh_r2", orderId: null, paymentId: "pay_1", sessionId: null, amountMicros: 10_000_000n, now: 6 })).toBe("refunded");
     expect((await store.getPaidTokens("u")).balance.purchased).toBe(0);
   });
 
@@ -70,5 +70,33 @@ describe("paid tokens in the memory store", () => {
     await store.createTokenOrder(order("ait_1"));
     await store.applyTokenEvent({ ...purchase, now: Date.parse("2026-10-21T10:00:00Z") });
     expect(await store.tokenSales(0)).toEqual([{ day: "2026-10-21", orders: 1, revenueCents: 1000, tokensSold: 1000, tokensUsed: 0 }]);
+  });
+});
+
+describe("paid tokens: review findings", () => {
+  it("holds a payment that does not match its order for review, never crediting it", async () => {
+    const store = createTagflowMemoryStore();
+    await store.createTokenOrder(order("ait_1"));
+    expect(await store.applyTokenEvent({ ...purchase, amountMicros: 1_000_000n })).toBe("review");
+    expect(await store.applyTokenEvent({ ...purchase, webhookId: "wh_2", sessionId: "cs_other" })).toBe("review");
+    expect((await store.getPaidTokens("u")).balance.purchased).toBe(0);
+  });
+
+  it("takes tokens back on a chargeback and gives them back when the dispute is won", async () => {
+    const store = createTagflowMemoryStore();
+    await store.createTokenOrder(order("ait_1"));
+    await store.applyTokenEvent(purchase);
+    expect(await store.applyTokenEvent({ type: "dispute-opened", webhookId: "wh_d", orderId: null, paymentId: "pay_1", sessionId: null, amountMicros: 10_000_000n, now: 6 })).toBe("refunded");
+    expect((await store.getPaidTokens("u")).balance.purchased).toBe(0);
+    expect(await store.applyTokenEvent({ type: "dispute-release", webhookId: "wh_r", orderId: null, paymentId: "pay_1", sessionId: null, amountMicros: 10_000_000n, now: 7 })).toBe("credited");
+    expect((await store.getPaidTokens("u")).balance.purchased).toBe(1000);
+  });
+
+  it("releases paid holds without charging when a free model answered", async () => {
+    const store = createTagflowMemoryStore();
+    await store.grantTokens("u", 1000, "admin-1", "", 1);
+    expect(await reserve(store, "a", 500)).toBe("ok");
+    await store.settleTagflow("a", { inputTokens: 450, outputTokens: 0, costMicros: 0, estimated: false, failed: false, tokenCharge: 0 });
+    expect(await store.getPaidTokens("u")).toMatchObject({ balance: { purchased: 1000, reserved: 0 }, free: { usedTokens: 0, reservedTokens: 0 } });
   });
 });

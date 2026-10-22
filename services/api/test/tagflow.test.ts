@@ -157,6 +157,22 @@ describe("included Tagflow AI", () => {
       await r.text();
     });
 
+    it("charges no purchased tokens when a busy paid model falls back to Tagflow", async () => {
+      await save(paidConfig(true, 1));
+      await store.grantTokens("user", 1_000_000, "admin-1", "test", now);
+      upstream.mockImplementation(async (_url, init) => JSON.parse(String(init?.body)).model === "glm" ? new Response("busy", { status: 429 }) : reply());
+      const r = await ask("glm"); expect(r.headers.get("x-adcode-fallback-model")).toBe("coder"); await r.text();
+      expect(await store.getPaidTokens("user")).toMatchObject({ balance: { purchased: 1_000_000, reserved: 0 }, free: { usedTokens: 0, reservedTokens: 0 } });
+    });
+
+    it("reads no paid-token rows while paid tokens are off", async () => {
+      await save(paidConfig(false, 10_000_000));
+      const reads = vi.spyOn(store, "getPaidTokens");
+      const view = await (await call("/ai/tagflow/usage", "user")).json() as { tokens: { enabled: boolean; purchased: number } };
+      expect(view.tokens).toMatchObject({ enabled: false, purchased: 0 });
+      expect(reads).not.toHaveBeenCalled();
+    });
+
     it("settles requests held before the switch was turned off", async () => {
       await save(paidConfig(true, 10_000_000));
       const r = await ask("glm");
