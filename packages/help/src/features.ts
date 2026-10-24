@@ -146,6 +146,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
     actions: [command("ai.tagflow", "Choose included AI")],
     keywords: ["tagflow", "included ai", "no api key", "free models", "free ai", "server providers", "admin models", "custom free providers"],
   },
+  "ai.statusAlerts": {
+    actions: [command("help.statusAlerts", "Get status alerts")],
+    keywords: ["status page", "outage", "is it down", "degraded", "model down", "ai not working", "email alerts", "notify me", "subscribe", "back to normal", "uptime", "incident", "status email"],
+  },
   "adcode.ai.designTaste": {
     keywords: ["taste skill", "design skill", "anti slop", "generic ai design", "better ui", "landing page", "frontend", "built-in skills", "leonxlnx"],
   },

@@ -21,7 +21,7 @@
   /* Preserve public runtime variables edited in Cloudflare's dashboard. Secrets are retained by Wrangler. */
   "keep_vars": true,
   /* Hourly bounded batches; email_settings.enabled is false until launch. */
-  "triggers": { "crons": ["0 * * * *"] },
+  "triggers": { "crons": ["*/15 * * * *"] },
 
   /* Keep the existing production hostname attached when deploying from this project. */
   "routes": [

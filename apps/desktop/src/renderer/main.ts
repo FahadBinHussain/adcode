@@ -5931,6 +5931,8 @@ function registerCommands(): void {
   add("workspace.openIde", "Open IDE in a Separate Window", () => void window.adcode.window.openIde());
   // The web version: from the desktop, open it; on the web, its Cloud workspace panel (src/web/cloudPanel.ts).
   add("help.openWebVersion", "Open ADCode on the Web", () => void window.open("https://web.bluethenics.com", "_blank", "noopener"));
+  // Email alerts when an included model degrades or recovers: the status page's own form, no account needed.
+  add("help.statusAlerts", "Get Status Alerts by Email", () => void window.open("https://adcode.bluethenics.com/status#subscribe", "_blank", "noopener"));
   add("cloud.workspace", "Cloud Workspace", () => {
     if (isWebSurface()) document.dispatchEvent(new CustomEvent("adcode:open-cloud-workspace"));
     else void window.open("https://web.bluethenics.com", "_blank", "noopener");

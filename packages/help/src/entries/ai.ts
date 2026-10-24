@@ -394,6 +394,16 @@ export const AI_ENTRIES: readonly HelpEntry[] = [
     related: ["ai.connect", "ai.usage", "account.signIn"],
   },
   {
+    id: "ai.statusAlerts",
+    title: "Status alerts by email",
+    plain: "Get an email when one of the included AI models starts failing requests, and another when it is back to normal. No account needed.",
+    why: "When answers start failing, the first question is whether it is you or the service. An alert tells you before you start debugging your own setup - and the all-clear tells you when to try again, so you are not refreshing a status page.",
+    how: "Run Help: Get Status Alerts by Email, or open adcode.bluethenics.com/status and scroll to Email alerts. Enter your address, keep Model health and Incident updates ticked (or untick one), and press Get alerts. Open the email from noreply@bluethenics.com and press Confirm my alerts - nothing else is sent until you do, and the link works for seven days. Every 15 minutes the service checks each included model against the requests since the last check: an alert goes out when one is degraded (5% or more failing) or in an outage (25% or more), and a back-to-normal email after two good checks in a row. A check with fewer than 10 requests decides nothing. Incident updates are the notes the team posts during an outage. Every email has a one-click unsubscribe. Prefer a feed? The same page has an RSS link for incidents.",
+    group: "ai",
+    settingIds: [],
+    related: ["ai.tagflow", "ai.connect", "workbench.debugLog"],
+  },
+  {
     id: "ai.usage",
     title: "AI usage",
     plain: "Shows your AI activity, daily streaks, tokens and estimated cost, model by model.",

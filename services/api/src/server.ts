@@ -8,10 +8,11 @@
 import { UNSUBSCRIBE_TOKEN, type MailingStore, type SendResult } from "./mailing.ts";
 import { handleAnnounce } from "./announcements.ts";
 import { verifyMailingWebhook } from "./mailingDelivery.ts";
+import { STATUS_TOKEN, parseSubscribe, type StatusAlertStore } from "./statusAlerts.ts";
 import type { AccountIdentity } from "./accountIdentity.ts";
 import type { WorkerSecrets } from "./workerSecrets.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
 import { createTagflowHandler, isTagflowPath } from "./tagflow.ts";
 import { authenticate, type TokenVerifier } from "./auth.ts";
@@ -274,6 +275,10 @@ export interface ApiOptions {
   mailingWebhookSecret?: () => string | undefined;
   /** Renders and sends an administrator's reply to a report (Resend, in production). */
   reportReplyMailer?: (input: { replyId: string; to: string; reportTitle: string; reportedAt: number; message: string }) => Promise<SendResult>;
+  /** The status page's public subscriber lists and alert queue. */
+  statusAlerts?: StatusAlertStore;
+  /** Renders and sends the status page's confirmation email (Resend, from noreply@, in production). */
+  statusConfirmationMailer?: (input: { email: string; confirmToken: string; models: boolean; incidents: boolean }) => Promise<SendResult>;
   port?: number;
   store?: Store;
   verifier?: TokenVerifier;
@@ -579,6 +584,84 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
         return;
       }
       send(res, 200, post, cors);
+      return;
+    }
+
+    /*
+     * The status page's email alerts, for anybody, before authentication.
+     *
+     * The page is plain HTML with no client script, so the form posts here and is answered with
+     * a redirect to a page that says what happened; JSON callers get the same word as JSON. Every
+     * valid address is told "check your inbox" whether or not anything was sent - a bounced,
+     * rate-limited or already-confirmed address must not be distinguishable from a new one.
+     *
+     * Confirming and unsubscribing go through a page with a button, never a bare GET: mail
+     * scanners open every link in an email, and would otherwise confirm or unsubscribe people.
+     * The one exception is the RFC 8058 one-click POST that mail apps send for List-Unsubscribe.
+     */
+    if (path === "/v1/status/subscribe" && req.method === "POST") {
+      const form = (req.headers["content-type"] ?? "").includes("application/json") ? "json" : "form";
+      const answer = (state: string, status = 200): void => {
+        if (form === "json") { send(res, status, { state }, { ...cors, "cache-control": "no-store" }); return; }
+        res.writeHead(303, { location: "/status/subscription?state=" + state, "cache-control": "no-store" });
+        res.end("");
+      };
+      if (!options.statusAlerts) { answer("unavailable", 503); return; }
+      let fields: Record<string, unknown>;
+      try {
+        const body = await readBody(req);
+        fields = form === "json" ? JSON.parse(body) as Record<string, unknown> : Object.fromEntries(new URLSearchParams(body));
+        if (typeof fields !== "object" || fields === null || Array.isArray(fields)) throw new Error("not an object");
+      } catch { answer("invalid-email", 400); return; }
+      const parsed = parseSubscribe(fields);
+      if (!parsed.ok) { answer(parsed.error === "bot" ? "check-email" : parsed.error, parsed.error === "bot" ? 200 : 400); return; }
+      // A network gets a few asks per ten minutes, and the whole form a ceiling per minute.
+      const now = clock.now();
+      const ip = firstHeader(req.headers["cf-connecting-ip"]) ?? firstHeader(req.headers["x-forwarded-for"])?.split(",")[0]?.trim() ?? "unknown";
+      const network = createHash("sha256").update("status-subscribe:" + ip).digest("hex").slice(0, 32);
+      if (await store.bumpRequestCount("status-subscribe:" + network, now - (now % 600_000)) > 5 ||
+          await store.bumpRequestCount("status-subscribe-global", now - (now % 60_000)) > 60) {
+        answer("busy", 429);
+        return;
+      }
+      const asked = await options.statusAlerts.subscribe({ email: parsed.email, models: parsed.models, incidents: parsed.incidents, now });
+      if (asked.send && asked.confirmToken !== null && options.statusConfirmationMailer) {
+        const sent = await options.statusConfirmationMailer({ email: parsed.email, confirmToken: asked.confirmToken, models: parsed.models, incidents: parsed.incidents });
+        if ("providerId" in sent) await options.statusAlerts.recordConfirmation(parsed.email, sent.providerId).catch(() => undefined);
+        else console.error("Status confirmation not sent", sent.code);
+      }
+      answer("check-email");
+      return;
+    }
+
+    if (path === "/v1/status/confirm" && req.method === "POST") {
+      if (!options.statusAlerts) { send(res, 503, { error: "unavailable" }, cors); return; }
+      const token = new URLSearchParams(await readBody(req).catch(() => "")).get("token") ?? "";
+      const result = STATUS_TOKEN.test(token) ? await options.statusAlerts.confirm(token, clock.now()) : "invalid";
+      res.writeHead(303, { location: "/status/subscription?state=" + result, "cache-control": "no-store" });
+      res.end("");
+      return;
+    }
+
+    if (path === "/v1/status/unsubscribe") {
+      const token = url.searchParams.get("token") ?? "";
+      if (req.method === "GET") {
+        res.writeHead(303, { location: "/status/subscription?unsubscribe=" + encodeURIComponent(token), "cache-control": "no-store", "referrer-policy": "no-referrer" });
+        res.end("");
+        return;
+      }
+      if (req.method !== "POST") { send(res, 405, { error: "method-not-allowed" }, { ...cors, allow: "GET, POST" }); return; }
+      if (!options.statusAlerts) { send(res, 503, { error: "unavailable" }, cors); return; }
+      const form = new URLSearchParams(await readBody(req).catch(() => ""));
+      const chosen = STATUS_TOKEN.test(token) ? token : form.get("token") ?? "";
+      const done = STATUS_TOKEN.test(chosen) && await options.statusAlerts.unsubscribe(chosen, clock.now());
+      if (form.get("List-Unsubscribe") === "One-Click") {
+        res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+        res.end("");
+        return;
+      }
+      res.writeHead(303, { location: "/status/subscription?state=" + (done ? "unsubscribed" : "invalid"), "cache-control": "no-store" });
+      res.end("");
       return;
     }
 
@@ -1040,7 +1123,7 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
     if (path === "/v1/admin/email/announce" && req.method === "POST") {
       const raw = await jsonBodyOr400();
       if (raw === undefined) return;
-      const outcome = await handleAnnounce({ store, clock, siteOrigin, ...(options.mailing === undefined ? {} : { mailing: options.mailing }) }, auth.uid, raw);
+      const outcome = await handleAnnounce({ store, clock, siteOrigin, ...(options.mailing === undefined ? {} : { mailing: options.mailing }), ...(options.statusAlerts === undefined ? {} : { statusAlerts: options.statusAlerts }) }, auth.uid, raw);
       send(res, outcome.status, outcome.body, cors);
       return;
     }
@@ -1361,6 +1444,12 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
      * one with its first update; later updates append to an existing incident. The public
      * page reads the same rows through `/v1/status`.
      */
+    if (path === "/v1/admin/status/subscribers" && req.method === "GET") {
+      if (!options.statusAlerts) { send(res, 503, { error: "unavailable" }, cors); return; }
+      send(res, 200, await options.statusAlerts.counts(), { ...cors, "cache-control": "no-store" });
+      return;
+    }
+
     if (path === "/v1/admin/status" && req.method === "GET") {
       send(res, 200, await handleListStatus({ store, clock }, auth.uid), { ...cors, "cache-control": "no-store" });
       return;
