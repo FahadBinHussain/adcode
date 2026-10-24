@@ -173,6 +173,36 @@ describe("included Tagflow AI", () => {
       expect(reads).not.toHaveBeenCalled();
     });
 
+    it("gives a subscriber the plan's weekly allowance", async () => {
+      await save(paidConfig(true, 1));
+      await store.applySubscriptionEvent({ webhookId: "w", type: "active", subscriptionId: "s", uid: "user", plan: "pro", customerId: "c", status: "active", periodEnd: now + 30 * 86_400_000, cancelAtPeriodEnd: false, now });
+      for (let i = 0; i < 3; i++) { const r = await ask("glm"); expect(r.status).toBe(200); await r.text(); }
+      const view = await (await call("/ai/tagflow/usage", "user")).json() as { tokens: { free: { limit: number }; plan: { id: string } | null } };
+      expect(view.tokens.free.limit).toBe(150_000_000);
+      expect(view.tokens.plan).toMatchObject({ id: "pro" });
+    });
+
+    it("falls back to the free allowance once a plan has ended", async () => {
+      await save(paidConfig(true, 1));
+      await store.applySubscriptionEvent({ webhookId: "w", type: "active", subscriptionId: "s", uid: "user", plan: "monthly", customerId: "c", status: "active", periodEnd: now + 1000, cancelAtPeriodEnd: false, now });
+      now += 2000;
+      const first = await ask("glm"); expect(first.status).toBe(200); await first.text();
+      expect((await ask("glm")).status).toBe(429);
+    });
+
+    it("publishes the plans", async () => {
+      await save(paidConfig(true, 1));
+      const published = await (await call("/ai/tagflow/config")).json() as { paid: { plans: { id: string; priceCents: number; weeklyTokens: number }[] } };
+      expect(published.paid.plans.map((p) => [p.id, p.priceCents, p.weeklyTokens])).toEqual([["weekly", 300, 60_000_000], ["monthly", 900, 60_000_000], ["pro", 1900, 150_000_000]]);
+    });
+
+    it("names plans as well as tokens when the free week is spent", async () => {
+      await save(paidConfig(true, 1));
+      const first = await ask("glm"); await first.text();
+      const { error } = await (await ask("glm")).json() as { error: { message: string } };
+      expect(error.message).toContain("Buy tokens or a plan");
+    });
+
     it("settles requests held before the switch was turned off", async () => {
       await save(paidConfig(true, 10_000_000));
       const r = await ask("glm");

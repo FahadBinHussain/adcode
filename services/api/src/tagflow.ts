@@ -12,6 +12,7 @@ import { includedProvider, isCustomProviderUrl, modelProvider, providerConnectio
 import { DEFAULT_CREDIT_PLAN, creditCharge, creditsView, millicreditsFor, modelCreditRate, parseCreditPlan, untilText, type CreditPlan } from "./credits.ts";
 import { BUY_TOKENS_URL, DEFAULT_PAID_CONFIG, TOKEN_ORDER_PREFIX, isPaidModel, tokensView } from "./paidTokens.ts";
 import type { PaymentProvider } from "./payments.ts";
+import { PLANS, effectiveWeeklyAllowance } from "./aiPlans.ts";
 import { MODEL_FEEDBACK_CATEGORIES, type ModelRequestOutcome, type ModelRequestRecord, type ModelRequestSource } from "./tagflowReportTypes.ts";
 import { completeModelReport, parseReportRange } from "./tagflowReports.ts";
 import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, AI_PERSONAS, audienceChoice, audienceCountry, observedUse, type ModelAudienceProfile } from "./modelAudience.ts";
@@ -336,7 +337,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       const resetsAt = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
       const remainingDay = { "retry-after": String(Math.max(1, Math.ceil((resetsAt - deps.clock.now()) / 1000))) };
       if (url.pathname === "/v1/ai/tagflow/config" && request.method === "GET") {
-        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI", contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens), creditRate: modelCreditRate(model, config), paid: isPaidModel(model, config.paid) })) : [], requiresVerifiedAccount: true, unlimited: true, credits: config.credits ?? DEFAULT_CREDIT_PLAN, paid: config.paid ?? DEFAULT_PAID_CONFIG });
+        return json(200, { available, defaultModel: offeredModels.some((model) => model.id === config.defaultModel) ? config.defaultModel : offeredModels[0]?.id ?? config.defaultModel, models: available ? offeredModels.map((model) => ({ id: model.id, name: model.name, providerName: includedProvider(modelProvider(model), config.providers)?.name ?? "Included AI", contextWindow: Math.min(model.contextWindow, config.maxInputTokens), maxOutput: Math.min(model.maxOutput, config.maxOutputTokens), creditRate: modelCreditRate(model, config), paid: isPaidModel(model, config.paid) })) : [], requiresVerifiedAccount: true, unlimited: true, credits: config.credits ?? DEFAULT_CREDIT_PLAN, paid: { ...(config.paid ?? DEFAULT_PAID_CONFIG), plans: PLANS } });
       }
       const auth = await authenticate(deps, request.headers.get("authorization") ?? undefined);
       if (!auth.ok) return fail(auth.failure === "banned" ? 403 : 401, auth.failure, "Sign in to use included AI. Banned accounts cannot use it.");
@@ -471,10 +472,15 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         // needs neither - its reservation checks both inside one database transaction.
         // Paid-token rows are read only while selling is on: no extra reads per poll otherwise, and a
         // Worker deployed before its migration still answers this view for everyone.
-        const [stored, windows, paidState] = await Promise.all([deps.store.getTagflowUsage(subject, day), deps.store.getCreditWindows(subject),
-          config.paid?.enabled === true ? deps.store.getPaidTokens(subject) : Promise.resolve({ free: null, balance: { purchased: 0, reserved: 0 } })]);
+        const selling = config.paid?.enabled === true;
+        const [stored, windows, paidState, planState] = await Promise.all([deps.store.getTagflowUsage(subject, day), deps.store.getCreditWindows(subject),
+          selling ? deps.store.getPaidTokens(subject) : Promise.resolve({ free: null, balance: { purchased: 0, reserved: 0 } }),
+          selling ? deps.store.getAiPlanState(subject, deps.clock.now()) : Promise.resolve({ plan: null, boostTokens: 0 })]);
+        // The view's limit is the account's own allowance: its plan or boost when better than everyone's.
+        const view = tokensView(config.paid === undefined ? undefined : { ...config.paid, freeWeeklyTokens: effectiveWeeklyAllowance(planState, config.paid.freeWeeklyTokens, deps.clock.now()) },
+          paidState.free, paidState.balance, deps.clock.now());
         // Which offered models draw on it, so the editor's meter shows tokens only for those.
-        const tokens = { ...tokensView(config.paid, paidState.free, paidState.balance, deps.clock.now()), paidModels: offeredModels.filter((model) => isPaidModel(model, config.paid)).map((model) => model.id) };
+        const tokens = { ...view, plan: planState.plan !== null && planState.plan.endsAt > deps.clock.now() ? planState.plan : null, paidModels: offeredModels.filter((model) => isPaidModel(model, config.paid)).map((model) => model.id) };
         const usage = stored ?? { uid: subject, day, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, estimatedRequests: 0, reservedTokens: 0, reservedCostMicros: 0 };
         const credits = creditsView(plan, windows, Object.fromEntries(offeredModels.map((model) => [model.id, modelCreditRate(model, config)])), deps.clock.now());
         if (userMatch !== null) return json(200, { available, policy, limits, usage, resetsAt, blocked: policy?.blocked === true, unlimited: true, credits, tokens });
@@ -519,10 +525,13 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       // Tokens are no longer a limit; the day keeps its spending and request ceilings.
       const rate = modelCreditRate(parsed.model, config);
       const tokens = parsed.input + parsed.output;
+      const paidModel = isPaidModel(parsed.model, config.paid);
+      // The week's free allowance: the account's plan or boost when better than everyone's. Cached per isolate.
+      const freeWeeklyTokens = paidModel ? effectiveWeeklyAllowance(await deps.store.getAiPlanState(auth.uid, deps.clock.now()), config.paid!.freeWeeklyTokens, deps.clock.now()) : 0;
       const reservation = { unlimited: true, id: randomUUID(), uid: auth.uid, day, minute: Math.floor(deps.clock.now() / 60_000), tokens, costMicros: tagflowCost(parsed.model, parsed.input, parsed.output),
         limits: { ...limits, dailyTokens: NO_TOKEN_LIMIT }, credits: creditCharge(plan, millicreditsFor(tokens, rate), deps.clock.now()),
         // A paid provider's model holds its tokens from the free week, then purchased ones.
-        ...(isPaidModel(parsed.model, config.paid) ? { paid: { freeWeeklyTokens: config.paid!.freeWeeklyTokens, now: deps.clock.now() } } : {}) };
+        ...(paidModel ? { paid: { freeWeeklyTokens, now: deps.clock.now() } } : {}) };
       const reserved = await deps.store.reserveTagflow(reservation);
       if (reserved !== "ok") {
         await finishMetric("rejected",reserved);
@@ -531,7 +540,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
           const state = await deps.store.getPaidTokens(auth.uid);
           const refill = state.free?.endsAt ?? deps.clock.now() + 7 * 86_400_000;
           const provider = includedProvider(modelProvider(parsed.model), config.providers)?.name ?? "this provider's";
-          const message = `You've used this week's ${(config.paid?.freeWeeklyTokens ?? 0).toLocaleString("en-US")} free tokens on ${provider} models. Buy tokens at ${BUY_TOKENS_URL}, or switch to Tagflow AI, which stays free. Your free tokens refill in ${untilText(refill, deps.clock.now())}.`;
+          const message = `You've used this week's ${freeWeeklyTokens.toLocaleString("en-US")} free tokens on ${provider} models. Buy tokens or a plan at ${BUY_TOKENS_URL}, or switch to Tagflow AI, which stays free. Your free tokens refill in ${untilText(refill, deps.clock.now())}.`;
           return json(429, { error: { code: "daily-limit", limit: "paid", message, retryable: true, resetsAt: refill, buyUrl: BUY_TOKENS_URL } }, { "retry-after": String(Math.max(1, Math.ceil((refill - deps.clock.now()) / 1000))) });
         }
         if (reserved === "session-limit" || reserved === "weekly-limit") {
