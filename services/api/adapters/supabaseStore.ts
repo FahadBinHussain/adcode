@@ -1497,6 +1497,10 @@ function withHotCaches(store: Store): Store {
   // campaign that runs out of budget still stops at once.
   const campaigns = cachedBy((tags) => store.activeCampaignsFor(JSON.parse(tags) as string[]), { ttlMs: 30_000, staleMs: 600_000, max: 500 });
   const artwork = cachedBy((campaignId) => store.creativesForCampaign(campaignId), { ttlMs: 30_000, staleMs: 600_000, max: 2_000 });
+  // Every paid-model request reads the account's plan and boost. Plans carry their own end time,
+  // so a cached plan never outlives its period; a new gift or boost applies within 30 s.
+  const planStates = cachedBy((uid) => store.getAiPlanState(uid, Date.now()), { ttlMs: 30_000, staleMs: 600_000, max: 5_000 });
+  const forgetPlans = (uid: string): void => { if (uid === "*") planStates.clear(); else planStates.forget(uid); };
   return {
     ...store,
     getConfig: () => config.get(),
@@ -1515,6 +1519,11 @@ function withHotCaches(store: Store): Store {
     async transitionCampaignCommitment(input) { const result = await store.transitionCampaignCommitment(input); campaigns.clear(); return result; },
     async moveCampaignBudget(input) { const result = await store.moveCampaignBudget(input); campaigns.clear(); return result; },
     async putCreative(creative) { await store.putCreative(creative); artwork.forget(creative.campaignId); },
+    getAiPlanState: (uid) => planStates.get(uid),
+    async applySubscriptionEvent(event) { const result = await store.applySubscriptionEvent(event); if (event.uid !== null) forgetPlans(event.uid); return result; },
+    async giftPlan(uid, plan, days, adminUid, note, now) { await store.giftPlan(uid, plan, days, adminUid, note, now); forgetPlans(uid); },
+    async boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now) { await store.boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now); forgetPlans(uid); },
+    async redeemPromo(code, uid, now) { const result = await store.redeemPromo(code, uid, now); forgetPlans(uid); return result; },
     async putTagflowPolicy(uid, policy) { await store.putTagflowPolicy(uid, policy); policies.forget(uid); },
     async addAdmin(record) { const added = await store.addAdmin(record); admins.clear(); return added; },
     async removeAdmin(email) { const removed = await store.removeAdmin(email); admins.clear(); return removed; },

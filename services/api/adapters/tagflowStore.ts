@@ -1,4 +1,5 @@
 import type { TagflowStore, TagflowUsage, TokenLedgerEntry, TokenOrder } from "../src/tagflowTypes.ts";
+import type { PlanId } from "../src/aiPlans.ts";
 import type { CreditWindow } from "../src/credits.ts";
 import { createModelReportStore } from "./modelReportStore.ts";
 
@@ -107,6 +108,79 @@ export function createTagflowStore(lazy: () => Promise<SupabaseClient>): Tagflow
         orders: ((orders.data ?? []) as OrderRow[]).map(orderFrom),
         ledger: ((ledger.data ?? []) as LedgerRow[]).map((row) => ({ id: row.id, uid: row.uid, delta: Number(row.delta), kind: row.kind, ref: row.ref, note: row.note, createdAt: Number(row.created_at) })),
       };
+    },
+    async getAiPlanState(uid, now) {
+      const { data, error } = await (await lazy()).rpc("ai_plan_state", { p_uid: uid, p_now: now });
+      check(error);
+      const row = ((data ?? []) as { plan: PlanId | null; ends_at: number | string | null; source: "subscription" | "gift" | null; boost_tokens: number | string }[])[0];
+      return { plan: row?.plan == null ? null : { id: row.plan, endsAt: Number(row.ends_at), source: row.source ?? "gift" }, boostTokens: Number(row?.boost_tokens ?? 0) };
+    },
+    async applySubscriptionEvent(event) {
+      const { data, error } = await (await lazy()).rpc("apply_ai_subscription_event", { p_webhook: event.webhookId, p_type: event.type, p_subscription: event.subscriptionId, p_uid: event.uid, p_plan: event.plan,
+        p_customer: event.customerId, p_status: event.status, p_period_end: event.periodEnd, p_cancel: event.cancelAtPeriodEnd, p_now: event.now });
+      check(error);
+      if (data !== "applied" && data !== "duplicate" && data !== "review") throw new Error("Invalid subscription event result");
+      return data;
+    },
+    async getSubscription(uid) {
+      const { data, error } = await (await lazy()).from("ai_subscriptions").select("customer_id, plan, status, ends_at").eq("uid", uid).order("ends_at", { ascending: false }).limit(1).maybeSingle();
+      check(error);
+      return data === null ? null : { customerId: data.customer_id, plan: data.plan as PlanId, status: data.status, periodEnd: Number(data.ends_at) };
+    },
+    async giftPlan(uid, plan, days, adminUid, note, now) {
+      const { error } = await (await lazy()).from("ai_plan_gifts").insert({ uid, plan, starts_at: now, ends_at: now + days * 86_400_000, source: "admin", ref: `${adminUid}:${note}`.slice(0, 500), created_at: now });
+      check(error);
+    },
+    async boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now) {
+      const { error } = await (await lazy()).from("ai_boosts").insert({ uid, weekly_tokens: weeklyTokens, starts_at: now, ends_at: endsAt, created_by: adminUid, note });
+      check(error);
+    },
+    async resetAiWeek(uid) {
+      const { data, error } = await (await lazy()).rpc("reset_ai_week", { p_uid: uid });
+      check(error);
+      if (data !== "reset" && data !== "busy" && data !== "none") throw new Error("Invalid reset result");
+      return data;
+    },
+    async listPaidWeekUids(after, limit) {
+      const { data, error } = await (await lazy()).from("ai_credit_windows").select("uid").eq("kind", "paid_week").gt("uid", after).order("uid").limit(limit);
+      check(error);
+      return ((data ?? []) as { uid: string }[]).map((row) => row.uid);
+    },
+    async createPromo(promo, adminUid, now) {
+      const { error } = await (await lazy()).from("ai_promo_codes").insert({ code: promo.code, kind: promo.kind, tokens: promo.tokens ?? null, plan: promo.plan ?? null, days: promo.days ?? null,
+        max_redemptions: promo.maxRedemptions, expires_at: promo.expiresAt, created_by: adminUid, created_at: now });
+      if (error !== null && /duplicate key|23505/.test(`${error.message} ${(error as { code?: string }).code ?? ""}`)) return false;
+      check(error); return true;
+    },
+    async listPromos() {
+      const { data, error } = await (await lazy()).from("ai_promo_codes").select("code, kind, tokens, plan, days, max_redemptions, redemptions, expires_at").order("created_at", { ascending: false }).limit(200);
+      check(error);
+      return ((data ?? []) as { code: string; kind: "tokens" | "plan"; tokens: number | string | null; plan: PlanId | null; days: number | null; max_redemptions: number; redemptions: number; expires_at: number | string }[])
+        .map((row) => ({ code: row.code, kind: row.kind, ...(row.tokens === null ? {} : { tokens: Number(row.tokens) }), ...(row.plan === null ? {} : { plan: row.plan }), ...(row.days === null ? {} : { days: row.days }),
+          maxRedemptions: row.max_redemptions, redemptions: row.redemptions, expiresAt: Number(row.expires_at) }));
+    },
+    async redeemPromo(code, uid, now) {
+      const { data, error } = await (await lazy()).rpc("redeem_ai_promo", { p_code: code, p_uid: uid, p_now: now });
+      check(error);
+      if (!["tokens", "plan", "unknown", "expired", "used-up", "already"].includes(data)) throw new Error("Invalid promo result");
+      return data;
+    },
+    async getInvite(uid, now) {
+      const { data, error } = await (await lazy()).rpc("ai_invite_for", { p_uid: uid, p_now: now });
+      check(error);
+      const row = ((data ?? []) as { code: string; uses: number; max_uses: number }[])[0];
+      return row === undefined ? null : { code: row.code, uses: row.uses, maxUses: row.max_uses };
+    },
+    async redeemInvite(code, uid, now) {
+      const { data, error } = await (await lazy()).rpc("redeem_ai_invite", { p_code: code, p_uid: uid, p_now: now });
+      check(error);
+      if (!["joined", "unknown", "used-up", "own-code", "already", "has-plan"].includes(data)) throw new Error("Invalid invite result");
+      return data;
+    },
+    async subscriptionSummary(now) {
+      const { data, error } = await (await lazy()).rpc("ai_subscription_summary", { p_now: now });
+      check(error);
+      return ((data ?? []) as { plan: PlanId; active: number | string; mrr_cents: number | string }[]).map((row) => ({ plan: row.plan, active: Number(row.active), mrrCents: Number(row.mrr_cents) }));
     },
     async tokenSales(sinceMs) {
       const { data, error } = await (await lazy()).rpc("ai_token_sales", { p_since: sinceMs });
