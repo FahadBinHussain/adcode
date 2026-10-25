@@ -41,8 +41,12 @@ Final full verification passed all four TypeScript projects, the dependency fire
 
 Local browser fixtures confirmed delayed subscription activation, successful promo redemption after an expiry error, encrypted-key entry clearing, beehiiv content preview, disabled unsupported delivery, and phone layout without page overflow. Fixtures use synthetic data and do not exercise a live card purchase.
 
-Pending release acceptance: apply migrations, publish web/API, inspect health/config/plan/ad admin routes, watch focused error logs, then have the owner subscribe and cancel a real Weekly plan through Dodo. Desktop installer/updater publication and desktop smoke remain a separate release. Do not represent local desktop fixes as shipped.
+Web/API publication completed with owner approval: Worker `89833de3-3ac8-48cf-b9f6-17f87a1869f7`; rollback version `77af3bc8-4186-4986-9323-9b3f5340e651`. The three migrations were applied before deployment. Remote history names `harden_ai_plan_events_and_cache`, `ad_network_connections` and `guard_ai_plan_checkouts` identify the corresponding local SQL files; MCP assigns remote application timestamps.
+
+Built a fresh NTFS temporary release snapshot because the original generated `.open-next` folder was inaccessible. The snapshot preserves the existing status, analytics and support changes from the shared workspace, recorded in `output/release-snapshot-825f86d.json`; the task checkpoint itself commits only this task's owned hunks. OpenNext Cloudflare build and local runtime checks passed. Local API 503s were expected without production secrets. After publication, `/`, `/ai-tokens`, `/admin/ad-networks`, `/v1/health` and `/v1/ai/tagflow/config` all returned 200, health was true, and all three plan prices/allowances were correct.
+
+Remaining acceptance: owner subscribes and cancels a real Weekly plan through Dodo; no purchase was made by the agent. Desktop installer/updater publication remains separate. Desktop checks and the requested update notice are being completed locally. Do not represent local desktop fixes as shipped.
 
 No 500,000-user load test was performed. The changes remove known unbounded admin work and redundant configuration reads; those checks do not establish production capacity.
 
-See `error-report-triage-2026-10-25.md` for the six latest reports and five support replies.
+See `error-report-triage-2026-10-25.md` for ten reviewed reports and eight delivered support messages. Approximately three historical reservation holds mentioned in the handoff remain unexamined: production has only a primary-key reservation index, and no IDs were supplied. No unindexed reservation scan or speculative balance adjustment was performed.
