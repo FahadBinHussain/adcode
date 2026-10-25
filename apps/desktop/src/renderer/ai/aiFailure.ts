@@ -12,7 +12,7 @@
  */
 import { CONTINUE_PROMPT } from "../../shared/continuePrompt.ts";
 
-export type AiFailureAction = "retry" | "models" | "usage" | "new-conversation" | "report" | "sign-in" | "buy-tokens";
+export type AiFailureAction = "retry" | "models" | "usage" | "new-conversation" | "report" | "sign-in" | "buy-tokens" | "upgrade-plan";
 
 export interface AiFailure {
   readonly kind:
@@ -109,7 +109,7 @@ export function describeAiFailure(raw: string): AiFailure {
   // Paid tokens (relays from 2026-10-21): the free week on a paid provider's models is spent and nothing is bought.
   if (who === "Included AI" && /free tokens on .+ models\. Buy tokens/i.test(detail)) {
     const refill = /refill in ([^,.]{1,40})/i.exec(detail)?.[1]?.trim();
-    return make("tokens", "This week's free Heabsy tokens are used up", `Buy tokens to keep using Heabsy models now, or switch to Tagflow AI, which stays free. ${refill ? `Your free tokens refill in ${refill}; ` : ""}a task that was running carries on by itself when they do, as long as ADCode stays open.`, ["buy-tokens", "models", "usage"]);
+    return make("tokens", "This week's free Heabsy tokens are used up", `Buy tokens or a plan to keep using Heabsy models now, or switch to Tagflow AI, which stays free. ${refill ? `Your free tokens refill in ${refill}; ` : ""}a task that was running carries on by itself when they do, as long as ADCode stays open.`, ["buy-tokens", "upgrade-plan", "models", "usage"]);
   }
   // Credits (relays from 2026-10-15): the message names the window and when it refills.
   if (who === "Included AI" && /free AI credits/i.test(detail)) {

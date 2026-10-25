@@ -6,6 +6,13 @@ const DAY = 86_400_000;
 const sub = (over: Record<string, unknown> = {}) => ({ webhookId: "wh1", type: "active" as const, subscriptionId: "sub_1", uid: "u" as string | null, plan: "monthly" as "monthly" | "pro" | "weekly" | null, customerId: "cus_1", status: "active", periodEnd: 30 * DAY, cancelAtPeriodEnd: false, now: DAY, ...over });
 
 describe("AI plans in the memory store", () => {
+  it("blocks checkout completion if billing enters payment recovery during creation", async () => {
+    const store = createTagflowMemoryStore();
+    expect((await store.claimPlanCheckout("u", "monthly", "US", "aip_first", DAY)).status).toBe("claimed");
+    await store.applySubscriptionEvent(sub({ type: "on_hold", status: "on_hold", now: DAY }));
+    expect((await store.getAiPlanState("u", DAY)).plan).toBeNull();
+    expect(await store.completePlanCheckout("u", "aip_first", "cks_one", "https://checkout.test/one", DAY)).toBe("subscribed");
+  });
   it("applies a subscription once and reports the plan until its period ends", async () => {
     const store = createTagflowMemoryStore();
     expect(await store.applySubscriptionEvent(sub())).toBe("applied");
@@ -69,6 +76,7 @@ describe("AI plans in the memory store", () => {
     await store.applySubscriptionEvent(sub({ uid: "friend", subscriptionId: "sub_f2", webhookId: "whf2" }));
     expect((await store.getPaidTokens("friend")).balance.purchased).toBe(4_000_000);
     expect((await store.getPaidTokens("pro1")).balance.purchased).toBe(4_000_000);
+    expect((await store.listTokenActivity("pro1")).ledger).toContainEqual(expect.objectContaining({ kind: "grant", ref: "invite:friend" }));
     expect(await store.getInvite("nopro", DAY)).toBeNull();
     expect(await store.redeemInvite(invite.code, "has-sub", DAY)).toBe("joined");
     expect(await store.redeemInvite(invite.code, "third", DAY)).toBe("used-up");
@@ -91,6 +99,45 @@ describe("AI plans in the memory store", () => {
     expect(await store.listPaidWeekUids("", 10)).toEqual(["u"]);
     expect(await store.resetAiWeek("u")).toBe("reset");
     expect((await store.getPaidTokens("u")).free).toBeNull();
+  });
+
+  it("ignores old provider events and rejects changes to subscription account or customer", async () => {
+    const store = createTagflowMemoryStore();
+    await store.applySubscriptionEvent(sub({ type: "renewed", periodEnd: 60 * DAY, occurredAt: 30 * DAY, now: 30 * DAY }));
+    await store.applySubscriptionEvent(sub({ webhookId: "late", plan: "weekly", occurredAt: DAY, now: 31 * DAY }));
+    expect((await store.getAiPlanState("u", 32 * DAY)).plan).toMatchObject({ id: "monthly", endsAt: 60 * DAY });
+    expect(await store.applySubscriptionEvent(sub({ webhookId: "other-user", uid: "v", periodEnd: 60 * DAY, now: 32 * DAY }))).toBe("review");
+    expect(await store.applySubscriptionEvent(sub({ webhookId: "other-customer", customerId: "cus_other", periodEnd: 60 * DAY, now: 32 * DAY }))).toBe("review");
+    expect((await store.getAiPlanState("v", 32 * DAY)).plan).toBeNull();
+  });
+
+  it("prevents a late same-period activation reopening an expired plan", async () => {
+    const store = createTagflowMemoryStore();
+    await store.applySubscriptionEvent(sub({ type: "failed", now: 2 * DAY, occurredAt: 2 * DAY }));
+    await store.applySubscriptionEvent(sub({ webhookId: "late", occurredAt: DAY, now: 3 * DAY }));
+    expect((await store.getAiPlanState("u", 4 * DAY)).plan).toBeNull();
+    await store.applySubscriptionEvent(sub({ webhookId: "recovered", occurredAt: 5 * DAY, now: 5 * DAY }));
+    expect((await store.getAiPlanState("u", 6 * DAY)).plan?.id).toBe("monthly");
+  });
+
+  it("requires the inviter to remain Pro when redeeming and rewarding", async () => {
+    const store = createTagflowMemoryStore();
+    await store.applySubscriptionEvent(sub({ uid: "pro1", plan: "pro", periodEnd: 3 * DAY }));
+    const invite = (await store.getInvite("pro1", DAY))!;
+    expect(await store.redeemInvite(invite.code, "friend", DAY)).toBe("joined");
+    expect(await store.redeemInvite(invite.code, "late", 4 * DAY)).toBe("unknown");
+    await store.applySubscriptionEvent(sub({ webhookId: "friend", subscriptionId: "friend", uid: "friend", now: 4 * DAY }));
+    expect((await store.getPaidTokens("friend")).balance.purchased).toBe(0);
+    expect((await store.getPaidTokens("pro1")).balance.purchased).toBe(0);
+  });
+
+  it("publishes the next snapshot boundary and clears plans on reset", async () => {
+    const store = createTagflowMemoryStore();
+    await store.boostAllowance("u", 90_000_000, 3 * DAY, "admin", "launch", DAY);
+    expect((await store.getAiPlanState("u", DAY / 2)).validUntil).toBe(DAY);
+    expect((await store.getAiPlanState("u", 2 * DAY)).validUntil).toBe(3 * DAY);
+    store.resetTagflow();
+    expect(await store.getAiPlanState("u", 2 * DAY)).toEqual({ plan: null, boostTokens: 0, validUntil: null });
   });
 
   it("sums active subscriptions by plan", async () => {

@@ -124,7 +124,9 @@ import {
   type SourceFactRow,
 } from "./supabaseRows.ts";
 import { DEFAULT_REFERRAL_CONFIG, type AttributionRecord } from "../src/store.ts";
+import { createAdNetworkStore } from "./adNetworkStore.ts";
 import { createTagflowStore } from "./tagflowStore.ts";
+import { createAiPlanCache } from "./aiPlanCache.ts";
 import { cached, cachedBy, createBreaker } from "./dbGuard.ts";
 import type {
   ActivityDay,
@@ -1296,6 +1298,7 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
      * `parseModelCatalog` before it reached here; jsonb keeps it whole.
      */
     ...createTagflowStore(lazy),
+    adNetworks: createAdNetworkStore(lazy),
     async getModelCatalog() {
       const row = await maybe<{ overrides: unknown; updated_at: number | string; updated_by: string }>("getModelCatalog", (db) =>
         db.from("model_catalog").select("overrides, updated_at, updated_by").eq("id", 1).maybeSingle(),
@@ -1499,7 +1502,7 @@ function withHotCaches(store: Store): Store {
   const artwork = cachedBy((campaignId) => store.creativesForCampaign(campaignId), { ttlMs: 30_000, staleMs: 600_000, max: 2_000 });
   // Every paid-model request reads the account's plan and boost. Plans carry their own end time,
   // so a cached plan never outlives its period; a new gift or boost applies within 30 s.
-  const planStates = cachedBy((uid) => store.getAiPlanState(uid, Date.now()), { ttlMs: 30_000, staleMs: 600_000, max: 5_000 });
+  const planStates = createAiPlanCache((uid, now) => store.getAiPlanState(uid, now));
   const forgetPlans = (uid: string): void => { if (uid === "*") planStates.clear(); else planStates.forget(uid); };
   return {
     ...store,
@@ -1519,7 +1522,7 @@ function withHotCaches(store: Store): Store {
     async transitionCampaignCommitment(input) { const result = await store.transitionCampaignCommitment(input); campaigns.clear(); return result; },
     async moveCampaignBudget(input) { const result = await store.moveCampaignBudget(input); campaigns.clear(); return result; },
     async putCreative(creative) { await store.putCreative(creative); artwork.forget(creative.campaignId); },
-    getAiPlanState: (uid) => planStates.get(uid),
+    getAiPlanState: (uid, now) => planStates.get(uid, now),
     async applySubscriptionEvent(event) { const result = await store.applySubscriptionEvent(event); if (event.uid !== null) forgetPlans(event.uid); return result; },
     async giftPlan(uid, plan, days, adminUid, note, now) { await store.giftPlan(uid, plan, days, adminUid, note, now); forgetPlans(uid); },
     async boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now) { await store.boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now); forgetPlans(uid); },

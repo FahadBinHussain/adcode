@@ -15,6 +15,7 @@
  */
 import { verifyWebhook, type WebhookHeaders } from "./billing.ts";
 import { parseProviderEvent } from "./providerEvents.ts";
+import { PLANS, type PlanId } from "./aiPlans.ts";
 import { TOKEN_ORDER_PREFIX } from "./paidTokens.ts";
 import type { Clock, Store } from "./store.ts";
 
@@ -23,6 +24,8 @@ export interface FundingDeps {
   clock: Clock;
   /** The endpoint secret Dodo issues, `whsec_`-prefixed. */
   webhookSecret: string;
+  /** Configured provider products; overrides environment secrets in tests. */
+  subscriptionProducts?: Partial<Record<PlanId, string>>;
 }
 
 export type FundingOutcome =
@@ -55,6 +58,22 @@ export async function handleFundingWebhook(
     // Not an event we fund on. 200, so the provider stops retrying something we are
     // deliberately ignoring.
     return { ok: true, credited: false, reason: "ignored" };
+  }
+
+  if (event.type === "subscription") {
+    const products = deps.subscriptionProducts ?? { weekly: process.env["DODO_PLAN_WEEKLY_ID"], monthly: process.env["DODO_PLAN_MONTHLY_ID"], pro: process.env["DODO_PLAN_PRO_ID"] };
+    const productPlan = PLANS.find((plan) => products[plan.id] !== undefined && products[plan.id] === event.productId)?.id ?? null;
+    // Other subscriptions on the same merchant account must never mint an ADCode plan.
+    // Metadata was authored by our checkout, but is still checked against the configured
+    // provider product and a known account before it can grant access. The product
+    // is authoritative: portal plan changes may retain the original metadata.plan.
+    const uid = event.uid !== null && await deps.store.getUser(event.uid) !== null ? event.uid : null;
+    const plan = productPlan;
+    const result = await deps.store.applySubscriptionEvent({ webhookId: event.webhookId, type: event.kind,
+      subscriptionId: event.subscriptionId, uid, plan, customerId: event.customerId,
+      status: event.status, periodEnd: event.periodEnd, cancelAtPeriodEnd: event.cancelAtPeriodEnd, now: nowMs,
+      ...(event.occurredAt === undefined ? {} : { occurredAt: event.occurredAt }) });
+    return { ok: true, credited: false, reason: result === "duplicate" ? "duplicate" : "ignored" };
   }
 
   /*

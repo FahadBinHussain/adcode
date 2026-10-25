@@ -8,6 +8,9 @@ type LimitError = { status?: number; code?: string; retryAfter?: string | null; 
  * once, so the task does not sit until the free week refills days later.
  */
 export const PAID_RECHECK_MS = 120_000;
+/** Pick up an administrator's reset or allowance change while a task is paused. */
+export const ALLOWANCE_RECHECK_MS = 120_000;
+const RATE_RECHECK_MS = 60_000;
 
 /** Re-check wall time every minute so a sleeping computer resumes after the reset. */
 async function waitUntil(at: number, signal: AbortSignal): Promise<void> {
@@ -88,19 +91,23 @@ export function recoverIncludedLimits(provider: Provider): Provider {
           if (error.status !== 429 || error.retryable === false || !["daily-limit", "rate-limit", "upstream-rate-limit"].includes(code ?? "")) throw caught;
           const daily = code === "daily-limit";
           if (error.limit === "paid") {
-            yield { kind: "status", text: `This week's free tokens for this model are used up. Buy tokens at ${error.buyUrl ?? "https://adcode.bluethenics.com/ai-tokens"}, or switch to Tagflow AI, which stays free. This task checks again every two minutes and carries on by itself once you have tokens. Press Stop to cancel.` };
+            yield { kind: "status", text: `This week's free tokens for this model are used up. Buy tokens or a plan at ${error.buyUrl ?? "https://adcode.bluethenics.com/ai-tokens"}, or switch to Tagflow AI, which stays free. This task checks again every two minutes and carries on by itself once you have tokens. Press Stop to cancel.` };
             await waitUntil(Math.min(resetTime(error, daily), Date.now() + PAID_RECHECK_MS), signal);
             continue;
           }
-          const at = resetTime(error, daily);
+          // A stale/overlong provider Retry-After must not put an unlimited account
+          // to sleep for a day. Account limits are also rechecked for admin resets.
+          const at = Math.min(resetTime(error, daily), Date.now() + (daily ? ALLOWANCE_RECHECK_MS : RATE_RECHECK_MS));
           const when = new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
           yield { kind: "status", text: error.limit === "weekly"
-            ? `This week's free AI credits are used up. This task resumes by itself when they refill, after ${when}. Keep ADCode open; press Stop to cancel.`
+            ? `This week's free AI credits are used up. Checking again after ${when}, including any administrator reset or allowance change. This task resumes automatically once credits are available. Press Stop to cancel.`
             : error.limit === "session"
-            ? `This session's free AI credits are used up. This task resumes by itself when they refill, after ${when}. Keep ADCode open; press Stop to cancel.`
+            ? `This session's free AI credits are used up. Checking again after ${when}, including any administrator reset or allowance change. This task resumes automatically once credits are available. Press Stop to cancel.`
             : daily
-            ? `Free AI allowance reached. This task will resume automatically after ${when}. Keep ADCode open; press Stop to cancel.`
-            : `Free AI is temporarily limited. This task will retry automatically after ${when}. Press Stop to cancel.` };
+            ? `Free AI allowance reached. Checking again after ${when}, including any administrator reset or allowance change. This task will resume automatically once usage is available. Press Stop to cancel.`
+            : code === "upstream-rate-limit"
+            ? `This model's provider is temporarily rate limited, even with unlimited ADCode usage. This task will retry after ${when}; you can also choose another model. Press Stop to cancel.`
+            : `AI requests are temporarily rate limited. This task will retry after ${when}. Unlimited usage still has a request-rate ceiling. Press Stop to cancel.` };
           await waitUntil(at, signal);
           yield { kind: "status", text: "Checking the limit and resuming this task automatically…" };
         }

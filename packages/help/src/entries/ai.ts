@@ -351,7 +351,17 @@ export const AI_ENTRIES: readonly HelpEntry[] = [
     how: "Run AI: Buy AI Tokens, or press Buy tokens on the message that appears when your free week is used up. Sign in on the page that opens, choose $10 for 50M tokens, $25 for 140M or $50 for 300M, and pay with Dodo. The tokens appear within seconds and never expire. ADCode uses your free tokens first each week and purchased tokens only after them, and a task that paused carries on by itself. Your balance is in AI usage and on the composer's meter when a Heabsy model is selected. Tagflow AI is free with no weekly limit, so you can switch to it at any time instead. For a refund of unused tokens, contact the team from the same page.",
     group: "ai",
     settingIds: [],
-    related: ["ai.credits", "ai.tagflow", "ai.usage"],
+    related: ["ai.credits", "ai.plans", "ai.tagflow", "ai.usage"],
+  },
+  {
+    id: "ai.plans",
+    title: "AI plans, promo codes and invites",
+    plain: "Choose a weekly or monthly plan for more Heabsy tokens each week, with no API key to set up.",
+    why: "A plan gives regular work a larger weekly allowance. Purchased tokens cover extra work beyond it, while Tagflow AI stays free without a personal quota.",
+    how: "Run AI: Upgrade Plan or open adcode.bluethenics.com/ai-tokens and sign in with the same account as the editor. Weekly costs $3 a week for 60M tokens each week; Monthly costs $9 a month for 60M each week; Pro costs $19 a month for 150M each week. Pay with Dodo; the larger allowance appears once payment is confirmed. Check the plan and remaining tokens in AI usage or the composer meter with a Heabsy model selected. Purchased tokens are used after the weekly allowance and never expire. Use Manage subscription on the page to manage billing or cancel; cancellation keeps your plan until its paid period ends. A Pro subscriber can share a personal invite code with two friends. A friend must redeem it before starting any paid plan; when their first subscription becomes active, both accounts get 4M tokens, once per friend. Enter promo codes in the same page's code box for tokens or plan days, subject to the code's expiry and redemption limit. Plans raise Heabsy's allowance; they do not change Tagflow AI.",
+    group: "ai",
+    settingIds: [],
+    related: ["ai.buyTokens", "ai.credits", "ai.usage", "account.signIn"],
   },
   {
     id: "ai.projectInstructions",

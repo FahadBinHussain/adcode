@@ -13,11 +13,18 @@ it("resumes the exact pending request at the daily reset without a new message",
   expect(events.some(event=>event.kind==="status"&&event.text.includes("resume automatically"))).toBe(true);
   expect(events.filter(event=>event.kind==="text")).toEqual([{kind:"text",text:"Continuing"}]);
 });
-it("can wait a full day without exhausting attempts",async()=>{
+it("picks up an administrator allowance change without waiting for the next day",async()=>{
   vi.useFakeTimers();vi.setSystemTime(0);let calls=0;
   const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){if(++calls===1)throw{status:429,code:"daily-limit",retryAfter:"86400"};yield{kind:"stop",reason:"end-turn"};}};
-  const result=collect(recoverIncludedLimits(provider));await vi.advanceTimersByTimeAsync(86_399_999);expect(calls).toBe(1);
+  const result=collect(recoverIncludedLimits(provider));await vi.advanceTimersByTimeAsync(119_999);expect(calls).toBe(1);
   await vi.advanceTimersByTimeAsync(1);await result;expect(calls).toBe(2);expect(vi.getTimerCount()).toBe(0);
+});
+it("bounds an overlong upstream wait and explains that unlimited usage does not bypass provider throttles",async()=>{
+  vi.useFakeTimers();vi.setSystemTime(0);let calls=0;
+  const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){if(++calls===1)throw{status:429,code:"upstream-rate-limit",retryAfter:"86400"};yield{kind:"stop",reason:"end-turn"};}};
+  const result=collect(recoverIncludedLimits(provider));await vi.advanceTimersByTimeAsync(59_999);expect(calls).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);const events=await result;expect(calls).toBe(2);
+  expect(events.some(event=>event.kind==="status"&&event.text.includes("provider is temporarily rate limited, even with unlimited ADCode usage"))).toBe(true);
 });
 it("keeps retrying temporary provider limits until the provider accepts",async()=>{
   vi.useFakeTimers();vi.setSystemTime(0);let calls=0;
@@ -92,5 +99,6 @@ it("names where to buy tokens on the paid limit, and checks again every two minu
   await vi.advanceTimersByTimeAsync(120_000);const events=await result;expect(calls).toBe(3);
   const status=events.find(event=>event.kind==="status");
   expect(status&&status.kind==="status"&&status.text).toContain("https://adcode.bluethenics.com/ai-tokens");
+  expect(status&&status.kind==="status"&&status.text).toContain("Buy tokens or a plan");
   expect(status&&status.kind==="status"&&status.text).toContain("Tagflow");
 });

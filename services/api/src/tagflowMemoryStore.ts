@@ -1,5 +1,5 @@
-import type { PromoView, TagflowConfigRecord, TagflowReservation, TagflowStore, TagflowUsage, TagflowUserPolicy, TokenLedgerEntry, TokenOrder, TokenSalesDay } from "./tagflowTypes.ts";
-import { INVITE_REWARD_TOKENS, PLANS, planById, type PlanId } from "./aiPlans.ts";
+import type { PlanCheckout, PromoView, TagflowConfigRecord, TagflowReservation, TagflowStore, TagflowUsage, TagflowUserPolicy, TokenLedgerEntry, TokenOrder, TokenSalesDay } from "./tagflowTypes.ts";
+import { INVITE_REWARD_TOKENS, PLAN_CHECKOUT_GUARD_MS, PLANS, planById, subscriptionBlocksCheckout, type PlanId } from "./aiPlans.ts";
 
 /** Uses of one Pro subscriber's invite code. */
 const INVITE_MAX_USES = 2;
@@ -27,10 +27,11 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
   const balances = new Map<string, TokenBalance>();
   const holds = new Map<string, PaidHold>();
   const orders = new Map<string, TokenOrder>();
+  const planCheckouts = new Map<string, PlanCheckout>();
   const ledger: TokenLedgerEntry[] = [];
   const seenWebhooks = new Set<string>();
   // AI plans: Dodo subscriptions by id, gifts and boosts (uid or '*'), promo codes, Pro invites.
-  const subscriptions = new Map<string, { uid: string; plan: PlanId; customerId: string | null; status: string; endsAt: number }>();
+  const subscriptions = new Map<string, { uid: string; plan: PlanId; customerId: string | null; status: string; endsAt: number; periodEnd: number; eventAt: number; eventType: string }>();
   const gifts: { uid: string; plan: PlanId; startsAt: number; endsAt: number; source: "admin" | "promo"; ref: string }[] = [];
   const boosts: { uid: string; weeklyTokens: number; startsAt: number; endsAt: number }[] = [];
   const promos = new Map<string, PromoView>();
@@ -48,7 +49,8 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
   const key = (uid: string, day: string): string => `${uid}\u0000${day}`;
   return {
     resetTagflow() { config = null; policies.clear(); days.clear(); reservations.clear(); windows.clear(); minutes.clear(); modelRequests.clear(); modelFeedback.clear(); profiles.clear(); verificationSends.clear(); collectionStartedAt = null;
-      freeWeeks.clear(); balances.clear(); holds.clear(); orders.clear(); ledger.length = 0; seenWebhooks.clear(); },
+      freeWeeks.clear(); balances.clear(); holds.clear(); orders.clear(); planCheckouts.clear(); ledger.length = 0; seenWebhooks.clear();
+      subscriptions.clear(); gifts.length = 0; boosts.length = 0; promos.clear(); redemptions.clear(); invites.clear(); inviteOf.clear(); invitees.clear(); },
     async getModelAudienceProfile(uid) { return structuredClone(profiles.get(uid) ?? null); },
     async putModelAudienceProfile(profile) { profiles.set(profile.uid,structuredClone(profile)); },
     async deleteModelAudienceProfile(uid) { profiles.delete(uid); },
@@ -193,24 +195,52 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
         ...gifts.filter((one) => (one.uid === uid || one.uid === "*") && one.startsAt <= now && one.endsAt > now).map((one) => ({ id: one.plan, endsAt: one.endsAt, source: "gift" as const })),
       ].sort((a, b) => planRank(b.id) - planRank(a.id) || b.endsAt - a.endsAt);
       const boostTokens = Math.max(0, ...boosts.filter((one) => (one.uid === uid || one.uid === "*") && one.startsAt <= now && one.endsAt > now).map((one) => one.weeklyTokens));
-      return { plan: live[0] ?? null, boostTokens };
+      const transitions = [
+        ...[...subscriptions.values()].filter((one) => one.uid === uid && one.endsAt > now).map((one) => one.endsAt),
+        ...[...gifts, ...boosts].filter((one) => one.uid === uid || one.uid === "*").flatMap((one) => [one.startsAt, one.endsAt]).filter((at) => at > now),
+      ];
+      return { plan: live[0] ?? null, boostTokens, validUntil: transitions.length === 0 ? null : Math.min(...transitions) };
     },
     async applySubscriptionEvent(event) {
       if (seenWebhooks.has(event.webhookId)) return "duplicate";
       seenWebhooks.add(event.webhookId);
       if (event.uid === null || event.plan === null) return "review";
-      const ended = event.type === "on_hold" || event.type === "failed" || event.type === "expired";
-      subscriptions.set(event.subscriptionId, { uid: event.uid, plan: event.plan, customerId: event.customerId, status: event.status, endsAt: ended ? event.now : event.periodEnd || event.now });
+      const previous = subscriptions.get(event.subscriptionId);
+      if (previous !== undefined && (previous.uid !== event.uid || previous.customerId !== null && event.customerId !== null && previous.customerId !== event.customerId)) return "review";
+      const ended = ["on_hold", "failed", "expired"].includes(event.type);
+      if (!ended && (!Number.isSafeInteger(event.periodEnd) || event.periodEnd <= 0)) return "review";
+      const eventAt = event.occurredAt ?? event.now;
+      const granting = ["active", "renewed", "plan_changed"].includes(event.type);
+      if (previous !== undefined && (eventAt < previous.eventAt || event.periodEnd > 0 && event.periodEnd < previous.periodEnd ||
+          granting && ["cancelled", "on_hold", "failed", "expired"].includes(previous.eventType) && event.periodEnd <= previous.periodEnd && (event.occurredAt === undefined || eventAt <= previous.eventAt))) return "applied";
+      const endsAt = ended ? event.now : event.periodEnd;
+      subscriptions.set(event.subscriptionId, { uid: event.uid, plan: event.plan, customerId: event.customerId ?? previous?.customerId ?? null, status: event.status, endsAt, periodEnd: event.periodEnd || previous?.periodEnd || 0, eventAt, eventType: event.type });
       const invitee = invitees.get(event.uid);
-      if (event.type === "active" && invitee !== undefined && !invitee.rewarded) {
+      const inviterActive = invitee !== undefined && [...subscriptions.values()].some((one) => one.uid === invitee.inviter && one.plan === "pro" && one.endsAt > event.now);
+      if (event.type === "active" && endsAt > event.now && invitee !== undefined && !invitee.rewarded && inviterActive) {
         invitee.rewarded = true;
-        for (const uid of [event.uid, invitee.inviter]) grant(uid, INVITE_REWARD_TOKENS, "invite", `invite:${event.uid}`, event.now);
+        for (const uid of [event.uid, invitee.inviter].sort()) grant(uid, INVITE_REWARD_TOKENS, `invite:${event.uid}`, "Pro invite reward", event.now);
       }
       return "applied";
     },
     async getSubscription(uid) {
       const mine = [...subscriptions.values()].filter((one) => one.uid === uid).sort((a, b) => b.endsAt - a.endsAt)[0];
       return mine === undefined ? null : { customerId: mine.customerId, plan: mine.plan, status: mine.status, periodEnd: mine.endsAt };
+    },
+    async claimPlanCheckout(uid, plan, billingCountry, orderId, now) {
+      if ([...subscriptions.values()].some(one => one.uid === uid && subscriptionBlocksCheckout(one.status, one.endsAt, now))) return { status: "subscribed" };
+      const previous = planCheckouts.get(uid);
+      if (previous !== undefined && previous.expiresAt > now) return { status: "existing", checkout: structuredClone(previous) };
+      const checkout: PlanCheckout = { uid, orderId, plan, billingCountry, createdAt: now, expiresAt: now + PLAN_CHECKOUT_GUARD_MS, checkoutSession: null, checkoutUrl: null };
+      planCheckouts.set(uid, checkout);
+      return { status: "claimed", checkout: structuredClone(checkout) };
+    },
+    async completePlanCheckout(uid, orderId, sessionId, checkoutUrl, now) {
+      const checkout = planCheckouts.get(uid);
+      if (checkout === undefined || checkout.orderId !== orderId || checkout.expiresAt <= now) return "missing";
+      if ([...subscriptions.values()].some(one => one.uid === uid && subscriptionBlocksCheckout(one.status, one.endsAt, now))) return "subscribed";
+      planCheckouts.set(uid, { ...checkout, checkoutSession: sessionId, checkoutUrl, expiresAt: Math.max(checkout.expiresAt, now + PLAN_CHECKOUT_GUARD_MS) });
+      return "saved";
     },
     async giftPlan(uid, plan, days, adminUid, note, now) { gifts.push({ uid, plan, startsAt: now, endsAt: now + days * 86_400_000, source: "admin", ref: `${adminUid}:${note}` }); },
     async boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now) { void adminUid; void note; boosts.push({ uid, weeklyTokens, startsAt: now, endsAt }); },
@@ -234,7 +264,7 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
       if (redemptions.has(`${code}\u0000${uid}`)) return "already";
       if (promo.redemptions >= promo.maxRedemptions) return "used-up";
       redemptions.add(`${code}\u0000${uid}`); promo.redemptions += 1;
-      if (promo.kind === "tokens") { grant(uid, promo.tokens ?? 0, "promo", `promo:${code}`, now); return "tokens"; }
+      if (promo.kind === "tokens") { grant(uid, promo.tokens ?? 0, `promo:${code}`, `Promo code ${code}`, now); return "tokens"; }
       gifts.push({ uid, plan: promo.plan!, startsAt: now, endsAt: now + (promo.days ?? 0) * 86_400_000, source: "promo", ref: code });
       return "plan";
     },
@@ -250,8 +280,9 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
       const invite = invites.get(code);
       if (invite === undefined) return "unknown";
       if (invite.inviter === uid) return "own-code";
+      if (![...subscriptions.values()].some((one) => one.uid === invite.inviter && one.plan === "pro" && one.endsAt > now)) return "unknown";
       if (invitees.has(uid)) return "already";
-      if ([...subscriptions.values()].some((one) => one.uid === uid && one.endsAt > now)) return "has-plan";
+      if ([...subscriptions.values()].some((one) => one.uid === uid)) return "has-plan";
       if (invite.uses >= INVITE_MAX_USES) return "used-up";
       invite.uses += 1; invitees.set(uid, { inviter: invite.inviter, rewarded: false });
       return "joined";
@@ -264,6 +295,6 @@ export function createTagflowMemoryStore(): TagflowStore & { resetTagflow(): voi
   };
 }
 
-const planRank = (id: PlanId): number => planById(id)?.weeklyTokens ?? 0;
+const planRank = (id: PlanId): number => id === "pro" ? 3 : id === "monthly" ? 2 : 1;
 /** A weekly plan's monthly revenue: 52 weeks a year over 12 months. */
 const monthlyCents = (id: PlanId): number => { const plan = planById(id)!; return plan.interval === "week" ? Math.round((plan.priceCents * 52) / 12) : plan.priceCents; };

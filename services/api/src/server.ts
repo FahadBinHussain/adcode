@@ -16,6 +16,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
 import { createTagflowHandler, isTagflowPath } from "./tagflow.ts";
 import { authenticate, type TokenVerifier } from "./auth.ts";
+import { handleAdNetworkAdmin, type AdNetworkRuntime } from "./adNetworks.ts";
+import { readAdNetworkArtwork } from "./adNetworkArtwork.ts";
 import { handleServe } from "./serve.ts";
 import { handleReceipts } from "./receipts.ts";
 import { handleBalance, handleLedger } from "./balance.ts";
@@ -269,6 +271,7 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 }
 
 export interface ApiOptions {
+  adNetworks?: AdNetworkRuntime;
   tagflow?: { apiKey?: string; fetchImpl?: typeof fetch; country?: (request: Request) => string | undefined; workerSecrets?: WorkerSecrets; rateLimitWaitsMs?: readonly number[]; fallback?: boolean; identity?: AccountIdentity; timeouts?: Partial<{ firstMs: number; idleMs: number; maxMs: number }> };
   websiteAnalytics?: WebsiteAnalyticsStore;
   mailing?: MailingStore;
@@ -402,7 +405,10 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
         return;
       }
 
-      const asset = await store.getAsset(key);
+      const isNetworkArtwork = key.startsWith("network_an_");
+      let asset;
+      try { asset = isNetworkArtwork ? await readAdNetworkArtwork(store, key, options.adNetworks?.fetchImpl) : await store.getAsset(key); }
+      catch { send(res, 503, { error: "artwork temporarily unavailable" }, cors); return; }
       if (asset === null) {
         send(res, 404, { error: "not found" }, cors);
         return;
@@ -414,7 +420,8 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
         "content-length": String(asset.bytes.byteLength),
         // Keyed by creative id and content, so a given key's bytes never change meaning.
         // The editor caches these on disk too; this is for everything in between.
-        "cache-control": "public, max-age=31536000, immutable",
+        "cache-control": isNetworkArtwork ? "public, max-age=3600" : "public, max-age=31536000, immutable",
+        "x-content-type-options": "nosniff",
       });
       res.end(req.method === "HEAD" ? undefined : Buffer.from(asset.bytes));
       return;
@@ -1702,6 +1709,14 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
       return;
     }
 
+    if (path === "/v1/admin/ad-networks" || path.startsWith("/v1/admin/ad-networks/")) {
+      const raw = req.method === "GET" ? undefined : await jsonBodyOr400();
+      if (req.method !== "GET" && raw === undefined) return;
+      const result = await handleAdNetworkAdmin({ store, clock, ids, ...options.adNetworks }, auth.uid, path, req.method ?? "GET", raw);
+      send(res, result.status, result.body, cors);
+      return;
+    }
+
     if (path === "/v1/serve" && req.method === "POST") {
       let raw: unknown;
       try {
@@ -1719,7 +1734,7 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
       // limiter just used, and re-reading it would cost another round trip on the
       // path with the tightest budget. Kill-switch timing is unchanged - this config
       // was read milliseconds ago in this same request.
-      send(res, 200, await handleServe({ store, clock, ids }, auth.uid, body, config), cors);
+      send(res, 200, await handleServe({ store, clock, ids, ...options.adNetworks, assetOrigin: requestOrigin(req) }, auth.uid, body, config), cors);
       return;
     }
 
@@ -1737,7 +1752,7 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
         return;
       }
       send(res, 200, await handleReceipts({
-        store, clock, ids,
+        store, clock, ids, ...options.adNetworks,
         onResult: (result) => console.info("[ads:receipt]", JSON.stringify(result)),
       }, auth.uid, body), cors);
       return;

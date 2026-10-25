@@ -199,7 +199,8 @@ describe("the paid-token limit", () => {
     const failure = describeAiFailure("Included AI returned HTTP 429: You've used this week's 10,000,000 free tokens on Heabsy models. Buy tokens at https://adcode.bluethenics.com/ai-tokens, or switch to Tagflow AI, which stays free. Your free tokens refill in 3 days. (code daily-limit)");
     expect(failure.kind).toBe("tokens");
     expect(failure.title).toBe("This week's free Heabsy tokens are used up");
-    expect(failure.actions).toEqual(["buy-tokens", "models", "usage"]);
+    expect(failure.actions).toEqual(["buy-tokens", "upgrade-plan", "models", "usage"]);
+    expect(failure.explanation).toContain("Buy tokens or a plan");
     expect(failure.explanation).toContain("3 days");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AdminShell } from "@/components/AdminShell";
 import { AdminModelTabs } from "@/components/AdminModelTabs";
@@ -11,6 +11,7 @@ import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE } from "@adcode
 import { DEFAULT_CREDIT_PLAN, MAX_CREDITS, MAX_CREDIT_RATE, modelCreditRate, type CreditPlan, type CreditsView } from "@adcode/api/src/credits.ts";
 import { CustomProviderEditor } from "@/components/CustomProviderEditor";
 import { PaidTokensActivity, PaidTokensSettings } from "@/components/PaidTokensAdmin";
+import { PlansAdmin } from "@/components/PlansAdmin";
 import "@/components/adminModels.css";
 import "@/components/adminTagflow.css";
 
@@ -77,14 +78,17 @@ function TagflowEditor() {
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyNotice, setKeyNotice] = useState("");
 
-  async function call<T>(path: string, body?: unknown): Promise<T> {
+  const call = useCallback(async <T,>(path: string, body?: unknown): Promise<T> => {
     const idToken = await token();
     if (idToken === null) throw new Error("Sign in again to manage included AI.");
     const response = await fetch(`/v1${path}`, { method: body === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json", ...(path === "/ai/tagflow/chat/completions" ? { "x-adcode-ai-source": "admin-test" } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json() as T & { error?: { message?: string } };
-    if (!response.ok) throw new Error(result.error?.message ?? "Could not load or save. Check the server setup and try again.");
+    const result = await response.json() as T & { error?: { message?: string } | string; result?: string };
+    if (!response.ok) {
+      const messages: Record<string, string> = { "code-exists": "That promo code already exists. Choose a different code.", "bad-promo": "Check the promo code, reward, redemption limit and future expiry date.", "bad-boost": "Choose a whole number of tokens and a future end date.", "bad-gift": "Choose a valid plan and between 1 and 366 gift days." };
+      throw new Error(result.result === "busy" ? "This account has an AI request in progress. Try resetting its week again in a minute." : typeof result.error === "string" ? messages[result.error] ?? "Could not load or save. Check the server setup and try again." : result.error?.message ?? "Could not load or save. Check the server setup and try again.");
+    }
     return result;
-  }
+  }, [token]);
   useEffect(() => {
     let active = true;
     void call<Saved>("/admin/tagflow").then((value) => { if (active) { setSaved(value); setDraft(value.config); } }).catch(() => { if (active) setLoadError(true); });
@@ -227,6 +231,7 @@ function TagflowEditor() {
         <p className="row-sub">Save changes before using Test model. Each test asks for a short “ok” reply and uses a few of your account's credits.</p>
       </section>
     </form>
+    <PlansAdmin call={call} />
     <section className="admin-models-provider"><h3>Individual allowance</h3><form className="admin-toolbar" onSubmit={(event) => { event.preventDefault(); void loadUser(); }}><label className="tagflow-field"><span>User ID from People</span><input className="input" required maxLength={128} value={uid} onChange={(event) => setUid(event.target.value)} /></label><button className="btn" disabled={userBusy}>Load user</button></form>
       {userNotice && <p role="status" className="notice">{userNotice}</p>}
       {user !== null && userLimits !== null && <form onSubmit={(event) => { event.preventDefault(); void saveUser(); }}><p className="row-sub">Account: {loadedUid}. Today: {user.usage.requests} requests, {(user.usage.inputTokens + user.usage.outputTokens).toLocaleString()} tokens, {money(user.usage.costMicros)} estimated spend.</p>{user.credits && <><p className="row-sub">{windowLine("Session", user.credits.session)}</p><p className="row-sub">{windowLine("Week", user.credits.weekly)}</p></>}<div className="tagflow-checks"><label><input type="checkbox" checked={blocked} onChange={(event) => setBlocked(event.target.checked)} /> Block included AI for this person</label><label><input type="checkbox" checked={inheritCredits} onChange={(event) => setInheritCredits(event.target.checked)} /> Default credits</label><label><input type="checkbox" checked={inherit} onChange={(event) => setInherit(event.target.checked)} /> Default daily ceilings</label></div><CreditFields value={inheritCredits ? saved.config.credits ?? DEFAULT_CREDIT_PLAN : userCredits} disabled={inheritCredits} onChange={setUserCredits} /><LimitFields value={inherit ? saved.config.limits : userLimits} disabled={inherit} onChange={setUserLimits} /><button className="btn btn-primary" disabled={userBusy}>{userBusy ? "Saving…" : "Save user allowance"}</button></form>}

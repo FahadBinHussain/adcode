@@ -21,6 +21,18 @@ interface DocGuide {
 }
 
 export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
+  "ads-networks": {
+    steps: [
+      "Open Ad network settings from the Feature library, or visit /admin/ad-networks on the ADCode website. Sign in with an administrator account.",
+      "Choose Generic JSON API for a documented ad-serving API. Enter its HTTPS serve and event-verification URLs, authentication header and prefix, request templates, and response field mappings. Both endpoints must share an origin.",
+      "Choose the user's payout in dollars per verified view and click. Save the connection disabled, then save its API key separately. The saved key cannot be read back.",
+      "Use Test to check a preview. A preview creates no user delivery or payout. Enable a generic connection after its delivery and event-verification formats are correct. Lower priority numbers are tried first; direct campaigns take priority.",
+      "For beehiiv, supply the publication ID and offer ID, save the API key, and test the newsletter content preview. This endpoint supplies newsletter content, not desktop delivery or verified earnings.",
+      "For Imprezia, select the app bundle or website domain provisioned by its team and save an Exchange-enabled serving key. Test sends a non-billable Native 1.2 auction. No win, billing or tracking notices are sent. A normal no-bid response returns an empty preview. Live desktop delivery stays disabled until inventory, privacy, rendering, tracking and billing reconciliation are approved and implemented.",
+    ],
+    benefits: ["Provider credentials stay on the server and are encrypted in storage.", "Payout amounts are fixed when an ad is served, and duplicate provider events cannot pay twice.", "Existing sponsored-message preferences and direct campaigns still control delivery."],
+    betterThan: "A configurable JSON connection lets administrators integrate compatible providers without changing the app for each response format. It still requires the provider's real API contract; an arbitrary API key cannot make incompatible services work.",
+  },
   /* ── Editing ─────────────────────────────────────────────────────────── */
 
   "editing-accept-on-enter": {
@@ -1311,6 +1323,22 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Tagflow AI stays free with no weekly limit, so paying is always optional.",
     ],
     betterThan: "Buying tokens from a model company means a separate account, a card on file, an API key to paste and a bill per provider. Here the tokens work in the editor you already use, on models already set up, and $10 buys 50M tokens - about 1,200 typical agent requests - with nothing to configure.",
+  },
+  "ai-plans": {
+    steps: [
+      "Run AI: Upgrade Plan in ADCode or open adcode.bluethenics.com/ai-tokens. Sign in with the same verified account you use in the editor.",
+      "Choose Weekly ($3 a week, 60M tokens each week), Monthly ($9 a month, 60M each week), or Pro ($19 a month, 150M each week). Monthly billing still gives a weekly token allowance.",
+      "Complete payment with Dodo. After payment is confirmed, your weekly Heabsy allowance rises automatically. The page, AI usage and composer meter show your plan. Existing usage still counts toward the week; purchased tokens cover anything beyond your allowance.",
+      "To change billing details or cancel, select Manage subscription on the same page. Cancelling keeps access until the paid period ends; afterward the account returns to its free allowance unless another plan or gift applies.",
+      "With a Pro subscription, copy your invite code and share it with up to two friends. Each friend signs in and redeems it in the invite-code box before starting a paid plan. When their first subscription becomes active, you and that friend each receive 4M tokens. Each friend earns the reward only once.",
+      "Enter a promo code in the promo-code box and select Redeem. A code grants the tokens or plan days it promises, once per account, while it is unexpired and has uses left. Check your updated balance or plan after redeeming.",
+    ],
+    benefits: [
+      "A predictable subscription raises the weekly allowance on Heabsy models without adding a provider account or API key.",
+      "Weekly and monthly billing are available; Pro includes the largest allowance and two friend invites.",
+      "Purchased tokens remain available beyond your plan and never expire. Tagflow AI stays free without a personal quota.",
+    ],
+    betterThan: "Choose a plan when you regularly need a larger Heabsy allowance, or keep buying token packs for occasional bursts. Both use your existing ADCode account and models. The page shows the price and weekly allowance before checkout, and Manage subscription gives you a direct route to billing and cancellation.",
   },
   "ai-status-alerts": {
     steps: [

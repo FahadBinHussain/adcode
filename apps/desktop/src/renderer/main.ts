@@ -5884,6 +5884,8 @@ function registerCommands(): void {
   add("ai.showUsage", "AI: Show Usage", () => void openUsageDialog());
   add("ai.showCredits", "AI: Show Free AI Credits", () => void openUsageDialog());
   add("ai.buyTokens", "AI: Buy AI Tokens", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"));
+  add("ai.upgradePlan", "AI: Upgrade Plan", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"));
+  add("ads.openNetworks", "Ads: Open Network Settings", () => void window.open("https://adcode.bluethenics.com/admin/ad-networks", "_blank", "noopener"));
   add("ai.showCacheSavings", "AI: Show Prompt Cache Savings", () => void openUsageDialog());
   add("ai.delegate", "AI: Split a Task Across Helpers", () => { showChatSurface(); chat.draft("/helpers "); });
   add("ai.initInstructions", "AI: Write Project Instructions (AGENTS.md)", () => { showChatSurface(); chat.ask("/init"); });

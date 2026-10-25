@@ -30,6 +30,8 @@ export const tagflowUnavailable: TagflowStore = {
   async getAiPlanState() { return { plan: null, boostTokens: 0 }; },
   async applySubscriptionEvent() { throw new Error("AI plans require the Supabase adapter"); },
   async getSubscription() { return null; },
+  async claimPlanCheckout() { throw new Error("AI plans require the Supabase adapter"); },
+  async completePlanCheckout() { throw new Error("AI plans require the Supabase adapter"); },
   async giftPlan() { throw new Error("AI plans require the Supabase adapter"); },
   async boostAllowance() { throw new Error("AI plans require the Supabase adapter"); },
   async resetAiWeek() { throw new Error("AI plans require the Supabase adapter"); },

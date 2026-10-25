@@ -15,16 +15,22 @@ export const PLANS: readonly PlanSpec[] = [
 
 /** What a Pro subscriber and their invitee each get when the invitee first subscribes. */
 export const INVITE_REWARD_TOKENS = 4_000_000;
+/** Dodo hosted sessions last 24h. Keep an extra hour for uncertain/late provider creation. */
+export const PLAN_CHECKOUT_GUARD_MS = 25 * 60 * 60 * 1000;
+/** Billing can recover even while model access is suspended. Resolve that subscription in the portal. */
+export function subscriptionBlocksCheckout(status: string, periodEnd: number, now: number): boolean {
+  return periodEnd > now || ["active", "pending", "on_hold", "paused", "past_due"].includes(status);
+}
 
 export const planById = (id: string): PlanSpec | null => PLANS.find((plan) => plan.id === id) ?? null;
 
 /** An account's best live plan (subscription or gift) and its best live boost. */
-export interface AiPlanState { plan: { id: PlanId; endsAt: number; source: "subscription" | "gift" } | null; boostTokens: number }
+export interface AiPlanState { plan: { id: PlanId; endsAt: number; source: "subscription" | "gift" } | null; boostTokens: number; /** Earliest known change in this snapshot; never serve it stale across this time. */ validUntil?: number | null }
 
 /** The free weekly allowance on paid models: the best of plan, boost and everyone's allowance. */
 export function effectiveWeeklyAllowance(state: AiPlanState, freeWeekly: number, now: number): number {
   const plan = state.plan !== null && state.plan.endsAt > now ? planById(state.plan.id)?.weeklyTokens ?? 0 : 0;
-  return Math.max(plan, state.boostTokens, freeWeekly);
+  return Math.max(plan, state.validUntil !== undefined && state.validUntil !== null && state.validUntil <= now ? 0 : state.boostTokens, freeWeekly);
 }
 
 export interface PromoInput { code: string; kind: "tokens" | "plan"; tokens?: number; plan?: PlanId; days?: number; maxRedemptions: number; expiresAt: number }

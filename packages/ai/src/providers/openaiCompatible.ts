@@ -335,6 +335,11 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
         try {
           const text = (await response.text()).trim().slice(0, 2000);
           if (text.length > 0) {
+            // Edge/proxy failures can return an entire branded HTML error page.
+            // Keep the HTTP status for recovery without dumping markup into chat.
+            if (response.headers.get("content-type")?.toLowerCase().includes("text/html") || /^(?:<!doctype\s+html|<html\b)/i.test(text)) {
+              detail = response.status >= 500 ? "The AI service is temporarily unavailable. Try again shortly." : "The server returned an unexpected web page. Check the provider endpoint.";
+            } else {
             try {
               const parsed: unknown = JSON.parse(text);
               detail = providerErrorMessage(parsed) ?? text.slice(0, 500);
@@ -352,6 +357,7 @@ export function createOpenAiCompatibleProvider(deps: OpenAiCompatibleDeps): Prov
               }
             } catch {
               detail = text.slice(0, 500);
+            }
             }
           }
         } catch {

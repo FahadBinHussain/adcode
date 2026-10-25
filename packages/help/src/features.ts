@@ -39,6 +39,10 @@ const command = (commandId: string, label: string): FeatureCommandAction => ({
  * looking for the feature actually wants: Commit, not Fetch.
  */
 const METADATA: Readonly<Record<string, FeatureMetadata>> = {
+  "ads.networks": {
+    actions: [command("ads.openNetworks", "Open ad network settings")],
+    keywords: ["ad networks", "provider api key", "imprezia", "beehiiv", "click payout", "view payout", "advertising inventory"],
+  },
   "workbench.modes": {
     actions: [command("workspace.vibe", "Vibe"), command("workspace.code", "Code"), command("workspace.project", "Project"), command("workspace.tasks", "AI tasks"), command("workspace.preview", "Preview")],
     keywords: ["vibe mode", "code mode", "workspace", "build", "review", "task history"],
@@ -129,6 +133,10 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   "ai.buyTokens": {
     actions: [command("ai.buyTokens", "Buy tokens")],
     keywords: ["buy tokens", "buy credits", "top up", "pay", "purchase", "more tokens", "out of tokens", "glm", "qwen", "mimo", "50m", "pricing", "price", "paid ai", "dodo"],
+  },
+  "ai.plans": {
+    actions: [command("ai.upgradePlan", "Upgrade plan")],
+    keywords: ["subscription", "subscribe", "monthly", "weekly", "pro plan", "promo code", "invite", "referral", "cancel subscription"],
   },
   "ai.projectInstructions": {
     actions: [command("ai.initInstructions", "Write AGENTS.md")],

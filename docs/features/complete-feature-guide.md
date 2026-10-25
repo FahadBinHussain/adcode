@@ -598,6 +598,17 @@ How to use it: On by default. Ask it to build, fix, create or change files and t
 
 Access: `All Features → AI file tools`; `Turn on or off`; `Settings`.
 
+<!-- feature:ai.plans -->
+### AI plans, promo codes and invites
+
+Choose a weekly or monthly plan for more Heabsy tokens each week, with no API key to set up.
+
+Why use it: A plan gives regular work a larger weekly allowance. Purchased tokens cover extra work beyond it, while Tagflow AI stays free without a personal quota.
+
+How to use it: Run AI: Upgrade Plan or open adcode.bluethenics.com/ai-tokens and sign in with the same account as the editor. Weekly costs $3 a week for 60M tokens each week; Monthly costs $9 a month for 60M each week; Pro costs $19 a month for 150M each week. Pay with Dodo; the larger allowance appears once payment is confirmed. Check the plan and remaining tokens in AI usage or the composer meter with a Heabsy model selected. Purchased tokens are used after the weekly allowance and never expire. Use Manage subscription on the page to manage billing or cancel; cancellation keeps your plan until its paid period ends. A Pro subscriber can share a personal invite code with two friends. A friend must redeem it before starting any paid plan; when their first subscription becomes active, both accounts get 4M tokens, once per friend. Enter promo codes in the same page's code box for tokens or plan days, subject to the code's expiry and redemption limit. Plans raise Heabsy's allowance; they do not change Tagflow AI.
+
+Access: `All Features → AI plans, promo codes and invites`; `Upgrade plan`.
+
 <!-- feature:ai.team -->
 ### AI Team
 
@@ -1513,6 +1524,17 @@ How to use it: Right-click any file for the full list. Drag to move, hold Ctrl w
 Access: `All Features → Selecting and moving files`; `Open Explorer`; `New file`; `Open file`; `Save`; `Save as`; `Save all`; `Revert file`; `Close editor`; `Close all editors`; `Split editor right`; `Merge editor panels`; `Insert file template`; `Open folder`; `Open recent`; `Open a recent folder`; `Clear recent folders`; `Close folder`; `Keyboard → F2`.
 
 ## Ads and earnings
+
+<!-- feature:ads.networks -->
+### Ad network connections
+
+Administrators can connect an ad provider and choose what users earn for verified views or clicks.
+
+Why use it: Provider inventory can fill an empty sponsored slot while keeping the existing ad controls and direct campaigns.
+
+How to use it: Open Ad network settings on the website and sign in as an administrator. Add a Generic JSON API connection with the provider's documented serve and event-verification endpoints and field mappings. Save it disabled, save its API key, test the preview, then enable delivery. Set the user payout in dollars per view or click. Keys are encrypted and never shown again. An API key alone is not enough: each provider must support the configured delivery and verification contract. Imprezia supports non-billable Native Exchange previews with an Exchange-enabled key and a provisioned app bundle or domain. Live delivery stays disabled until its inventory, privacy, tracking and billing requirements are met. The beehiiv connection previews newsletter offer content only; it cannot deliver desktop ads or generate earnings. Users keep control over sponsored messages and frequency.
+
+Access: `All Features → Ad network connections`; `Open ad network settings`.
 
 <!-- feature:adcode.ads.frequency -->
 ### Frequency

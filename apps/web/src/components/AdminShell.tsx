@@ -84,6 +84,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
   {
     label: "Money",
     items: [
+      { href: "/admin/ad-networks", label: "Ad networks", hint: "Provider connections, keys and per-event payouts", icon: "target" },
       {
         href: "/admin/money",
         label: "Payouts",

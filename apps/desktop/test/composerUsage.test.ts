@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { summarizeUsage } from "../src/shared/aiUsage.ts";
-import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE, type TagflowAllowanceView } from "../src/shared/tagflow.ts";
+import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE, paidTokensSummary, type TagflowAllowanceView } from "../src/shared/tagflow.ts";
 import { composerUsageModels } from "../src/renderer/ai/composerUsage.ts";
 
 const allowance = (extra: Partial<TagflowAllowanceView> = {}): TagflowAllowanceView => ({
@@ -120,6 +120,23 @@ describe("the composer meter on a paid model", () => {
     expect(free).toMatchObject({ label: "Free this week", value: "6M", detail: "6M of 10M free" });
     expect(free.tooltip).toContain("48M purchased");
     expect(purchased).toMatchObject({ label: "Purchased", value: "48M", detail: "48M purchased" });
+  });
+
+  it.each([["weekly", "Weekly", "subscription"], ["monthly", "Monthly", "gift"], ["pro", "Pro", "subscription"]] as const)("names the %s plan in the weekly meter and usage summary", (id, name, source) => {
+    const now = Date.now();
+    const planned = { ...tokens, plan: { id, source, endsAt: now + 86_400_000 }, free: { ...tokens.free, limit: id === "pro" ? 150_000_000 : 60_000_000 } };
+    const [weekly] = composerUsageModels(null, allowance({ unlimited: true, tokens: planned }), true, "heabsy-glm53-flash-unc");
+    expect(weekly.label).toBe(`${name} this week`);
+    expect(weekly.tooltip).toContain(`${name} plan`);
+    expect(weekly.detail).toContain("included");
+    expect(paidTokensSummary(planned, now)).toContain(`${name} plan`);
+  });
+
+  it("keeps the free label for an expired or unrecognised plan", () => {
+    for (const plan of [{ id: "pro", endsAt: Date.now() - 1, source: "subscription" }, { id: "future-plan", endsAt: Date.now() + 86_400_000, source: "gift" }]) {
+      const [weekly] = composerUsageModels(null, allowance({ tokens: { ...tokens, plan } }), true, "heabsy-glm53-flash-unc");
+      expect(weekly.label).toBe("Free this week");
+    }
   });
 
   it("warns when the free week and purchased tokens are both gone", () => {

@@ -111,11 +111,14 @@ export type TokenEventResult = "credited" | "refunded" | "duplicate" | "review" 
 export interface TokenSalesDay { day: string; orders: number; revenueCents: number; tokensSold: number; tokensUsed: number }
 
 /** A Dodo subscription event, normalized. `periodEnd` is the paid period's end (ms); 0 when unknown. */
-export interface SubscriptionEvent { webhookId: string; type: "active" | "renewed" | "plan_changed" | "on_hold" | "cancelled" | "failed" | "expired"; subscriptionId: string; uid: string | null; plan: PlanId | null; customerId: string | null; status: string; periodEnd: number; cancelAtPeriodEnd: boolean; now: number }
+export interface SubscriptionEvent { webhookId: string; type: "active" | "renewed" | "plan_changed" | "on_hold" | "cancelled" | "failed" | "expired"; subscriptionId: string; uid: string | null; plan: PlanId | null; customerId: string | null; status: string; periodEnd: number; cancelAtPeriodEnd: boolean; now: number; occurredAt?: number }
 export type SubscriptionEventResult = "applied" | "duplicate" | "review";
 export type PromoRedeemResult = "tokens" | "plan" | "unknown" | "expired" | "used-up" | "already";
 export type InviteRedeemResult = "joined" | "unknown" | "used-up" | "own-code" | "already" | "has-plan";
 export interface PromoView extends PromoInput { redemptions: number }
+/** One hosted subscription checkout per account; pending provider outcomes remain guarded. */
+export interface PlanCheckout { uid: string; orderId: string; plan: PlanId; billingCountry: string; createdAt: number; expiresAt: number; checkoutSession: string | null; checkoutUrl: string | null }
+export type PlanCheckoutClaim = { status: "subscribed" } | { status: "claimed" | "existing"; checkout: PlanCheckout };
 
 export interface TagflowStore {
   getModelAudienceProfile(uid: string): Promise<ModelAudienceProfile | null>;
@@ -158,6 +161,9 @@ export interface TagflowStore {
   /** Exactly once per webhook; a live subscription's access lasts until its period end. */
   applySubscriptionEvent(event: SubscriptionEvent): Promise<SubscriptionEventResult>;
   getSubscription(uid: string): Promise<{ customerId: string | null; plan: PlanId; status: string; periodEnd: number } | null>;
+  /** Atomic account claim before any provider call. Existing sessions are reused, never recreated. */
+  claimPlanCheckout(uid: string, plan: PlanId, billingCountry: string, orderId: string, now: number): Promise<PlanCheckoutClaim>;
+  completePlanCheckout(uid: string, orderId: string, sessionId: string, checkoutUrl: string, now: number): Promise<"saved" | "subscribed" | "missing">;
   /** `uid` may be `'*'` for everyone. */
   giftPlan(uid: string, plan: PlanId, days: number, adminUid: string, note: string, now: number): Promise<void>;
   /** `uid` may be `'*'` for everyone. */

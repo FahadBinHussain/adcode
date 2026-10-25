@@ -12,7 +12,7 @@ import { includedProvider, isCustomProviderUrl, modelProvider, providerConnectio
 import { DEFAULT_CREDIT_PLAN, creditCharge, creditsView, millicreditsFor, modelCreditRate, parseCreditPlan, untilText, type CreditPlan } from "./credits.ts";
 import { BUY_TOKENS_URL, DEFAULT_PAID_CONFIG, TOKEN_ORDER_PREFIX, isPaidModel, tokensView } from "./paidTokens.ts";
 import type { PaymentProvider } from "./payments.ts";
-import { PLANS, effectiveWeeklyAllowance } from "./aiPlans.ts";
+import { PLANS, effectiveWeeklyAllowance, parsePromo, planById } from "./aiPlans.ts";
 import { MODEL_FEEDBACK_CATEGORIES, type ModelRequestOutcome, type ModelRequestRecord, type ModelRequestSource } from "./tagflowReportTypes.ts";
 import { completeModelReport, parseReportRange } from "./tagflowReports.ts";
 import { AUDIENCE_ROLES, AUDIENCE_EXPERIENCE, DECLARED_USES, AI_PERSONAS, audienceChoice, audienceCountry, observedUse, type ModelAudienceProfile } from "./modelAudience.ts";
@@ -84,6 +84,8 @@ export function isTagflowPath(path: string): boolean {
   return path === "/v1/ai/tagflow/config" || path === "/v1/ai/tagflow/usage" || path === "/v1/ai/tagflow/chat/completions" ||
     path === "/v1/ai/tagflow/feedback" || path === "/v1/ai/tagflow/audience" || path === "/v1/admin/tagflow/reports" ||
     path === "/v1/admin/tagflow" || path === "/v1/admin/tagflow/usage" || path === "/v1/admin/tagflow/keys" || /^\/v1\/admin\/tagflow\/users\/[^/]+$/.test(path) ||
+    path === "/v1/ai/plans/checkout" || path === "/v1/ai/plans/portal" || path === "/v1/ai/promo/redeem" || path === "/v1/ai/invites" || path === "/v1/ai/invites/redeem" ||
+    ["reset", "boost", "gift", "promo", "subscriptions"].some((route) => path === `/v1/admin/ai-plans/${route}`) ||
     path === "/v1/ai/tokens/checkout" || path === "/v1/ai/tokens/orders" || path === "/v1/admin/ai-tokens/grant" || path === "/v1/admin/ai-tokens/sales";
 }
 
@@ -358,8 +360,123 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         }
       }
       if (url.pathname === "/v1/ai/tokens/orders" && request.method === "GET") {
-        const [activity, state] = await Promise.all([deps.store.listTokenActivity(auth.uid), deps.store.getPaidTokens(auth.uid)]);
-        return json(200, { tokens: tokensView(config.paid, state.free, state.balance, deps.clock.now()), ...activity });
+        const [activity, state, subscription] = await Promise.all([deps.store.listTokenActivity(auth.uid), deps.store.getPaidTokens(auth.uid), deps.store.getSubscription(auth.uid)]);
+        return json(200, { tokens: tokensView(config.paid, state.free, state.balance, deps.clock.now()), ...activity,
+          subscription: subscription === null ? null : { plan: subscription.plan, status: subscription.status, periodEnd: subscription.periodEnd, active: subscription.periodEnd > deps.clock.now() } });
+      }
+      if (url.pathname === "/v1/ai/plans/checkout" && request.method === "POST") {
+        const raw = await readJson(request);
+        if (config.paid?.enabled !== true) return json(409, { error: "paid-off" });
+        const selected = isRecord(raw) && typeof raw["plan"] === "string" ? planById(raw["plan"]) : null;
+        if (selected === null) return json(400, { error: "bad-plan" });
+        const country = isRecord(raw) ? raw["billingCountry"] : undefined;
+        if (typeof country !== "string" || !/^[A-Z]{2}$/.test(country)) return json(400, { error: "bad-country" });
+        const buyer = await deps.store.getUser(auth.uid);
+        if (!buyer?.email || buyer.emailVerified !== true) return json(403, { error: "verify-account" });
+        if (deps.payments === undefined) return json(503, { error: "not-configured" });
+        const now = deps.clock.now();
+        const orderId = `aip_${randomUUID().replaceAll("-", "")}`;
+        const product = `plan-${selected.id}` as const;
+        if (deps.payments.canCreateCheckout?.(product) === false) return json(503, { error: "not-configured" });
+        // A database claim, not an isolate-local count: two workers cannot issue two payable subscriptions.
+        const claim = await deps.store.claimPlanCheckout(auth.uid, selected.id, country, orderId, now);
+        if (claim.status === "subscribed") return json(409, { error: "already-subscribed" });
+        if (claim.status === "existing") {
+          if (claim.checkout.plan !== selected.id) return json(409, { error: { code: "checkout-exists", message: `You already opened a ${planById(claim.checkout.plan)?.name ?? "plan"} checkout. Choose that plan again to resume it. Wait until the existing checkout expires before choosing a different plan.` }, expiresAt: claim.checkout.expiresAt });
+          if (claim.checkout.checkoutUrl !== null) return json(200, { orderId: claim.checkout.orderId, checkoutUrl: claim.checkout.checkoutUrl });
+          return json(409, { error: { code: "checkout-pending", message: "Your checkout is being prepared or its status is still being confirmed. Try again shortly. If it stays unavailable, contact support before starting another subscription." } }, { "retry-after": "30" });
+        }
+        const origin = deps.siteOrigin ?? "https://adcode.bluethenics.com";
+        const session = await deps.payments.createCheckout({ orderId, product, advertiserId: auth.uid,
+          advertiserName: buyer.displayName ?? buyer.email, advertiserEmail: buyer.email, billingCountry: country,
+          amountMicros: BigInt(selected.priceCents) * 10_000n, metadata: { uid: auth.uid, plan: selected.id },
+          returnUrl: `${origin}/ai-tokens?plan=${selected.id}&order=${orderId}`, cancelUrl: `${origin}/ai-tokens` });
+        // A timeout can happen after Dodo creates a session. Retain the claim until that session expires.
+        if (session === null) return json(502, { error: { code: "checkout-pending", message: "We couldn't confirm your checkout. Try again shortly. If it stays unavailable, contact support so we can check it before opening another subscription." } });
+        const completed = await deps.store.completePlanCheckout(auth.uid, orderId, session.sessionId, session.checkoutUrl, deps.clock.now());
+        if (completed === "subscribed") return json(409, { error: "already-subscribed" });
+        if (completed !== "saved") return json(409, { error: { code: "checkout-pending", message: "Your checkout status changed. Refresh your account before trying again." } });
+        return json(200, { orderId, checkoutUrl: session.checkoutUrl });
+      }
+      if (url.pathname === "/v1/ai/plans/portal" && request.method === "POST") {
+        const buyer = await deps.store.getUser(auth.uid);
+        if (!buyer?.email || buyer.emailVerified !== true) return json(403, { error: "verify-account" });
+        const subscription = await deps.store.getSubscription(auth.uid);
+        if (!subscription?.customerId) return json(404, { error: "no-subscription" });
+        if (deps.payments?.customerPortal === undefined) return json(503, { error: "not-configured" });
+        const link = await deps.payments.customerPortal(subscription.customerId, `${deps.siteOrigin ?? "https://adcode.bluethenics.com"}/ai-tokens`);
+        return link === null ? json(502, { error: "portal-unavailable" }) : json(200, { link });
+      }
+      if ((url.pathname === "/v1/ai/promo/redeem" || url.pathname === "/v1/ai/invites/redeem") && request.method === "POST") {
+        const buyer = await deps.store.getUser(auth.uid);
+        if (!buyer?.email || buyer.emailVerified !== true) return json(403, { error: "verify-account" });
+        const raw = await readJson(request);
+        const code = isRecord(raw) && typeof raw["code"] === "string" ? raw["code"].trim().toUpperCase() : "";
+        if (!/^[A-Z0-9]{3,24}$/.test(code)) return json(400, { error: "bad-code" });
+        const result = url.pathname === "/v1/ai/promo/redeem" ? await deps.store.redeemPromo(code, auth.uid, deps.clock.now()) : await deps.store.redeemInvite(code, auth.uid, deps.clock.now());
+        const status = result === "unknown" ? 404 : result === "expired" || result === "used-up" ? 410 : ["already", "own-code", "has-plan"].includes(result) ? 409 : 200;
+        return json(status, { result });
+      }
+      if (url.pathname === "/v1/ai/invites" && request.method === "GET") {
+        const invite = await deps.store.getInvite(auth.uid, deps.clock.now());
+        return invite === null ? json(404, { error: "no-invite" }) : json(200, invite);
+      }
+      if (url.pathname.startsWith("/v1/admin/ai-plans/")) {
+        const route = url.pathname.slice("/v1/admin/ai-plans/".length);
+        if (request.method === "GET" && route === "promo") { await audit("read-ai-promos"); return json(200, { promos: await deps.store.listPromos() }); }
+        if (request.method === "GET" && route === "subscriptions") { await audit("read-ai-subscriptions"); return json(200, { plans: await deps.store.subscriptionSummary(deps.clock.now()) }); }
+        if (request.method !== "POST" || !["reset", "boost", "gift", "promo"].includes(route)) return json(405, { error: "method" });
+        const raw = await readJson(request);
+        if (route === "promo") {
+          const promo = parsePromo(raw);
+          if (promo === null || promo.expiresAt <= deps.clock.now()) return json(400, { error: "bad-promo" });
+          await audit("create-ai-promo", promo.code);
+          return await deps.store.createPromo(promo, auth.uid, deps.clock.now()) ? json(200, { ok: true }) : json(409, { error: "code-exists" });
+        }
+        const uid = isRecord(raw) ? raw["uid"] : undefined;
+        if (!isRecord(raw) || typeof uid !== "string" || uid.length === 0 || uid.length > 128 || uid !== uid.trim()) return json(400, { error: "bad-user" });
+        if (route === "reset") {
+          if (uid !== "*") {
+            await audit("reset-ai-week", uid);
+            const result = await deps.store.resetAiWeek(uid);
+            return json(result === "busy" ? 409 : 200, { result, reset: result === "reset" ? 1 : 0, busy: result === "busy" ? 1 : 0, none: result === "none" ? 1 : 0 });
+          }
+          const after = raw["after"] ?? "";
+          const retryUids = raw["retryUids"];
+          if (typeof after !== "string" || after.length > 128 || after !== after.trim() || after === "*" ||
+              retryUids !== undefined && (!Array.isArray(retryUids) || retryUids.length < 1 || retryUids.length > 500 || retryUids.some(one => typeof one !== "string" || one.length === 0 || one.length > 128 || one !== one.trim() || one === "*"))) return json(400, { error: "bad-cursor" });
+          await audit("reset-ai-week", uid);
+          // One bounded page per HTTP request. The admin client advances the cursor only
+          // after a confirmed response, and retries failed accounts without resetting a
+          // successfully processed page again.
+          const uids = retryUids === undefined ? await deps.store.listPaidWeekUids(after, 500) : [...new Set(retryUids as string[])];
+          const totals = { reset: 0, busy: 0, none: 0 };
+          const failed: string[] = [];
+          for (let offset = 0; offset < uids.length; offset += 20) {
+            const chunk = uids.slice(offset, offset + 20);
+            const results = await Promise.allSettled(chunk.map(one => deps.store.resetAiWeek(one)));
+            results.forEach((result, index) => {
+              if (result.status === "fulfilled") totals[result.value] += 1;
+              else failed.push(chunk[index]!);
+            });
+          }
+          return json(200, { ...totals, failed, nextCursor: retryUids === undefined && uids.length === 500 ? uids[uids.length - 1] : null });
+        }
+        const note = raw["note"];
+        if (typeof note !== "string" || note.length > 500) return json(400, { error: "bad-note" });
+        if (route === "boost") {
+          const weeklyTokens = raw["weeklyTokens"], endsAt = raw["endsAt"];
+          if (typeof weeklyTokens !== "number" || !Number.isSafeInteger(weeklyTokens) || weeklyTokens < 1 || weeklyTokens > 10_000_000_000 ||
+              typeof endsAt !== "number" || !Number.isSafeInteger(endsAt) || endsAt <= deps.clock.now() || endsAt > 9_000_000_000_000) return json(400, { error: "bad-boost" });
+          await audit("boost-ai-allowance", uid);
+          await deps.store.boostAllowance(uid, weeklyTokens, endsAt, auth.uid, note.trim(), deps.clock.now());
+        } else {
+          const selected = typeof raw["plan"] === "string" ? planById(raw["plan"]) : null, days = raw["days"];
+          if (selected === null || typeof days !== "number" || !Number.isSafeInteger(days) || days < 1 || days > 366) return json(400, { error: "bad-gift" });
+          await audit("gift-ai-plan", uid);
+          await deps.store.giftPlan(uid, selected.id, days, auth.uid, note.trim(), deps.clock.now());
+        }
+        return json(200, { ok: true });
       }
       if (url.pathname === "/v1/ai/tokens/checkout" && request.method === "POST") {
         const raw = await readJson(request);

@@ -1,6 +1,6 @@
 import type { AiUsageView } from "../../shared/aiUsage.ts";
 import { formatUsageCost } from "../../shared/aiUsage.ts";
-import { allowanceForModel, creditWindowSummary, untilText, type CreditsAllowance, type CreditWindowView, type TagflowAllowanceView } from "../../shared/tagflow.ts";
+import { aiPlanName, allowanceForModel, creditWindowSummary, untilText, type CreditsAllowance, type CreditWindowView, type TagflowAllowanceView } from "../../shared/tagflow.ts";
 import { createComposerMeter, type ComposerMeterModel } from "./composerMeter.ts";
 import { formatTokens } from "./contextMeter.ts";
 import { allowanceSummary } from "./allowanceSummary.ts";
@@ -45,13 +45,15 @@ export function composerUsageModels(view: AiUsageView | null, allowance: Tagflow
     // A paid model: its free week first, then the tokens this person bought.
     const paid = allowance.tokens;
     if (paid?.enabled === true && modelId !== null && paid.paidModels?.includes(modelId) === true) {
+      const plan = aiPlanName(paid.plan, Date.now());
+      const kind = plan === null ? "free" : "included";
       const left = paid.free.remaining;
       const out = left <= 0 && paid.purchased <= 0;
       const refill = paid.free.resetsAt === null ? "" : ` Free tokens refill in ${untilText(paid.free.resetsAt, Date.now())}.`;
       const free: ComposerMeterModel = {
-        label: "Free this week", percent: paid.free.limit > 0 ? Math.min(100, Math.round(((paid.free.used + paid.free.held) / paid.free.limit) * 100)) : null,
-        value: formatTokens(left), detail: `${formatTokens(left)} of ${formatTokens(paid.free.limit)} free`, tone: out ? "full" : left <= 0 ? "warn" : "ok",
-        tooltip: `${formatTokens(left)} of ${formatTokens(paid.free.limit)} free tokens left this week on this model, then ${formatTokens(paid.purchased)} purchased.${refill}${out ? " Buy tokens or switch to Tagflow AI, which stays free." : ""}`,
+        label: plan === null ? "Free this week" : `${plan} this week`, percent: paid.free.limit > 0 ? Math.min(100, Math.round(((paid.free.used + paid.free.held) / paid.free.limit) * 100)) : null,
+        value: formatTokens(left), detail: `${formatTokens(left)} of ${formatTokens(paid.free.limit)} ${kind}`, tone: out ? "full" : left <= 0 ? "warn" : "ok",
+        tooltip: `${plan === null ? "" : `${plan} plan: `}${formatTokens(left)} of ${formatTokens(paid.free.limit)} ${kind} tokens left this week on this model, then ${formatTokens(paid.purchased)} purchased.${refill}${out ? " Buy tokens or a plan, or switch to Tagflow AI, which stays free." : ""}`,
       };
       const purchased: ComposerMeterModel = { label: "Purchased", percent: null, value: formatTokens(paid.purchased), detail: `${formatTokens(paid.purchased)} purchased`, tone: out ? "full" : "ok", tooltip: "Tokens you bought, used after your free tokens. They never expire. Run AI: Buy AI Tokens to add more." };
       return [free, purchased];

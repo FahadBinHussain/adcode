@@ -110,14 +110,14 @@ export function createTagflowStore(lazy: () => Promise<SupabaseClient>): Tagflow
       };
     },
     async getAiPlanState(uid, now) {
-      const { data, error } = await (await lazy()).rpc("ai_plan_state", { p_uid: uid, p_now: now });
+      const { data, error } = await (await lazy()).rpc("ai_plan_state_v2", { p_uid: uid, p_now: now });
       check(error);
-      const row = ((data ?? []) as { plan: PlanId | null; ends_at: number | string | null; source: "subscription" | "gift" | null; boost_tokens: number | string }[])[0];
-      return { plan: row?.plan == null ? null : { id: row.plan, endsAt: Number(row.ends_at), source: row.source ?? "gift" }, boostTokens: Number(row?.boost_tokens ?? 0) };
+      const row = ((data ?? []) as { plan: PlanId | null; ends_at: number | string | null; source: "subscription" | "gift" | null; boost_tokens: number | string; valid_until: number | string | null }[])[0];
+      return { plan: row?.plan == null ? null : { id: row.plan, endsAt: Number(row.ends_at), source: row.source ?? "gift" }, boostTokens: Number(row?.boost_tokens ?? 0), validUntil: row?.valid_until == null ? null : Number(row.valid_until) };
     },
     async applySubscriptionEvent(event) {
-      const { data, error } = await (await lazy()).rpc("apply_ai_subscription_event", { p_webhook: event.webhookId, p_type: event.type, p_subscription: event.subscriptionId, p_uid: event.uid, p_plan: event.plan,
-        p_customer: event.customerId, p_status: event.status, p_period_end: event.periodEnd, p_cancel: event.cancelAtPeriodEnd, p_now: event.now });
+      const { data, error } = await (await lazy()).rpc("apply_ai_subscription_event_v2", { p_webhook: event.webhookId, p_type: event.type, p_subscription: event.subscriptionId, p_uid: event.uid, p_plan: event.plan,
+        p_customer: event.customerId, p_status: event.status, p_period_end: event.periodEnd, p_cancel: event.cancelAtPeriodEnd, p_now: event.now, p_occurred_at: event.occurredAt ?? null });
       check(error);
       if (data !== "applied" && data !== "duplicate" && data !== "review") throw new Error("Invalid subscription event result");
       return data;
@@ -126,6 +126,19 @@ export function createTagflowStore(lazy: () => Promise<SupabaseClient>): Tagflow
       const { data, error } = await (await lazy()).from("ai_subscriptions").select("customer_id, plan, status, ends_at").eq("uid", uid).order("ends_at", { ascending: false }).limit(1).maybeSingle();
       check(error);
       return data === null ? null : { customerId: data.customer_id, plan: data.plan as PlanId, status: data.status, periodEnd: Number(data.ends_at) };
+    },
+    async claimPlanCheckout(uid, plan, billingCountry, orderId, now) {
+      const { data, error } = await (await lazy()).rpc("claim_ai_plan_checkout", { p_uid: uid, p_plan: plan, p_country: billingCountry, p_order: orderId, p_now: now });
+      check(error);
+      const result = data as import("../src/tagflowTypes.ts").PlanCheckoutClaim;
+      if (result?.status !== "claimed" && result?.status !== "existing" && result?.status !== "subscribed") throw new Error("Invalid plan checkout claim");
+      return result;
+    },
+    async completePlanCheckout(uid, orderId, sessionId, checkoutUrl, now) {
+      const { data, error } = await (await lazy()).rpc("complete_ai_plan_checkout", { p_uid: uid, p_order: orderId, p_session: sessionId, p_url: checkoutUrl, p_now: now });
+      check(error);
+      if (data !== "saved" && data !== "subscribed" && data !== "missing") throw new Error("Invalid plan checkout completion");
+      return data;
     },
     async giftPlan(uid, plan, days, adminUid, note, now) {
       const { error } = await (await lazy()).from("ai_plan_gifts").insert({ uid, plan, starts_at: now, ends_at: now + days * 86_400_000, source: "admin", ref: `${adminUid}:${note}`.slice(0, 500), created_at: now });
