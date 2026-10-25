@@ -830,13 +830,28 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         return fail(502, "upstream", "The included AI provider did not return a chat stream.");
       }
       const reader = upstream.body.getReader();
+      // Once headers have been sent, an AI failure belongs in the SSE protocol. Erroring
+      // the response body rejects Next's pipeToNodeResponse and destroys its response;
+      // the Workers bridge can then be left waiting for a response that never finishes.
+      // The desktop already throws on data.error (including released 2.4.0 clients).
+      const interrupted = new TextEncoder().encode(`data: ${JSON.stringify({ error: { code: "stream-interrupted", message: "Included AI stream interrupted. Try again or choose another model." } })}\n\n`);
+      let cancelled = false;
       const stream = new ReadableStream<Uint8Array>({
         async pull(controller) {
           try {
             for (;;) {
               const chunk = await reader.read();
               if (!chunk.done) stillSending();
-              if (chunk.done) { await settle(false, true); await finishMetric(observer.completed ? "success" : "provider_error",observer.completed ? null : "incomplete-stream"); cleanup(); reader.releaseLock(); controller.close(); break; }
+              if (chunk.done) {
+                await settle(false, true);
+                await finishMetric(observer.completed ? "success" : "provider_error",observer.completed ? null : "incomplete-stream");
+                cleanup(); reader.releaseLock();
+                if (!cancelled) {
+                  if (!observer.completed) controller.enqueue(interrupted);
+                  controller.close();
+                }
+                break;
+              }
               const safe = observer.push(chunk.value);
               if (safe !== null) { controller.enqueue(safe); break; }
             }
@@ -844,10 +859,11 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
             abort.abort(); cleanup(); await reader.cancel().catch(() => undefined);
             await settle().catch(() => undefined);
             await finishMetric(settlementFailed ? "relay_error" : request.signal.aborted ? "cancelled" : "provider_error",settlementFailed ? "storage-settlement" : request.signal.aborted ? "request-ended" : "stream-interrupted");
-            controller.error(new Error("Included AI stream interrupted"));
+            reader.releaseLock();
+            if (!cancelled) { controller.enqueue(interrupted); controller.close(); }
           }
         },
-        async cancel() { abort.abort(); cleanup(); await reader.cancel().catch(() => undefined); await settle().catch(() => undefined); await finishMetric(settlementFailed ? "relay_error" : "cancelled",settlementFailed ? "storage-settlement" : "request-ended"); },
+        async cancel() { cancelled = true; abort.abort(); cleanup(); await reader.cancel().catch(() => undefined); await settle().catch(() => undefined); await finishMetric(settlementFailed ? "relay_error" : "cancelled",settlementFailed ? "storage-settlement" : "request-ended"); },
       });
       return new Response(stream, { headers: { ...headers, "content-type": "text/event-stream", "x-accel-buffering": "no" } });
     } catch (error) {

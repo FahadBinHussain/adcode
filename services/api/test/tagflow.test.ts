@@ -298,7 +298,8 @@ describe("included Tagflow AI", () => {
       upstream.mockImplementation(drip(10, 30, 3));
       const response = await chat();
       expect(response.status).toBe(200);
-      await expect(response.text()).rejects.toThrow();
+      expect(await response.text()).toContain('"code":"stream-interrupted"');
+      expect(await usage()).toMatchObject({ requests: 1, reservedTokens: 0, estimatedRequests: 1 });
     });
   });
 
@@ -826,7 +827,9 @@ describe("included Tagflow AI", () => {
     upstream.mockImplementation(async () => split(event({ choices: [{ delta: { content: "नमस्ते" }, finish_reason: "stop" }] }) + event({ choices: [], usage: { prompt_tokens: 5, completion_tokens: 6 } }) + "data: [DONE]\n\n"));
     expect(await (await chat()).text()).toContain("नमस्ते"); expect((await usage())!.inputTokens).toBe(5);
     upstream.mockImplementation(async () => split(event({ error: { message: "server-secret" } })));
-    await expect((await chat()).text()).rejects.toThrow("stream interrupted");
+    const interrupted = await (await chat()).text();
+    expect(interrupted).toContain('"code":"stream-interrupted"');
+    expect(interrupted).not.toContain("server-secret");
     expect(await usage()).toMatchObject({ requests: 2, outputTokens: 106, reservedTokens: 0 });
   });
   it("supports non-stream replies and hides the feature when the server key is absent", async () => {
