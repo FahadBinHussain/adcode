@@ -3186,8 +3186,12 @@ function updateMessage(
   switch (status.state) {
     case "idle":
       return "The update check has not run yet.";
+    case "available":
+      return status.source === "store" ? `ADCode ${status.version} is out. Click Update available to check Microsoft Store.` : `ADCode ${status.version} is out. Click Update available to download it.`;
     case "ready":
-      return `Version ${status.version} is ready - choose Restart to update in the status bar, or it installs when you close ADCode.`;
+      return status.restartable === true
+        ? `Version ${status.version} is ready - choose Restart to update in the status bar, or it installs when you close ADCode.`
+        : `Version ${status.version} is ready - choose Close to update in the status bar, or close ADCode when you are ready.`;
     case "downloading":
       return status.percent === undefined
         ? "Downloading an update…"
@@ -4982,10 +4986,41 @@ window.adcode.rating.onAsk(() => {
  * The update the window can see: "Updating 42%", then "Restart to update" in the status
  * bar, and one quiet card per version. See updates/updatePrompt.ts.
  */
+let updatePreparingDialog: HTMLDialogElement | null = null;
+const blockUpdateKeys = (event: KeyboardEvent): void => { event.preventDefault(); event.stopImmediatePropagation(); };
 const updatePrompt = createUpdatePrompt({
   statusItem: el("status-update") as HTMLButtonElement,
   notifications,
   flushDrafts: draftUnsavedTabs,
+  recoveryDrafts: () => tabs.flatMap(tab => {
+    if (editorHost.isReadOnly(tab.path) || !editorHost.isDirty(tab.path)) return [];
+    const text = editorHost.text(tab.path);
+    return text === null ? [] : [{ path: tab.path, text }];
+  }),
+  onEditorChanged: listener => { editorHost.onDirtyChange(() => listener()); },
+  setPreparing: preparing => {
+    if (!preparing) {
+      updatePreparingDialog?.remove(); updatePreparingDialog = null;
+      window.removeEventListener("keydown", blockUpdateKeys, true);
+      return;
+    }
+    if (updatePreparingDialog !== null) return;
+    const dialog = document.createElement("dialog");
+    dialog.className = "result-dialog confirm-dialog";
+    dialog.setAttribute("aria-label", "Preparing to update ADCode");
+    const card = document.createElement("div");
+    card.className = "result-card";
+    const title = document.createElement("h2");
+    title.className = "result-title"; title.textContent = "Preparing to update ADCode";
+    const body = document.createElement("p");
+    body.className = "result-summary"; body.textContent = "Protecting unsaved work in every window…";
+    card.append(title, body); dialog.append(card);
+    dialog.addEventListener("cancel", event => event.preventDefault());
+    document.body.append(dialog);
+    dialog.showModal();
+    updatePreparingDialog = dialog;
+    window.addEventListener("keydown", blockUpdateKeys, true);
+  },
   unsavedWithoutRecovery: () =>
     settingsValues["adcode.session.crashRecovery"] === false
       ? tabs.filter((tab) => !editorHost.isReadOnly(tab.path) && editorHost.isDirty(tab.path)).length
@@ -6219,8 +6254,8 @@ function registerCommands(): void {
     setStatus(updateMessage(status, info?.version ?? null), 6000);
   });
 
-  add("updates.restart", "Restart to Update", async () => {
-    if (!(await updatePrompt.restart()))
+  add("updates.restart", "Update ADCode", async () => {
+    if (!(await updatePrompt.update()))
       setStatus("No update is waiting. Help → Check for Updates looks for one.", 5000);
   });
 

@@ -1664,7 +1664,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Switch the middle of the window with Chat, Agents and Tools on the rail: the conversation, the board of agents working in parallel, and the tools, MCP servers, skills and memory they use.",
       "Select Changes on the rail to open the Changes panel as a floating window - every changed file, its diff, and Commit & Push; select it again to close it.",
       "Use Preview to see the running app in a floating window, and Automations to schedule messages. Notifications, settings, More, feedback, your account and the live-session button are along the foot of the rail.",
-      "Pick up an earlier conversation from the Chats list, grouped by day; type in its search box to find one by anything said in it. Every open conversation also gets a tab along the top of the window.",
+      "Pick up an earlier conversation from the Chats list, grouped by day; type in its search box to find one by anything said in it. Every open conversation also gets a tab along the top of the window. If they do not all fit, use the mouse wheel over the tabs to scroll between them.",
       "Drag the sidebar's right edge to resize it, or press Ctrl+B to hide it. On a narrow window it becomes a drawer: open it with the menu button at the top left or Ctrl+B, and close it with Escape.",
     ],
     benefits: [
@@ -2194,8 +2194,10 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "updates-auto": {
     steps: [
       "Leave it on, which is the default. New versions download in the background while you work.",
+      "When a new version is available, a quiet card offers Update now or Later. Update now finishes the download and installs it when ready.",
       "Watch the status bar: it shows Updating with a percentage, then Restart to update when the new version is ready.",
-      "On Windows, choose Restart now on the card, or click Restart to update. ADCode keeps anything unsaved, installs, and reopens by itself. On Linux, the update installs when you close ADCode.",
+      "Once downloaded, choose Restart now on Windows, or Close and update on Linux. ADCode protects unsaved work first. Windows reopens after installing; Linux finishes installing as ADCode closes.",
+      "Microsoft Store installations show Update in Microsoft Store. Portable installations show Download update and open the official ADCode download page; replace your portable copy yourself.",
       "Or keep working - the update installs the next time you close ADCode.",
       "Help → Check for Updates asks straight away; turn the setting off to update by hand.",
     ],
@@ -2206,7 +2208,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Whichever way you installed ADCode, only one thing is ever updating it.",
     ],
     betterThan:
-      "Most editors either interrupt with a modal or update so quietly you never find out. ADCode shows progress in the status bar, offers one quiet restart when the update is ready, and otherwise installs it when you close the editor. Where the Microsoft Store or a Linux package manager installed ADCode, that keeps the job, and ADCode's own updater stands down instead of downloading a copy it has no permission to apply.",
+      "ADCode announces a new version with an action you can use immediately, keeps download progress in the status bar, and offers a separate ready notice if you chose Later. The Microsoft Store and Linux package managers retain control of their installations; portable copies link to the official download page.",
   },
 
   "updates-whats-new": {

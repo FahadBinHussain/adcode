@@ -4501,7 +4501,7 @@ try {
            matchedByName: badge?.classList.contains('peek-badge-matched') === true,
            showsSource: (peek.querySelector('.peek-code')?.textContent ?? '').includes('alpha'),
            // Name matching can return another declaration; its source must still be named.
-           namesTheFile: /[^\\\\/]+\\.ts:\\d+$/.test(peek.querySelector('.peek-title')?.textContent ?? ''),
+           namesTheFile: /[^\\\\/]+\\.[cm]?[jt]sx?:\\d+$/.test(peek.querySelector('.peek-title')?.textContent ?? ''),
          };
        })()`,
     );

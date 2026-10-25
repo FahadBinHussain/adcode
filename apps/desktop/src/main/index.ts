@@ -308,7 +308,7 @@ void app.whenReady().then(() => {
   registerReferralIpc();
   registerRatingIpc();
   registerPinPromptIpc();
-  registerUpdateIpc();
+  registerUpdateIpc(() => Object.values(windows).filter(window => !window.isDestroyed()).map(window => window.webContents));
   registerAccountIpc();
 
   // Broadcast status to whatever window is open. Not awaited, and failures inside are
