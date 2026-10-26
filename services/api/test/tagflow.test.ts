@@ -725,6 +725,20 @@ describe("included Tagflow AI", () => {
     const response = await chat(); await response.body!.cancel();
     expect(await usage()).toMatchObject({ requests: 1, outputTokens: 100, reservedTokens: 0, estimatedRequests: 1 });
   });
+  it("settles once when a cancelled reader and its pending pull fail together", async () => {
+    const original = store.settleTagflow.bind(store);
+    const settle = vi.spyOn(store, "settleTagflow").mockImplementation(async (...args) => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return original(...args);
+    });
+    upstream.mockImplementation(async (_url, init) => new Response(new ReadableStream<Uint8Array>({
+      start(controller) { init?.signal?.addEventListener("abort", () => controller.error(new Error("aborted")), { once: true }); },
+    }), { headers: { "content-type": "text/event-stream" } }));
+    const response = await chat();
+    await response.body!.cancel();
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(await usage()).toMatchObject({ requests: 1, outputTokens: 100, reservedTokens: 0 });
+  });
   it("estimates missing counts and keeps upstream errors out of client responses", async () => {
     upstream.mockImplementation(async () => new Response(event({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } }));
     await (await chat()).text(); expect((await usage())!.estimatedRequests).toBe(1);

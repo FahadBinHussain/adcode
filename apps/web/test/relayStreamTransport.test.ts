@@ -22,6 +22,38 @@ async function relay(response: () => Response) {
 }
 
 describe("included AI through the deployed Next response bridge", () => {
+  it.each([
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+    'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n',
+    'data: [DONE]',
+    'data: [DONE]\r\n',
+  ])("accepts a complete terminal data line without a final empty line: %s", async ending => {
+    const fixture = await relay(() => new Response(partial + ending, { headers: { "content-type": "text/event-stream" } }));
+    const response = await fixture.respond();
+    const body = await response.text();
+    expect(body).toContain("partial answer");
+    expect(body).toContain(ending.trim());
+    expect(body).not.toContain("stream-interrupted");
+    expect(body.endsWith("\n\n")).toBe(true);
+    expect(await fixture.store.getModelRequest(response.headers.get("x-adcode-request-id")!)).toMatchObject({ outcome: "success" });
+  });
+
+  it.each([
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}',
+    'data: {"choices":[{"delta":{"content":"unfinished"}}]}',
+    'data: {"choices":[{"delta":{},"finish_reason":"error"}]}',
+    'data: {"choices":[{"delta":{},"finish_reason":0}]}',
+    'data: {"error":{"message":"private-key provider detail"}}',
+  ])("keeps incomplete or failed trailing data as an error: %s", async ending => {
+    const fixture = await relay(() => new Response(partial + ending, { headers: { "content-type": "text/event-stream" } }));
+    const response = await fixture.respond();
+    const body = await response.text();
+    expect(body).toContain("partial answer");
+    expect(body).toContain("stream-interrupted");
+    expect(body).not.toContain("private-key");
+    expect(await fixture.store.getModelRequest(response.headers.get("x-adcode-request-id")!)).toMatchObject({ outcome: "provider_error" });
+  });
+
   it.each(["provider error", "broken transport", "truncated response"] as const)("finishes a %s with a safe SSE error instead of rejecting Next's response pipe", async (failure) => {
     const fixture = await relay(() => new Response(new ReadableStream<Uint8Array>({
       start(controller) { controller.enqueue(new TextEncoder().encode(partial)); },

@@ -184,6 +184,14 @@ class UsageObserver {
     if (this.pending.length > 1_000_000) throw new Error("upstream-event-too-large");
     return output === "" ? null : new TextEncoder().encode(output);
   }
+  /** Some compatible providers close after their last data line without an empty line. */
+  finish(): Uint8Array | null {
+    this.pending += this.decoder.decode();
+    if (this.pending.trim() === "") return null;
+    // Reuse exactly the same JSON/error/size checks as an ordinary complete frame.
+    // The caller still requires [DONE] or finish_reason; EOF alone is never success.
+    return this.push(new Uint8Array([10, 10]));
+  }
   observe(raw: unknown): void {
     if (!isRecord(raw)) return;
     const groq = raw["x_groq"];
@@ -192,9 +200,10 @@ class UsageObserver {
     if (Array.isArray(raw["choices"])) for (const choice of raw["choices"]) {
       if (!isRecord(choice)) continue;
       if (choice["finish_reason"] !== undefined && choice["finish_reason"] !== null) {
-        this.completed = true;
         const reason = choice["finish_reason"];
-        this.finishReason = reason === "content_filter" ? "refusal" : ["stop", "length", "tool_calls", "function_call", "refusal"].includes(String(reason)) ? String(reason) : null;
+        if (typeof reason !== "string" || !["stop", "length", "tool_calls", "function_call", "content_filter", "refusal"].includes(reason)) throw new Error("Invalid Tagflow completion reason");
+        this.completed = true;
+        this.finishReason = reason === "content_filter" ? "refusal" : reason;
       }
       const delta = choice["delta"] ?? choice["message"];
       if (isRecord(delta)) {
@@ -690,8 +699,13 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
       let servedRate = rate;
       let settled = false;
       let settlementFailed = false;
-      const settle = async (failed = false, complete = false): Promise<void> => {
-        if (settled) return;
+      let settling: Promise<void> | null = null;
+      const settle = (failed = false, complete = false): Promise<void> => {
+        if (settled) return Promise.resolve();
+        // cancel() and an aborted pending pull can arrive together. Both await the
+        // same request-local write instead of sending two settlement requests.
+        if (settling !== null) return settling;
+        settling = (async () => {
         const reported = observer.completed ? observer.reported : null;
         // An incomplete stream may have consumed its full allocation upstream.
         const inputTokens = failed ? 0 : reported?.input ?? served.input;
@@ -707,6 +721,9 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         try { await deps.store.settleTagflow(reservation.id, result); }
         catch (error) { settlementFailed = true; throw error; }
         settled = true;
+        })();
+        void settling.then(() => { settling = null; }, () => { settling = null; });
+        return settling;
       };
       const onAbort = (): void => abort.abort();
       request.signal.addEventListener("abort", onAbort, { once: true });
@@ -843,6 +860,8 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
               const chunk = await reader.read();
               if (!chunk.done) stillSending();
               if (chunk.done) {
+                const trailing = observer.finish();
+                if (trailing !== null && !cancelled) controller.enqueue(trailing);
                 await settle(false, true);
                 await finishMetric(observer.completed ? "success" : "provider_error",observer.completed ? null : "incomplete-stream");
                 cleanup(); reader.releaseLock();
