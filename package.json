@@ -42,6 +42,7 @@
     "smoke:all": "node scripts/smoke.mjs && node scripts/smoke-ads.mjs",
     "design:check": "node scripts/design-system-check.cjs",
     "release-note": "node scripts/release-note.mjs",
+    "release:prepare": "node scripts/prepare-release.mjs",
     "verify": "npm run typecheck && npm run firewall && npm run test",
     "icons": "electron scripts/make-icons.mjs",
     "web": "npm --prefix apps/web run dev",
