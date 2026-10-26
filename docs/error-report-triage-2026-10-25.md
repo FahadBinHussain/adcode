@@ -1,6 +1,6 @@
 # Error report triage — 25 October 2026
 
-Reviewed ten new reports after the previous 24 October triage, using the indexed recent-report list and keyed account lookups. Sent eight individualized support messages from the explicitly confirmed sender, `ADCode <adcode@bluethenics.com>`; Resend confirmed all eight delivered. Two settings reports from the same account received one combined reply, recorded against both reports. Recorded every provider receipt in `report_replies` and each reply in the audit log. One account has no email, so no reply was sent. Reports remain in progress until fixes are released and their behavior is confirmed.
+Reviewed thirteen new reports after the previous 24 October triage, using the indexed recent-report list and keyed account lookups. Sent eleven individualized support messages from the explicitly confirmed sender, `ADCode <adcode@bluethenics.com>`; delivery is confirmed for all eleven. Two settings reports from the same account received one combined reply, recorded against both reports. Recorded every provider receipt in `report_replies` and each reply in the audit log. One account has no email, so no reply was sent. Reports remain in progress until fixes are released and their behavior is confirmed.
 
 | Report | Finding | Reply |
 | --- | --- | --- |
@@ -13,6 +13,9 @@ Reviewed ten new reports after the previous 24 October triage, using the indexed
 | rep-21-1792928554521 | Included AI HTML 500; separate unavailable Windows shell command and project Python failures | Delivered |
 | rep-1-1792923169387 | Excessive rate-limit waits plus HTML 500; no personal policy override | Delivered |
 | rep-3-1792921316611 and rep-1-1792919303651 | Microsoft Store virtualized settings rename returns EXDEV, blocking model changes; related schedule errors | Combined reply delivered |
+| rep-5-1792938097671 | Cannot scroll between chats; reproduced missing mouse-wheel navigation for overflowing chat tabs | Delivered |
+| rep-1-1792942195673 | Verification loop; keyed account lookup now shows verified, provided session-refresh steps | Delivered |
+| rep-4-1792945571379 | Linux 2.4.0 receives HTML 500; separate missing project file | Delivered |
 
 ## New fixes
 
@@ -23,6 +26,8 @@ Reviewed ten new reports after the previous 24 October triage, using the indexed
 - Preserve existing protections against replaying partial responses or completed tools, and immediate cancellation with no pending timer.
 - Replace HTML proxy/edge error pages with a readable error while retaining their HTTP status for bounded recovery. The added provider/recovery regression checks passed (68 tests).
 - Settings persistence now handles EXDEV with a validated previous-file backup and copy fallback, recovers a damaged main file from that backup, serializes saves, and publishes cache/listener updates only after a successful save. Ninety settings/schema/atomic-write tests and desktop type checks passed.
+- Overflowing chat tabs now respond to ordinary mouse-wheel scrolling in pixel, line and page modes while preserving horizontal trackpad gestures, zoom and edge propagation. A real Chromium regression failed six navigation checks before the fix and passes all eleven afterward. The reporter did not identify the exact chat surface, so the reply asks them to distinguish sidebar history or message scrolling if that was the issue; no unproven sidebar sizing change was made.
+- A fresh report confirmed the server failure continued after the first web release. Its live stack mapped to Next's response pipe rejecting an interrupted AI stream. Commit `60c78fb` emits a sanitized SSE error and closes normally, and rejects truncated streams as failures rather than silent success. Four real HTTP bridge/client integration cases plus 127 relay/adapter checks passed. Worker `875aa567-c36b-42cb-8d62-939c01c04fbb` now carries the fix. Released 2.4.0 clients already understand this protocol error. Production observation remains bounded; the individual reports stay in progress.
 
 A final indexed queue check found one additional report, `rep-36-1792901087365`. Matched the 03:58:44 UTC failure to Cloudflare's runtime-cancelled hung-request event. Sent a fifth individualized reply describing the verified server failure, separate Unity connection/tool problems, and the actual unpublished desktop release status. The exact cause remains under investigation; no claim of live resolution was made.
 
