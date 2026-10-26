@@ -972,6 +972,17 @@ How to use it: Nothing to set up - ask for what you want. Deleted, moved and ren
 
 Access: `All Features → What the assistant can do`; `Show the built-in tools`.
 
+<!-- feature:ai.systemFileTools -->
+### Work without an open folder
+
+With no folder open, the assistant's file tools keep working in your home folder instead of stopping and telling you to open one.
+
+Why use it: Chats already answer with no folder open, so a question about files there dead-ended on the file-tools block. With this on, the assistant reads, edits and runs commands in your home folder; opening a project folder still scopes every chat and task to that folder.
+
+How to use it: Off by default. Turn it on in Settings, under AI, then ask about your files with no folder open and the assistant works in your home folder instead of asking you to open one. Open a project folder and everything is scoped to that folder again. Review every change still needs a project folder to stage edits in, so open a folder or switch AI edit approval to Apply automatically first - staging a review copy of your whole home folder is refused.
+
+Access: `All Features → Work without an open folder`; `Turn on or off`; `Settings`.
+
 ## Git
 
 <!-- feature:adcode.git.blame -->

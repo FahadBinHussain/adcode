@@ -560,7 +560,7 @@ export const DOC_SEED: readonly DocSeed[] = [
     how: "On by default. Ask it to build, fix, create or change files and the result is in your project, with the Explorer refreshing to show it. Reads never change anything. Writes are still guarded: unsaved files pause file edits until you save, so nothing you have not saved gets overwritten, and destructive shell commands stay blocked — run those yourself in the terminal. Chats belong to the open folder only: the chat banner names the folder with its task and chat counts, and Switch opens the folder popup. Turning this off keeps chat available but disables the built-in file tools. Beyond reading, listing, and searching files, the assistant can find files by pattern (for example every image), outline a file's symbols before reading it, delete and move files with Undo, run tests, typechecks and dev servers in the project, look at the running app in its own browser, and fetch documentation pages.",
     keywords: ["AI file tools", "The assistant"],
     access: ["All Features → AI file tools", "Turn on or off (setting:adcode.ai.isolatedWorkspaces)", "Settings → adcode.ai.isolatedWorkspaces"],
-    related: ["ai-chat-widget", "ai-task-token-budget"],
+    related: ["ai-chat-widget", "ai-task-token-budget", "ai-system-file-tools"],
   },
   {
     slug: "ai-team",
@@ -937,6 +937,17 @@ export const DOC_SEED: readonly DocSeed[] = [
     keywords: ["What the assistant can do", "The assistant", "delete file", "move file", "rename file", "dev server", "background command", "npm run dev", "long command", "timeout", "plan", "checklist", "todo list", "undo delete", "agent tools", "what can the ai do", "assistant abilities", "question", "ask me", "asks me", "choose an option", "multiple choice", "pick one", "which one", "type your own answer", "dismiss the question", "answer a question"],
     access: ["All Features → What the assistant can do", "Show the built-in tools (command:tools.builtIn)"],
     related: ["ai-sees-your-app", "workbench-tools-page", "ai-edit-policy", "ai-design-taste"],
+  },
+  {
+    slug: "ai-system-file-tools",
+    title: "Work without an open folder",
+    section: "The assistant",
+    description: "With no folder open, the assistant's file tools keep working in your home folder instead of stopping and telling you to open one.",
+    why: "Chats already answer with no folder open, so a question about files there dead-ended on the file-tools block. With this on, the assistant reads, edits and runs commands in your home folder; opening a project folder still scopes every chat and task to that folder.",
+    how: "Off by default. Turn it on in Settings, under AI, then ask about your files with no folder open and the assistant works in your home folder instead of asking you to open one. Open a project folder and everything is scoped to that folder again. Review every change still needs a project folder to stage edits in, so open a folder or switch AI edit approval to Apply automatically first - staging a review copy of your whole home folder is refused.",
+    keywords: ["Work without an open folder", "The assistant"],
+    access: ["All Features → Work without an open folder", "Turn on or off (setting:adcode.ai.systemFileTools)", "Settings → adcode.ai.systemFileTools"],
+    related: ["ai-isolated-workspaces", "ai-edit-policy"],
   },
   {
     slug: "git-blame",
