@@ -115,15 +115,17 @@ try {
     "Unicode true", "RequestExecutionLevel user", `OutFile "${nsisQuote(installer)}"`,
     `InstallDir "${nsisQuote(join(directory, "installed"))}"`,
     '!define PRODUCT_NAME "ADCode update probe"', '!define PRODUCT_FILENAME "Probe"', '!define VERSION "0.0.0"',
-    header.build(), '!include "common.nsh"', '!include "MUI2.nsh"', '!include "UAC.nsh"', "Var launchLink",
+    header.build(), '!include "common.nsh"', '!include "MUI2.nsh"', "Var launchLink",
     "Var installMode", "Var hasPerUserInstallation", "Var hasPerMachineInstallation",
     "Var perUserInstallationFolder", "Var perMachineInstallationFolder",
     // Scope setters intentionally contain no real registry or installation work.
     "!macro setInstallModePerUser", ' StrCpy $installMode "CurrentUser"', "!macroend",
     "!macro setInstallModePerAllUsers", ' StrCpy $installMode "all"', "!macroend",
-    '!include "multiUserUi.nsh"', `!include "${nsisQuote(join(repo, "build", "update-installer.nsh"))}"`,
-    ...(withMode ? ["!insertmacro PAGE_INSTALL_MODE"] : []),
-    "!insertmacro MUI_PAGE_INSTFILES", '!insertmacro MUI_LANGUAGE "English"',
+    `!include "${nsisQuote(join(repo, "build", "update-installer.nsh"))}"`,
+    ...(withMode ? [] : ["!define INSTALL_MODE_PER_ALL_USERS"]),
+    // Include the real assisted finish function/page rather than a standalone
+    // StartApp macro. Production also expands the same-named stock macro below.
+    '!include "assistedInstaller.nsh"', '!insertmacro MUI_LANGUAGE "English"',
     ...langNames.map(name => `LangString ${name} \${LANG_ENGLISH} "${name}"`),
     "Function .onInit", ' StrCpy $installMode "CurrentUser"', ' StrCpy $hasPerUserInstallation "1"',
     ' StrCpy $hasPerMachineInstallation "0"', " !insertmacro customInit", "FunctionEnd",
@@ -133,6 +135,11 @@ try {
     " Sleep 350", " !insertmacro customInstall",
     ` FileOpen $0 "${nsisQuote(through)}" w`, ' FileWrite $0 "fell through"', " FileClose $0",
     " !insertmacro quitSuccess", "SectionEnd",
+    // Compile the production stock silent-finish path as well. It need not run
+    // in this marker fixture, but its macro expansion must coexist with our hook.
+    // Inserting StartApp in the hook used to declare startAppArgs twice here.
+    "Function ProbeStockSilentFinish", " ${if} ${isForceRun}", " ${andIf} ${Silent}",
+    "  HideWindow", "  !insertmacro StartApp", " ${endif}", "FunctionEnd",
   ].join("\n");
   const results = [];
   await writeFile(scriptFile, makeScript(false));

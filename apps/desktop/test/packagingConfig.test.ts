@@ -12,6 +12,8 @@ describe("desktop packaging dependency boundary", () => {
     const config = load(readFileSync(resolve(repo, "electron-builder.yml"), "utf8"));
     expect(config.nsis.oneClick).toBe(false);
     expect(config.nsis.perMachine).toBe(false);
+    // The assisted installer's stock StartApp function is enabled by default.
+    expect(config.nsis.runAfterFinish).not.toBe(false);
     expect(typeof config.nsis.include).toBe("string");
     expect(readFileSync(resolve(repo, config.nsis.include), "utf8")).toMatch(/!macro customInstall\b/);
   });
