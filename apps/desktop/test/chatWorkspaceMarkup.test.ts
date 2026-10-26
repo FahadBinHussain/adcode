@@ -54,6 +54,20 @@ describe("AI Chat workspace", () => {
     expect(mainSource).toContain("content: chat.inspector.element");
   });
 
+  it("pins a conversation from its own history row, and holds it above the date groups", () => {
+    // The context menu carries the toggle next to Open and Rename.
+    expect(source).toContain('label: "Pin conversation"');
+    expect(source).toContain('label: "Unpin conversation"');
+    expect(source).toContain("window.adcode.chat.pin(id, pinned)");
+    // The mark rides the row even when a search flattens the groups away.
+    expect(source).toContain('className = "chat-history-pin"');
+    expect(source).toContain('row.dataset["pinned"] = "true"');
+    expect(styles).toContain(".chat-history-pin");
+    // The group sits ahead of Today, and the list animates the lift rather than flashing.
+    expect(source).toContain("groupChatSessions(shown)");
+    expect(source).toContain("playFlip(new Map(historyRowBoxes()), before)");
+  });
+
   it("leaves MCP, skills and saved agents to the Tools and Agents pages", () => {
     expect(source).not.toContain("createAssistantControls");
     expect(source).not.toContain("createAgentLibrary");

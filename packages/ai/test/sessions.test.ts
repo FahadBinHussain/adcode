@@ -75,6 +75,31 @@ describe("sortSessions", () => {
     const sorted = sortSessions([session("a", 1), session("b", 9), session("c", 5)]);
     expect(sorted.map((one) => one.id)).toEqual(["b", "c", "a"]);
   });
+
+  /* A pin is "keep this where I can see it" - later chatter anywhere must not push it down. */
+  it("holds pinned conversations above everything, newest pin first", () => {
+    const all = [
+      { ...session("stale-pinned", 1), pinnedAt: 50 },
+      session("newest", 99),
+      { ...session("fresh-pinned", 2), pinnedAt: 70 },
+      session("middle", 50),
+    ];
+    expect(sortSessions(all).map((one) => one.id)).toEqual([
+      "fresh-pinned",
+      "stale-pinned",
+      "newest",
+      "middle",
+    ]);
+  });
+
+  it("recency still decides within each group", () => {
+    const all = [
+      { ...session("pinned-old", 1), pinnedAt: 40 },
+      { ...session("pinned-new", 2), pinnedAt: 30 },
+    ];
+    // The pins are ordered by pin time (40 above 30), not by what the transcript says.
+    expect(sortSessions(all).map((one) => one.id)).toEqual(["pinned-old", "pinned-new"]);
+  });
 });
 
 describe("searchSessions", () => {
@@ -119,6 +144,15 @@ describe("pruneSessions", () => {
     const all = [session("empty", 99), session("real", 1, [message("user", "x")])];
     expect(pruneSessions(all, 5).map((one) => one.id)).toEqual(["real"]);
   });
+
+  /* Pruning cuts from the bottom of the sorted list; a pin must be the last thing cut. */
+  it("cuts an unpinned conversation before a pinned one", () => {
+    const all = [
+      session("recent", 90, [message("user", "today's work")]),
+      { ...session("pinned", 5, [message("user", "the important one")]), pinnedAt: 7 },
+    ];
+    expect(pruneSessions(all, 1).map((one) => one.id)).toEqual(["pinned"]);
+  });
 });
 
 describe("validateSession", () => {
@@ -157,6 +191,18 @@ describe("validateSession", () => {
     });
 
     expect(read?.messages.map((one) => one.text)).toEqual(["keep"]);
+  });
+
+  it("keeps a pin read back from disk and costs only a malformed one", () => {
+    const pinned = validateSession({ id: "p", pinnedAt: 1_700_000_000_000, messages: [] });
+    expect(pinned?.pinnedAt).toBe(1_700_000_000_000);
+
+    const unpinned = validateSession({ id: "q", pinnedAt: "yesterday", messages: [] });
+    expect(unpinned?.pinnedAt).toBeUndefined();
+    expect(unpinned?.id).toBe("q");
+
+    const zeroed = validateSession({ id: "r", pinnedAt: 0, messages: [] });
+    expect(zeroed?.pinnedAt).toBeUndefined();
   });
 
   it("titles a session that has none", () => {

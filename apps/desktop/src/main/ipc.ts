@@ -115,6 +115,7 @@ import {
   aiCurrentSession,
   aiDeleteSession,
   aiRenameSession,
+  aiPinSession,
   aiResumeSession,
   aiRuns,
   aiLiveTurn,
@@ -646,6 +647,10 @@ export function registerIpc(openWindow: (role: "vibe" | "ide", file?: string, co
 
   ipcMain.handle(CHANNELS.aiDeleteSession, (_event, id: unknown) =>
     isString(id) ? aiDeleteSession(id) : aiSessions(),
+  );
+
+  ipcMain.handle(CHANNELS.aiPinSession, (_event, id: unknown, pinned: unknown) =>
+    isString(id) && typeof pinned === "boolean" ? aiPinSession(id, pinned) : aiSessions(),
   );
 
   ipcMain.handle(CHANNELS.aiClearSessions, () => aiClearSessions());

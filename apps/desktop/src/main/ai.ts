@@ -820,6 +820,28 @@ export async function aiRenameSession(id: string, title: string): Promise<ChatSe
 }
 
 /**
+ * Pin a conversation to the top of History, or take the pin off.
+ *
+ * The pin carries the moment it was set, so pinned conversations keep an order of their
+ * own - last pinned first - and stay above the recency list no matter what else is said.
+ */
+export async function aiPinSession(id: string, pinned: boolean): Promise<ChatSession[]> {
+  const all = await aiSessions();
+  const found = threads.get(id)?.session ?? all.find((one) => one.id === id);
+  if (found === undefined) return all;
+
+  const next: ChatSession = pinned
+    ? { ...found, pinnedAt: Date.now() }
+    : (() => { const { pinnedAt: _dropped, ...rest } = found; return rest; })();
+  await writeSession(currentWorkspace()?.root ?? null, next);
+  const thread = threads.get(id);
+  if (thread !== undefined) adoptSession(thread, next);
+  else if (session?.id === id) session = next;
+
+  return aiSessions();
+}
+
+/**
  * Open a conversation. Returns it so the renderer can draw the transcript.
  *
  * Whatever was working keeps working: this only changes which conversation is on screen. A

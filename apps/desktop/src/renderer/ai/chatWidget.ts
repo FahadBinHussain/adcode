@@ -64,7 +64,7 @@ import { WEB_ICON } from "../workbench/webIcons.ts";
 import { createContextMenu, attachContextMenuDismissal, type ContextMenuNode } from "../workbench/contextMenu.ts";
 import { contextMeterModel, createContextMeter } from "./contextMeter.ts";
 import { openModelFeedback } from "./modelFeedback.ts";
-import { markFor } from "../motionFlip.ts";
+import { markFor, measure, playFlip } from "../motionFlip.ts";
 import { button as dialogButton, el as dialogEl, openFormModal } from "../dialogs/formDialog.ts";
 import type { CodeReference } from "../editor/codeReferences.ts";
 import {
@@ -1117,6 +1117,19 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     status.title = isWorking ? "Working" : ending === "finished" ? "Finished - not opened yet" : ending !== undefined ? "Stopped before finishing - open it to see why" : session.renamed ? "Renamed" : "Idle";
     row.append(status);
 
+    // A pinned conversation keeps its mark even though the group heading already says
+    // "Pinned": a list is scanned by its glyphs before it is read by its headings, and a
+    // search flattens the groups away entirely.
+    if (typeof session.pinnedAt === "number") {
+      row.dataset["pinned"] = "true";
+      const pin = document.createElement("span");
+      pin.className = "chat-history-pin";
+      pin.setAttribute("aria-hidden", "true");
+      pin.title = "Pinned";
+      pin.append(createIcon(WEB_ICON.pin));
+      row.append(pin);
+    }
+
     const openIt = document.createElement("button");
     openIt.type = "button";
     openIt.className = "chat-history-open";
@@ -1141,6 +1154,9 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       const rect = options.getBoundingClientRect();
       historyMenu.open(rect.left, rect.bottom + 4, [
         { label: "Open", run: () => void resume(session.id) },
+        session.pinnedAt === undefined
+          ? { label: "Pin conversation", run: () => void pinConversation(session.id, true) }
+          : { label: "Unpin conversation", run: () => void pinConversation(session.id, false) },
         { label: "Rename conversation…", run: async () => {
           const name = await deps.askForName(session.title);
           if (name === null) return;
@@ -1178,7 +1194,28 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     return row;
   }
 
+  /** Hold a conversation at the top of History, or let it fall back into the timeline. */
+  async function pinConversation(id: string, pinned: boolean): Promise<void> {
+    saved = await window.adcode.chat.pin(id, pinned);
+    renderHistory();
+  }
+
+  /**
+   * Rebuild the list. Rows are keyed by session id so the FLIP pass can tell a row that
+   * merely moved (a pin landing at the top) from one that never existed.
+   */
   function renderHistory(): void {
+    const before = measure(historyRowBoxes());
+    drawHistory();
+    playFlip(new Map(historyRowBoxes()), before);
+  }
+
+  function historyRowBoxes(): [string, HTMLElement][] {
+    return [...historyList.querySelectorAll<HTMLElement>(".chat-history-row[data-session-id]")]
+      .map((element) => [element.dataset["sessionId"] ?? "", element] as [string, HTMLElement]);
+  }
+
+  function drawHistory(): void {
     const needle = historySearch.value.trim().toLowerCase();
     historyList.replaceChildren();
 
@@ -1202,7 +1239,12 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     }
 
     if (needle.length > 0) {
-      for (const session of [...shown].sort((a, b) => b.updatedAt - a.updatedAt)) {
+      // The flat search results keep the list's own order: a pin is not a date, so it
+      // leads rather than landing wherever its last message happened to fall.
+      for (const session of [...shown].sort((a, b) => {
+        const pinned = (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0);
+        return pinned !== 0 ? pinned : b.updatedAt - a.updatedAt;
+      })) {
         historyList.append(renderHistoryRow(session));
       }
       return;
@@ -1211,6 +1253,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     for (const group of groupChatSessions(shown)) {
       const heading = document.createElement("h3");
       heading.className = "chat-history-group";
+      if (group.pinned) heading.dataset["pinned"] = "true";
       heading.textContent = group.label;
       historyList.append(heading);
       for (const entry of group.sessions) {
@@ -2405,7 +2448,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
     }
     try {
       const sessions = await window.adcode.chat.sessions();
-      const latest = sessions.find((one) => one.messages.length > 0 && one.id !== activeSessionId) ?? null;
+      // Pinned conversations come back first, and "where you left off" means the last
+      // thing said - not the last thing pinned.
+      const latest = [...sessions]
+        .filter((one) => one.messages.length > 0 && one.id !== activeSessionId)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
       continueId = latest?.id ?? null;
       continueAction.hidden = latest === null;
       if (latest !== null) {

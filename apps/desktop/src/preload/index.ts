@@ -81,6 +81,7 @@ const api: AdcodeApi = {
     resume: (id) => ipcRenderer.invoke(CHANNELS.aiResumeSession, id),
     rename: (id, title) => ipcRenderer.invoke(CHANNELS.aiRenameSession, id, title),
     remove: (id) => ipcRenderer.invoke(CHANNELS.aiDeleteSession, id),
+    pin: (id, pinned) => ipcRenderer.invoke(CHANNELS.aiPinSession, id, pinned),
     clear: () => ipcRenderer.invoke(CHANNELS.aiClearSessions),
     current: () => ipcRenderer.invoke(CHANNELS.aiSessionChanged),
     onChanged: (listener) => subscribe(CHANNELS.aiSessionChanged, listener),
