@@ -202,6 +202,9 @@ function createWindow(role: WindowRole = "vibe"): BrowserWindow {
       sandbox: true,
       webviewTag: false,
       spellcheck: false,
+      // Active assistant streams keep arriving while another app has focus.
+      // Keep rendering timers live so returning does not drain a stalled queue.
+      backgroundThrottling: false,
     },
   });
   windows[role] = window;

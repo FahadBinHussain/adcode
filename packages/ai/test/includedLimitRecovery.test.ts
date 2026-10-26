@@ -5,6 +5,33 @@ const request: ProviderRequest = {model:"coder",system:"Current task",messages:[
 const collect=async(provider:Provider,signal=new AbortController().signal)=>{const events:ProviderEvent[]=[];for await(const event of provider.stream(request,signal))events.push(event);return events;};
 afterEach(()=>vi.useRealTimers());
 
+it("recovers a temporary 503 before output without restarting the agent turn", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(0); let calls = 0;
+  const provider: Provider = { id: "tagflow", displayName: "Included AI", models: [], async *stream() {
+    if (++calls < 3) throw { status: 503, code: "unavailable" };
+    yield { kind: "text", text: "Recovered" }; yield { kind: "stop", reason: "end-turn" };
+  } };
+  const result = collect(recoverIncludedLimits(provider));
+  await vi.advanceTimersByTimeAsync(7000);
+  expect((await result).filter(event => event.kind === "text")).toEqual([{ kind: "text", text: "Recovered" }]);
+  expect(calls).toBe(3);
+});
+
+it("bounds server retries and never replays a partial response", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(0); let calls = 0;
+  const down: Provider = { id: "tagflow", displayName: "Included AI", models: [], async *stream() { calls++; throw { status: 503 }; } };
+  const result = collect(recoverIncludedLimits(down)).catch(error => error);
+  await vi.advanceTimersByTimeAsync(17_000);
+  expect(await result).toEqual({ status: 503 }); expect(calls).toBe(4);
+  const partial: Provider = { ...down, async *stream() { calls++; yield { kind: "text", text: "Partial" }; throw { status: 503 }; } };
+  await expect(collect(recoverIncludedLimits(partial))).rejects.toEqual({ status: 503 });
+  expect(calls).toBe(5); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("recognises a response body terminated before any output as a dropped connection", () => {
+  expect(networkFailure(new TypeError("terminated"))).toBe("network");
+});
+
 it("resumes the exact pending request at the daily reset without a new message",async()=>{
   vi.useFakeTimers();vi.setSystemTime(Date.parse("2026-10-11T23:59:55Z"));const seen:ProviderRequest[]=[];
   const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(input){seen.push(input);if(seen.length===1)throw{status:429,code:"daily-limit",retryable:true,resetsAt:Date.parse("2026-10-12T00:00:00Z"),retryAfter:"5"};yield{kind:"text",text:"Continuing"};yield{kind:"stop",reason:"end-turn"};}};

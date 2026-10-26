@@ -1,4 +1,19 @@
 import { describe, expect, it } from "vitest";
+
+it("offers retry with the current account after an account switch", () => {
+  const failure = describeAiFailure("The signed-in account changed. Start this task again with the current account.");
+  expect(failure.title).toBe("Your signed-in account changed");
+  expect(failure.actions).toEqual(["retry"]);
+  expect(failure.explanation).toContain("current account");
+});
+
+it("distinguishes verification from being signed out and allows checking again", () => {
+  const failure = describeAiFailure("Included AI returned HTTP 403: Free AI needs a verified email. Open the verification link we emailed to your address. (code verify-account)");
+  expect(failure.title).toBe("Verify your email to use free AI");
+  expect(failure.actions).toContain("retry");
+  expect(failure.explanation).toContain("separate steps");
+  expect(describeAiFailure("terminated").kind).toBe("network");
+});
 import { CONTINUE_PROMPT, RECOVER_EDIT_PROMPT, describeAiFailure, OUTPUT_LIMIT_AGAIN, providerFrom, resumeAfterModelSwitch, retryAfterFailure } from "../src/renderer/ai/aiFailure.ts";
 
 it("explains invalid file arguments and retries the remaining work in smaller edits", () => {

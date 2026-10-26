@@ -361,6 +361,20 @@ describe("tool use", () => {
     expect(events.at(-1)).toMatchObject({ kind: "error", detail: expect.stringContaining("Service is unavailable") });
     expect(agent.history().at(-1)?.content[0]).toMatchObject({ type: "tool-result", isError: true });
   });
+  it("allows the same test to run again after successful corrections", async () => {
+    const names = ["echo", "echo", "edit_file", "echo", "edit_file", "echo"];
+    const provider = scriptedProvider(names.map((name, index) => [
+      { kind: "tool-call", call: call(String(index), name) },
+      { kind: "stop", reason: "tool-use" },
+    ]));
+    const tools = runner({ run: async (call) => call.name === "edit_file"
+      ? { content: "File updated", isError: false }
+      : { content: "Test failed", isError: true } });
+    const agent = createAgent({ provider, model: "test-model", tools: [echoTool, { ...echoTool, name: "edit_file", mutating: true }], runner: tools });
+    const events = await collect(agent.send("Fix the failing tests"));
+    expect(tools.calls).toHaveLength(6);
+    expect(events.at(-1)).toMatchObject({ kind: "turn-end" });
+  });
   it("does not report an output-token cutoff as a successful completion", async () => {
     const cut: ProviderEvent[] = [{ kind: "text", text: "Partial answer" }, { kind: "stop", reason: "max-tokens" }];
     const provider = scriptedProvider([cut, cut, cut, cut, cut]);

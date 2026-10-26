@@ -46,6 +46,7 @@ function resetTime(error: LimitError, daily: boolean): number {
  * came back is safe to send again inside the same turn, so a blip now costs a pause.
  */
 export const NETWORK_RETRY_SECONDS = [2, 5, 10, 20, 40, 60] as const;
+export const SERVER_RETRY_SECONDS = [2, 5, 10] as const;
 const NETWORK_CODES = /^(?:ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ENETUNREACH|ENETDOWN|EHOSTUNREACH|EPIPE|UND_ERR_[A-Z_]+)$/;
 
 /** The network error behind a failure, or null when the relay or provider answered. */
@@ -55,7 +56,7 @@ export function networkFailure(caught: unknown): string | null {
     typeof value === "object" && value !== null && typeof (value as { code?: unknown }).code === "string" ? (value as { code: string }).code : null;
   const code = codeOf((caught as { cause?: unknown }).cause) ?? codeOf(caught);
   if (code !== null && NETWORK_CODES.test(code)) return code;
-  return /^fetch failed$|socket hang up|network (?:error|changed)/i.test(caught.message) ? code ?? "network" : null;
+  return /^fetch failed$|^terminated$|socket hang up|network (?:error|changed)/i.test(caught.message) ? code ?? "network" : null;
 }
 
 /** Keep the pending request inside its existing agent turn; completed tools are not replayed. */
@@ -64,6 +65,7 @@ export function recoverIncludedLimits(provider: Provider): Provider {
     ...provider,
     async *stream(request, signal) {
       let networkRetries = 0;
+      let serverRetries = 0;
       for (;;) {
         signal.throwIfAborted();
         let producedOutput = false;
@@ -87,6 +89,12 @@ export function recoverIncludedLimits(provider: Provider): Provider {
             continue;
           }
           const error = caught as LimitError;
+          if (error.retryable !== false && [500, 502, 503, 504].includes(error.status ?? 0) && serverRetries < SERVER_RETRY_SECONDS.length) {
+            const seconds = SERVER_RETRY_SECONDS[serverRetries++]!;
+            yield { kind: "status", text: `Free AI is temporarily unavailable. Retrying in ${seconds}s without repeating completed tools. Press Stop to cancel.` };
+            await waitUntil(Date.now() + seconds * 1000, signal);
+            continue;
+          }
           const code = error.code ?? /\(code (daily-limit|rate-limit|upstream-rate-limit)\)/.exec(error.message ?? "")?.[1];
           if (error.status !== 429 || error.retryable === false || !["daily-limit", "rate-limit", "upstream-rate-limit"].includes(code ?? "")) throw caught;
           const daily = code === "daily-limit";

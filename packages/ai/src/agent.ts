@@ -720,7 +720,11 @@ export function createAgent(deps: AgentDeps): Agent {
             repeatedFailureDetail = result.content.slice(0, 1800);
           }
         } else {
-          failures.delete(signature);
+          // A successful edit or command is progress: the same test can still fail
+          // after a real correction. Count repeated failures since the last progress,
+          // rather than accumulating them across the whole task.
+          if (deps.tools.some((tool) => tool.name === call.name && tool.mutating)) failures.clear();
+          else failures.delete(signature);
           invalidCalls = 0;
         }
         const images = (result.images ?? []).slice(0, MAX_TOOL_IMAGES);
