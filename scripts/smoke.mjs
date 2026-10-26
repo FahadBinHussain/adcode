@@ -272,6 +272,10 @@ for (let attempt = 0; attempt < 80; attempt++) {
   if (painted === true) break;
   await sleep(100);
 }
+// A release checkout can be clean. Compare the badge with the actual repository
+// instead of requiring unrelated uncommitted work to make navigation pass.
+const navigationGit = await evaluate("window.adcode.git.status()");
+const navigationHasChanges = navigationGit?.isRepo === true && navigationGit.entries.length > 0;
 const vibeNavigation = await evaluate(`(() => {
   const visible = selector => {
     const element = document.querySelector(selector);
@@ -331,7 +335,10 @@ const vibeNavigation = await evaluate(`(() => {
       document.querySelector('[data-rail="chat"]')?.getAttribute('aria-current') === 'page',
     tools: visible('.project-tools'),
     noTasksRow: document.querySelector('.vibe-tasks-button') === null,
-    changes: visible('[data-rail="changes"]') && !!changesBadge && !changesBadge.hidden && (changesBadge.textContent ?? '') !== '',
+    changes: visible('[data-rail="changes"]') && !!changesBadge && ${navigationGit?.isRepo === true} &&
+      (${navigationHasChanges}
+        ? !changesBadge.hidden && (changesBadge.textContent ?? '') !== ''
+        : changesBadge.hidden && (changesBadge.textContent ?? '') === ''),
     // Edits land as the assistant works unless the user chose Review.
     approvalAuto: document.querySelector('.chat-approval')?.textContent === 'Auto',
     noReviewNag: !(document.querySelector('.chat-disclaimer')?.textContent ?? '').includes('Review'),
