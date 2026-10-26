@@ -143,14 +143,14 @@ describe("restart to update", () => {
     expect(mock.quitAndInstall).toEqual([]);
   });
 
-  it("installs silently and reopens ADCode once ready", async () => {
+  it("shows installer progress and reopens ADCode once ready", async () => {
     const { registerUpdateIpc, startAutoUpdate } = await fresh();
     registerUpdateIpc(() => [editorWindow]);
     await startAutoUpdate(() => false);
     await call("update:check");
 
     expect(await call("update:install")).toEqual({ state: "ready", version: "1.0.3", restartable: true });
-    expect(mock.quitAndInstall).toEqual([[true, true]]);
+    expect(mock.quitAndInstall).toEqual([[false, true]]);
   });
 });
 
@@ -173,7 +173,7 @@ describe("restart to update, asked more than once", () => {
     expect(outcomes.map(outcome => outcome.status)).toEqual(["rejected", "rejected"]);
     expect(mock.quitAndInstall).toEqual([]);
     mock.prepareReady = true; await call("update:install");
-    expect(mock.quitAndInstall).toEqual([[true, true]]);
+    expect(mock.quitAndInstall).toEqual([[false, true]]);
   });
   /*
    * A second quitAndInstall makes electron-updater clear its "already installing" flag, so
@@ -187,7 +187,7 @@ describe("restart to update, asked more than once", () => {
 
     await Promise.all([call("update:install"), call("update:install")]);
     await call("update:install");
-    expect(mock.quitAndInstall).toEqual([[true, true]]);
+    expect(mock.quitAndInstall).toEqual([[false, true]]);
   });
 });
 

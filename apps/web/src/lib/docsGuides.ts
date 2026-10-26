@@ -750,7 +750,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "ai-connect": {
     steps: [
       "Open Connect a model from the Assistant or command palette - or choose Connect on the banner that says ADCode works directly with your codebase.",
-      "The Free · no API key tab lists included models and ready local models. Choose Use this model to connect immediately. Included models need a verified ADCode account and share its daily allowance.",
+      "The Free · no API key tab lists included models and ready local models. Choose Use this model to connect immediately. Included models need a verified ADCode account; Tagflow AI has no personal quota, and Heabsy's models include a weekly free allowance.",
       "Switch to Bring your own key for your personal provider connections. Administrators control both model catalogs, including new models, hidden models, recommendations and defaults.",
       "Follow the three steps at the top: choose a provider, check and save its key, pick a model. The steps light up and the progress bar fills as you complete them. Add a named connection with its OpenAI-compatible base URL and exact model ID for anything else. Use the NVIDIA NIM preset for https://integrate.api.nvidia.com/v1.",
       "Choose a requests-per-minute limit that fits your provider account and save the connection. All agents using that connection share the same queue.",
@@ -1234,12 +1234,12 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
   "ai-credits": {
     steps: [
       "Sign in with a verified email to use included AI without an API key.",
-      "Choose an included model and start building. ADCode has no per-user token, request, session-credit, or weekly-credit quota.",
-      "Open AI usage for recorded activity. Usage history is informational and does not stop your work.",
+      "Choose an included model and start building. Tagflow AI has no personal request or token quota; Heabsy's models include 10M free tokens a week, then use tokens you buy.",
+      "Open AI usage for recorded activity and, on a Heabsy model, the weekly allowance and purchased balance. Usage history is informational and does not stop your work.",
       "Models still have context limits, and providers can temporarily rate-limit or become unavailable. Those messages identify the provider and explain how to retry.",
     ],
-    benefits: ["No daily or weekly refill to wait for.", "The same included access across signed-in devices.", "Your own connected models remain available."],
-    betterThan: "Included AI removes provider-key setup and per-user usage allowances. ADCode records usage for service operations. Account access restrictions, provider availability, and model context limits remain in effect.",
+    benefits: ["Tagflow AI has no daily or weekly refill to wait for.", "Heabsy's models include 10M free tokens a week, with plans and packs when you need more.", "Your own connected models remain available."],
+    betterThan: "Included AI removes provider-key setup. Tagflow AI has no personal quota; Heabsy's models give every account a weekly free allowance, and bought tokens never expire. Account access restrictions, provider availability, and model context limits remain in effect.",
   },
 
   "ai-project-instructions": {
@@ -1330,7 +1330,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Choose Weekly ($3 a week, 60M tokens each week), Monthly ($9 a month, 60M each week), or Pro ($19 a month, 150M each week). Monthly billing still gives a weekly token allowance.",
       "Complete payment with Dodo. After payment is confirmed, your weekly Heabsy allowance rises automatically. The page, AI usage and composer meter show your plan. Existing usage still counts toward the week; purchased tokens cover anything beyond your allowance.",
       "To change billing details or cancel, select Manage subscription on the same page. Cancelling keeps access until the paid period ends; afterward the account returns to its free allowance unless another plan or gift applies.",
-      "With a Pro subscription, copy your invite code and share it with up to two friends. Each friend signs in and redeems it in the invite-code box before starting a paid plan. When their first subscription becomes active, you and that friend each receive 4M tokens. Each friend earns the reward only once.",
+      "With a Pro subscription, copy your invite code and share it with up to two friends. Each friend signs in and redeems it in the invite-code box before starting a paid plan. When their first subscription becomes active while your Pro plan is still active, you and that friend each receive 4M tokens. Each friend earns the reward only once.",
       "Enter a promo code in the promo-code box and select Redeem. A code grants the tokens or plan days it promises, once per account, while it is unexpired and has uses left. Check your updated balance or plan after redeeming.",
     ],
     benefits: [
@@ -2037,7 +2037,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Look down the list of models: each shows its share of tokens, its requests from the chat and from agents, and its cost at the catalogue's price.",
       "A ≈ marks counts ADCode estimated because the provider did not report them. Clear usage removes this machine's history, activity and streaks.",
       "Under Tokens, cached is the input the provider read back from its prompt cache instead of charging full price; hover a model for its own cached share.",
-      "Included AI has no personal usage quota. Usage history helps you understand activity; clearing it only removes local records.",
+      "Tagflow AI has no personal usage quota; Heabsy's models show their weekly allowance and purchased balance. Usage history helps you understand activity; clearing it only removes local records.",
     ],
     benefits: [
       "See where the money goes, model by model, before your provider's bill arrives.",
@@ -2196,7 +2196,7 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Leave it on, which is the default. New versions download in the background while you work.",
       "When a new version is available, a quiet card offers Update now or Later. Update now finishes the download and installs it when ready.",
       "Watch the status bar: it shows Updating with a percentage, then Restart to update when the new version is ready.",
-      "Once downloaded, choose Restart now on Windows, or Close and update on Linux. ADCode protects unsaved work first. Windows reopens after installing; Linux finishes installing as ADCode closes.",
+      "Once downloaded, choose Restart now on Windows, or Close and update on Linux. ADCode protects unsaved work in every window first. On Windows it closes, shows installation progress, and opens the updated app automatically without another setup wizard. Linux finishes installing as ADCode closes.",
       "Microsoft Store installations show Update in Microsoft Store. Portable installations show Download update and open the official ADCode download page; replace your portable copy yourself.",
       "Or keep working - the update installs the next time you close ADCode.",
       "Help → Check for Updates asks straight away; turn the setting off to update by hand.",

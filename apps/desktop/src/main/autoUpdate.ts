@@ -225,6 +225,8 @@ async function initializeAutoUpdate(enabled: () => boolean): Promise<void> {
   updater.autoDownload = true;
   // Ignored, a downloaded update installs as the editor closes. It never closes the editor.
   updater.autoInstallOnAppQuit = true;
+  // Non-silent NSIS installs use this property, not quitAndInstall's second argument.
+  updater.autoRunAppAfterInstall = true;
   updater.logger = updaterLog;
 
   updater.on("checking-for-update", () => setStatus({ state: "checking" }));
@@ -260,8 +262,10 @@ async function initializeAutoUpdate(enabled: () => boolean): Promise<void> {
     return activeCheck;
   };
   requestCheck = check;
-  // Silent install, then ADCode reopens itself: the person asked for exactly this restart.
-  installNow = () => updater.quitAndInstall(true, true);
+  // Show installation progress for an explicit update. The NSIS update-only hook
+  // finishes without another wizard page and reopens the app after replacement.
+  // Automatic install-on-quit stays on electron-updater's separate silent path.
+  installNow = () => updater.quitAndInstall(false, true);
 
   await dropStaleBlockMap();
 
