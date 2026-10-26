@@ -13,6 +13,23 @@ export function compareReleaseVersions(left: string, right: string): number {
   return 0;
 }
 
+export interface GitHubReleaseMetadata {
+  readonly tagName: string;
+  readonly isDraft: boolean;
+  readonly isPrerelease: boolean;
+  readonly publishedAt: string | null;
+}
+
+/** A failed build's tag reserves its version, but does not mark its changes as shipped. */
+export function latestPublishedStableRelease(releases: readonly GitHubReleaseMetadata[]): string | null {
+  const published = releases.filter(release => release.isDraft === false && release.isPrerelease === false &&
+    typeof release.publishedAt === "string" && Number.isFinite(Date.parse(release.publishedAt)) &&
+    /^v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(release.tagName));
+  published.sort((left, right) => compareReleaseVersions(right.tagName.replace(/^v/, ""), left.tagName.replace(/^v/, "")) ||
+    Date.parse(right.publishedAt!) - Date.parse(left.publishedAt!));
+  return published[0]?.tagName ?? null;
+}
+
 export function nextReleaseVersion(current: string, tags: readonly string[], requested?: string): string {
   const [major, minor, patch] = releaseVersion(current);
   const existing = tags.map(tag => tag.startsWith("v") ? tag.slice(1) : tag)

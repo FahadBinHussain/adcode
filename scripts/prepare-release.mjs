@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { compareReleaseVersions, nextReleaseVersion, releaseChanges } from "../packages/release/src/releasePreparation.ts";
+import { compareReleaseVersions, latestPublishedStableRelease, nextReleaseVersion, releaseChanges } from "../packages/release/src/releasePreparation.ts";
 
 const root = process.cwd();
 const args = process.argv.slice(2);
@@ -32,13 +32,13 @@ async function main() {
   if (pkg.version !== desktop.version) throw new Error("Root and desktop package versions disagree. Reconcile them before releasing.");
   const dirty = git("status", "--porcelain", "--untracked-files=normal");
   if (write && dirty) throw new Error("The checkout has uncommitted changes. Commit the reviewed changes first, or use an isolated clean checkout. Nothing was written.");
-  const localTags = git("tag", "--list", "v*").split("\n").filter(Boolean);
-  let remoteTags = [], releaseTags = [];
+  const localTags = git("tag", "--list").split("\n").filter(Boolean);
+  let remoteTags = [], releaseTags = [], githubReleases = null;
   const remoteTagCommits = new Map();
   if (!offline) {
     try {
-      for (const line of git("ls-remote", "--tags", "origin", "refs/tags/v*").split("\n")) {
-        const match = /^([a-f\d]+)\s+refs\/tags\/(v[^\s^]+)(\^\{\})?$/.exec(line);
+      for (const line of git("ls-remote", "--tags", "origin").split("\n")) {
+        const match = /^([a-f\d]+)\s+refs\/tags\/([^\s^]+)(\^\{\})?$/.exec(line);
         if (!match) continue;
         // Annotated tags name a tag object; its peeled ref names the actual source.
         if (match[3] || !remoteTagCommits.has(match[2])) remoteTagCommits.set(match[2], match[1]);
@@ -51,9 +51,11 @@ async function main() {
       // A draft can reserve a version before GitHub creates its tag. Tag checks alone
       // would allow that version to be prepared again and fail only after a long build.
       try {
-        const releases = JSON.parse(execFileSync("gh", ["release", "list", "--repo", `${github[1]}/${github[2].replace(/\.git$/, "")}`, "--json", "tagName", "--limit", "1000"], {
+        const releases = JSON.parse(execFileSync("gh", ["release", "list", "--repo", `${github[1]}/${github[2].replace(/\.git$/, "")}`, "--json", "tagName,isDraft,isPrerelease,publishedAt", "--limit", "1000"], {
           cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 20_000,
         }));
+        if (!Array.isArray(releases) || releases.some(release => typeof release.tagName !== "string" || typeof release.isDraft !== "boolean" || typeof release.isPrerelease !== "boolean" || (release.publishedAt !== null && (typeof release.publishedAt !== "string" || !Number.isFinite(Date.parse(release.publishedAt)))))) throw new Error("Unexpected GitHub release metadata.");
+        githubReleases = releases;
         releaseTags = releases.map(release => release.tagName);
       } catch { throw new Error("Could not check GitHub's published and draft release versions. Install GitHub CLI and run gh auth login; --offline is available for previews only."); }
     }
@@ -64,13 +66,23 @@ async function main() {
   for (const [tag, remoteCommit] of remoteTagCommits) {
     if (git("rev-parse", `${tag}^{}`) !== remoteCommit) throw new Error(`Local tag ${tag} disagrees with origin. Reconcile the tag before preparing a release; do not overwrite a published tag.`);
   }
-  const stableTags = localTags.filter(tag => /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(tag))
-    .sort((a, b) => compareReleaseVersions(b.slice(1), a.slice(1)));
-  const since = stableTags[0] ?? git("rev-list", "--max-parents=0", "HEAD").split("\n")[0];
-  if (stableTags.length > 0) {
-    try { git("merge-base", "--is-ancestor", since, "HEAD"); }
-    catch { throw new Error(`This checkout does not contain ${since}. Merge the latest release before preparing another one.`); }
+  const stableTags = localTags.filter(tag => /^v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(tag))
+    .sort((a, b) => compareReleaseVersions(b.replace(/^v/, ""), a.replace(/^v/, "")));
+  const latestTag = stableTags[0];
+  // Keep the highest reserved tag's ancestry check even when that failed/draft build
+  // is deliberately excluded from the published changelog baseline.
+  if (latestTag) {
+    try { git("merge-base", "--is-ancestor", latestTag, "HEAD"); }
+    catch { throw new Error(`This checkout does not contain ${latestTag}. Merge the latest release before preparing another one.`); }
   }
+  const publishedBase = githubReleases === null ? null : latestPublishedStableRelease(githubReleases);
+  if (publishedBase !== null && !localTags.includes(publishedBase)) throw new Error(`Published release ${publishedBase} is missing locally. Run git fetch --tags before preparing a release.`);
+  if (publishedBase !== null) {
+    try { git("merge-base", "--is-ancestor", publishedBase, "HEAD"); }
+    catch { throw new Error(`This checkout does not contain published release ${publishedBase}. Merge its source before preparing another one.`); }
+  }
+  const since = (githubReleases === null ? latestTag : publishedBase) ?? git("rev-list", "--max-parents=0", "HEAD").split("\n")[0];
+  const baseStatus = githubReleases !== null ? publishedBase ? "published stable release" : "no published stable release; initial source" : offline ? "tag-based preview; published release status unverified" : "tag-based fallback for a non-GitHub origin; published release status unverified";
   const subjects = git("log", `${since}..HEAD`, "--no-merges", "--pretty=format:%s").split("\n").filter(Boolean);
   const changes = releaseChanges(subjects);
   if (changes.length === 0) throw new Error(`No feature, fix or performance commits since ${since}. Prepare a release after committing an improvement.`);
@@ -108,7 +120,7 @@ async function main() {
     updates.set("package-lock.json", { original, next });
   }
   updates.set("CHANGELOG.md", { original: changelog, next: changelog.slice(0, heading.index) + section + changelog.slice(heading.index) });
-  console.log(`${write ? "Preparing" : "Preview"}: ADCode ${pkg.version} → ${version}\nBase: ${since}\n${dirty ? "Preview includes committed source only; uncommitted changes will not ship.\n" : ""}`);
+  console.log(`${write ? "Preparing" : "Preview"}: ADCode ${pkg.version} → ${version}\nBase: ${since} (${baseStatus})\n${dirty ? "Preview includes committed source only; uncommitted changes will not ship.\n" : ""}`);
   console.log(section.trim());
   console.log(`\nFiles: ${[...updates.keys()].join(", ")}`);
   if (write) {
