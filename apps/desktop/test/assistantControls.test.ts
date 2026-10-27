@@ -84,6 +84,19 @@ describe("assistant capability controls", () => {
     expect((await readFile(join(t.directory, "assistant-controls.json"), "utf8"))).toContain("find_issues");
   });
 
+  it("runs an enabled tool without a dialog when Ask before connector tools is off, and still refuses a disabled one", async () => {
+    const t = await setup();
+    const service = createAssistantControlsService({ ...t.deps, askBeforeCalls: () => false });
+    await service.action({ kind: "save-server", server });
+    await service.action({ kind: "connect", id: server.id });
+    const call = () => service.runner.run({ type: "tool-call", id: "call", name: "call_mcp", input: { server: server.id, tool: remoteTool.name, arguments: {} } }, new AbortController().signal);
+    expect((await call()).isError).toBe(true);
+    await service.action({ kind: "set-tool", id: server.id, tool: remoteTool.name, enabled: true });
+    expect(await call()).toEqual({ content: "Found 2 issues", isError: false });
+    // Starting a local program still asks; the tool call itself never did.
+    expect(t.confirm.mock.calls.map((call) => call[0])).toEqual(["Connect Test server?"]);
+  });
+
   it("confirms exact arguments and records actual call outcome and timing", async () => {
     const t = await setup(); await t.saveConnect(); await t.enable();
     const output = await t.run("call_mcp", { server: server.id, tool: remoteTool.name, arguments: { query: "bug" } });

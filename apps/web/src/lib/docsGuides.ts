@@ -658,9 +658,9 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
       "Open the assistant and say what you want done in ADCode, in plain words: \"connect Roblox Studio\", \"switch to the light theme\", \"show my AI usage\". Or run AI: Set Up a Connector for Me from the command palette.",
       "The assistant looks the feature up in ADCode's own feature list, so its answer about what ADCode can do is checked, not guessed.",
       "It runs the command or changes the setting itself. For a connector it saves the server, connects it and reads its tools.",
-      "When a step needs your yes - starting a connector's program, letting it use that connector's tools, a setting that changes ads, updates or where its edits land - a dialog asks you. Nothing in those categories happens without it.",
+      "When a step needs your yes - starting a connector's program, removing a connector, a setting that changes ads, updates or where its edits land - a dialog asks you. Nothing in those categories happens without it.",
       "For Roblox Studio, turn on Enable Studio as MCP server inside Studio (Assistant, then ..., then Manage MCP Servers). That switch lives in Roblox, so the assistant tells you to flip it instead of claiming it did.",
-      "Once the tools are enabled, ask for the actual work - \"add a leaderboard script\", \"list what is in Workspace\" - and the assistant calls the connector, showing each call before it runs.",
+      "Once the tools are enabled, ask for the actual work - \"add a leaderboard script\", \"list what is in Workspace\" - and the assistant calls the connector. Each call shows in the chat's timeline; turn on Ask before connector tools in Settings to approve every call first.",
     ],
     benefits: [
       "You never have to learn where a switch lives to use it. Ask, and it is done.",
@@ -670,6 +670,41 @@ export const DOC_GUIDES: Readonly<Record<string, DocGuide>> = {
     ],
     betterThan:
       "Most AI editors' assistants know the code but not the editor they live in, so they send you hunting through settings - and sometimes confidently say a feature does not exist. ADCode's assistant reads the same feature catalogue its Feature library is built from, and acts through the same commands and settings you would use. Other MCP clients need you to paste a config and restart; here the assistant adds and connects the server while you watch.",
+  },
+
+  "ai-mcp-sign-in": {
+    steps: [
+      "Open Tools and choose Add custom connector. Give it a name and the server's URL - for Gmail, https://gmailmcp.googleapis.com/mcp/v1 - and save.",
+      "ADCode connects and reads the server's published sign-in details. If it wants an account, the card says so and its main button becomes Sign in.",
+      "Press Sign in. Your browser opens the server's own sign-in page - Google's, for Gmail. Check the access it lists and approve it.",
+      "Come back to ADCode. The card connects by itself and lists the server's tools; turn on the ones the assistant may use.",
+      "Ask for the work: \"summarise my unread mail from today\", \"draft a reply to the last message from Sam\". Every call carries your sign-in, refreshed before it expires.",
+      "To stop, press Sign out on the card. Forget and Remove also delete the sign-in.",
+    ],
+    benefits: [
+      "No token to dig out, copy or paste, and none that silently stops working after an hour - ADCode refreshes it, and retries once if the server refuses a call.",
+      "Your password goes only to the server's own sign-in page in your real browser, never to an ADCode window.",
+      "The sign-in is encrypted by your operating system on this computer and kept apart from the connector's other values, which are sent as headers.",
+      "Works with any server that follows the MCP authorization spec: it reads the server's protected-resource document, registers itself where the server allows it, and uses PKCE.",
+    ],
+    betterThan:
+      "Many MCP clients only send static headers, so a server like Gmail's connects, lists its tools and then fails every call with a missing-credential error. Others make you create an OAuth app, run a token script and paste the result into a JSON file. ADCode reads what the server publishes and does the standard sign-in itself, from one button.",
+  },
+
+  "ai-ask-before-connector-tools": {
+    steps: [
+      "Leave it off - the default - and the tools you enabled on a connector run as soon as the assistant calls them. Each call and its result still appears in the chat's timeline.",
+      "To approve every call instead, open Settings, choose AI, and turn on Ask before connector tools.",
+      "With it on, each call opens a dialog showing the tool and the exact arguments it will send. Choose Allow once or Cancel.",
+      "A connector that starts a program on this computer always asks before it starts, whichever way this is set.",
+    ],
+    benefits: [
+      "A job that uses a connector five times runs start to finish, not with five interruptions.",
+      "Nothing runs that you did not turn on: a connector's tools stay off until you enable them in Tools.",
+      "Project ask rules in .adcode/settings.json still ask for the tools they name, even with this off.",
+    ],
+    betterThan:
+      "Clients that ask on every call train you to click Allow without reading. ADCode puts the decision where it means something - which tools a connector may use at all - and lets you turn per-call approval back on for the connectors that send mail or spend money.",
   },
 
   "ai-terminal-team": {

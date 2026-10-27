@@ -381,6 +381,13 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   "adcode.ai.keepGoing": {
     keywords: ["dont stop", "step limit", "finish the job", "work until done", "carry on by itself"],
   },
+  "ai.mcpSignIn": {
+    actions: [command("tools.signInConnector", "Sign in to a connector")],
+    keywords: ["oauth", "sign in to connector", "connector sign in", "gmail mcp", "gmail connector", "google mcp", "missing required authentication credential", "bearer token", "mcp login", "authorization", "pkce", "refresh token", "sign out connector"],
+  },
+  "adcode.ai.askBeforeConnectorTools": {
+    keywords: ["connector permission", "mcp permission", "stop asking", "allow once", "auto approve tools", "approve connector calls", "mcp approval"],
+  },
   "ai.backgroundChats": {
     actions: [command("ai.showConversations", "Show working chats")],
     keywords: ["background", "parallel chats", "several chats", "multiple chats at once", "run in background", "keeps working", "minimised", "minimized", "switch chat while working", "long task", "continuous", "keep running"],

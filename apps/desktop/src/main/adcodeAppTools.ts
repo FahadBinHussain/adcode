@@ -75,6 +75,8 @@ export interface AdcodeAppDeps {
     action(input: unknown): Promise<AssistantControlsView>;
   };
   readonly confirm: (title: string, detail: string, signal?: AbortSignal) => Promise<boolean>;
+  /** Ask before enabling a connector's tools for the assistant. Absent means ask. */
+  readonly askBeforeConnectorTools?: () => boolean;
   /** win32, darwin or linux - where connector programs would start. */
   readonly platform: string;
   readonly settings: () => SettingsValues;
@@ -92,7 +94,7 @@ const RUNNABLE: ReadonlySet<string> = new Set(Object.values(FEATURE_COMMANDS.chi
  * a server to send code to. Every text setting asks too.
  */
 const GUARDED_PREFIXES = ["adcode.ads.", "adcode.updates."];
-const GUARDED = new Set(["adcode.ai.editPolicy", "adcode.ai.isolatedWorkspaces", "adcode.ai.customBaseUrl", "adcode.ai.provider", "adcode.ai.connections", "adcode.ai.agentProfiles", "adcode.language.customServers"]);
+const GUARDED = new Set(["adcode.ai.editPolicy", "adcode.ai.askBeforeConnectorTools","adcode.ai.isolatedWorkspaces", "adcode.ai.customBaseUrl", "adcode.ai.provider", "adcode.ai.connections", "adcode.ai.agentProfiles", "adcode.language.customServers"]);
 
 const result = (content: string, isError = false) => ({ content, isError });
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
@@ -225,7 +227,8 @@ export function createAdcodeAppTools(deps: AdcodeAppDeps): ToolRunner {
         const toEnable = wanted.filter((name) => server.tools.some((tool) => tool.name === name && !tool.enabled));
         if (toEnable.length === 0) return result(wanted.length === 0 ? "Name the tools to enable, or pass [\"*\"]." : "Those tools are already enabled.");
         const shown = toEnable.length > 12 ? `${toEnable.slice(0, 12).join(", ")} and ${(toEnable.length - 12).toString()} more` : toEnable.join(", ");
-        if (!(await deps.confirm(`Let the assistant use ${server.name}?`, `It asks to use these ${toEnable.length.toString()} tools: ${shown}.\n\nEach call is still shown to you before it runs.`, signal))) return result("The user did not enable those tools.", true);
+        const asks = deps.askBeforeConnectorTools?.() ?? true;
+        if (asks && !(await deps.confirm(`Let the assistant use ${server.name}?`, `It asks to use these ${toEnable.length.toString()} tools: ${shown}.\n\nEach call is still shown to you before it runs.`, signal))) return result("The user did not enable those tools.", true);
         for (const tool of toEnable) await deps.controls.action({ kind: "set-tool", id, tool, enabled: true });
         return result(`Enabled ${toEnable.length.toString()} tools on ${server.name}. Find them with discover_capabilities and call them with call_mcp.`);
       }

@@ -67,7 +67,8 @@ const GITHUB_CLIENT_ID = process.env["ADCODE_GITHUB_CLIENT_ID"] ?? "Ov23lienZUTA
 declare const __ADCODE_GOOGLE_CLIENT_SECRET__: string;
 
 const GOOGLE_CLIENT_SECRET =
-  process.env["ADCODE_GOOGLE_CLIENT_SECRET"] ?? __ADCODE_GOOGLE_CLIENT_SECRET__;
+  // `typeof`, because only the build substitutes it: a test that imports this module has none.
+  process.env["ADCODE_GOOGLE_CLIENT_SECRET"] ?? (typeof __ADCODE_GOOGLE_CLIENT_SECRET__ === "string" ? __ADCODE_GOOGLE_CLIENT_SECRET__ : "");
 
 /** Whether sign-in can be offered at all. The UI hides the buttons when it cannot. */
 export const oauthConfigured = {
@@ -76,6 +77,15 @@ export const oauthConfigured = {
   google: () => GOOGLE_CLIENT_ID.length > 0 && GOOGLE_CLIENT_SECRET.length > 0,
   github: () => GITHUB_CLIENT_ID.length > 0,
 };
+
+/**
+ * ADCode's Google desktop client, for a connector whose server signs in with Google (Gmail's
+ * MCP server does). Google offers no client registration, so this client is the only way in;
+ * the scopes the connector asks for must be enabled on its consent screen.
+ */
+export function googleDesktopClient(): { clientId: string; clientSecret: string } | null {
+  return oauthConfigured.google() ? { clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET } : null;
+}
 
 export type OAuthResult =
   | { ok: true; provider: "google.com"; idToken: string }

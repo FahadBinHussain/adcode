@@ -11,6 +11,10 @@
  * - SSE (the older transport, still in use): the values are headers on the POSTs, and
  *   the stream request needs a fetch of its own, because the EventSource API has no way
  *   to set headers at all.
+ *
+ * A remote server that publishes OAuth metadata gets a signed fetch instead (`mcpOAuth.ts`):
+ * every request carries the connector's bearer token, refreshed as it nears expiry and on a
+ * 401. Without a sign-in yet, connecting stops and says so - the card offers Sign in.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -18,12 +22,27 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { FetchLike, Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import { OAUTH_CLIENT_ID_KEY, OAUTH_CLIENT_SECRET_KEY } from "@adcode/connect";
 import type { AssistantConnectRequest, McpSession, RemoteTool } from "./assistantControlsService.ts";
+import { discoverProtectedResource, mcpAuthFetch, McpSignInRequired } from "./mcpOAuth.ts";
+
+/**
+ * The fetch a remote connector signs its requests with, or null when it needs none. A saved
+ * Authorization value wins: whoever pasted a key meant it to be used.
+ */
+async function remoteAuth(request: AssistantConnectRequest): Promise<FetchLike | null> {
+  if (Object.keys(request.values).some((key) => key.toLowerCase() === "authorization")) return null;
+  const signed = await mcpAuthFetch(request.server.id);
+  if (signed !== null) return signed;
+  if (await discoverProtectedResource(request.server.endpoint).catch(() => null)) throw new McpSignInRequired(request.server.name);
+  return null;
+}
 
 export async function connectAssistantMcp(request: AssistantConnectRequest, onClose: () => void): Promise<McpSession> {
   const { server, values } = request;
   const client = new Client({ name: "adcode-assistant", version: "1.0.2" }, { capabilities: {} });
   let transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport;
+  let signedFetch: FetchLike | null = null;
   if (server.transport === "stdio") {
     transport = new StdioClientTransport({
       command: server.endpoint,
@@ -32,12 +51,18 @@ export async function connectAssistantMcp(request: AssistantConnectRequest, onCl
       stderr: "ignore",
       maxBufferSize: 2_000_000,
     });
-  } else if (server.transport === "sse") {
-    const headers: Record<string, string> = { ...values };
-    const withHeaders: FetchLike = (url, init) => fetch(url, { ...init, headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) } });
-    transport = new SSEClientTransport(new URL(server.endpoint), { eventSourceInit: { fetch: withHeaders }, requestInit: { headers, redirect: "error" } });
   } else {
-    transport = new StreamableHTTPClientTransport(new URL(server.endpoint), { requestInit: { headers: { ...values }, redirect: "error" } });
+    // A hand-entered OAuth client is for sign-in, not a header to send to the server.
+    const { [OAUTH_CLIENT_ID_KEY]: _id, [OAUTH_CLIENT_SECRET_KEY]: _secret, ...headers } = values;
+    const signed = await remoteAuth(request);
+    signedFetch = signed;
+    const base: FetchLike = signed ?? ((url, init) => fetch(url, init));
+    if (server.transport === "sse") {
+      const withHeaders: FetchLike = (url, init) => base(url, { ...init, headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) } });
+      transport = new SSEClientTransport(new URL(server.endpoint), { eventSourceInit: { fetch: withHeaders }, requestInit: { headers, redirect: "error" }, ...(signed ? { fetch: signed } : {}) });
+    } else {
+      transport = new StreamableHTTPClientTransport(new URL(server.endpoint), { requestInit: { headers, redirect: "error" }, ...(signed ? { fetch: signed } : {}) });
+    }
   }
   client.onclose = onClose;
   // Revoke the cached tool catalogue immediately when its definitions change.
@@ -55,6 +80,7 @@ export async function connectAssistantMcp(request: AssistantConnectRequest, onCl
     throw error;
   }
   return {
+    signedIn: server.transport !== "stdio" && signedFetch !== null,
     async list() {
       const tools: RemoteTool[] = [];
       const names = new Set<string>();

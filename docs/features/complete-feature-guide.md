@@ -642,6 +642,17 @@ How to use it: Terminal sandboxes are cleaned oldest first. An applied task may 
 
 Access: `All Features → AI workspace storage`; `Settings`.
 
+<!-- feature:adcode.ai.askBeforeConnectorTools -->
+### Ask before connector tools
+
+Whether ADCode stops to ask you before the assistant calls a tool from a connector - Gmail, Figma, Playwright or any other MCP server you added.
+
+Why use it: A connector is only useful if the assistant can use it while it works. A dialog on every call turns a five-step job into five interruptions, so by default the tools you enabled just run. Turn the question back on when a connector can send mail, spend money or change something you care about.
+
+How to use it: Off by default: a tool you enabled on a connector runs as soon as the assistant calls it, and the chat's timeline shows the call and its result. Turn it on in Settings, under AI, to see each call's exact arguments in a dialog first, with Allow once or Cancel. Either way, nothing runs until you have enabled that tool in Tools; enabling the assistant's own request to use a connector's tools follows this switch too. Starting a local program for a stdio connector always asks, and a project's ask rules still ask when this is off.
+
+Access: `All Features → Ask before connector tools`; `Turn on or off`; `Settings`.
+
 <!-- feature:ai.buyTokens -->
 ### Buying AI tokens
 
@@ -917,6 +928,17 @@ How to use it: Choose Schedule beside the chat composer, choose where to send th
 
 Access: `All Features → Scheduled AI messages`; `Schedule`; `Turn on or off`; `Settings`.
 
+<!-- feature:ai.mcpSignIn -->
+### Sign in to a connector
+
+A remote connector that needs your account - Gmail's MCP server, for one - gets a Sign in button on its card in Tools. You sign in once in your browser, and every call the assistant makes to it carries your sign-in.
+
+Why use it: Servers like Gmail's answer the first handshake without a key and then refuse every real call, so a connector looked connected and did nothing. These servers publish how to sign in to them; ADCode reads that and signs in the standard way (OAuth with PKCE), so there is no token to find, copy or paste - and none that quietly expires an hour later.
+
+How to use it: Add the server on the Tools page (Add custom connector, with its URL - for Gmail, https://gmailmcp.googleapis.com/mcp/v1) and press Connect. When the server says it wants a sign-in, the card says so and its main button becomes Sign in. Run Tools: Sign In to a Connector to jump to it, or press it: your browser opens the server's own sign-in page, you approve the access it lists, and ADCode connects as soon as you are back - the button reads Finish in your browser while it waits, for up to three minutes. The sign-in is kept in the OS-encrypted store on this computer, separate from the connector's other values; ADCode refreshes it before it expires and once more if the server refuses a call, so you sign in again only when you revoke it. Sign out on the card forgets it, and so do Forget and Remove. A server whose sign-in offers no automatic client registration needs its OAuth client ID saved on the connector as OAUTH_CLIENT_ID (and OAUTH_CLIENT_SECRET if it issued one); Google servers use ADCode's own Google client. A saved Authorization value is used as it is, with no sign-in.
+
+Access: `All Features → Sign in to a connector`; `Sign in to a connector`.
+
 <!-- feature:ai.composerCommands -->
 ### Slash commands and @ files
 
@@ -990,7 +1012,7 @@ Ask the assistant to do something in ADCode - connect a tool such as Roblox Stud
 
 Why use it: You should not have to learn where every switch lives to get something done, and an assistant that guesses about its own app gives wrong answers. This one looks ADCode's features up, so when it says ADCode can or cannot do something, it checked.
 
-How to use it: Ask in plain words: "connect Roblox Studio", "turn on dark theme", "show my usage", "add the Playwright server". Or run AI: Set Up a Connector for Me. The assistant searches ADCode's own feature list, runs the command or changes the setting, and adds, connects and enables MCP connectors on the Tools page for you. Some steps stay yours, and it asks for them: starting a connector's program, letting it use that connector's tools, removing a connector, and settings that change ads, updates, where its edits land, or what runs as a command, each open a dialog first. A step only another app can do - such as turning on Enable Studio as MCP server inside Roblox Studio (Assistant, ..., Manage MCP Servers) - it names exactly. It never claims a feature is missing, or that something is connected or changed, without a result that shows it. Local models get a shorter request without these tools; they say they cannot check rather than guess.
+How to use it: Ask in plain words: "connect Roblox Studio", "turn on dark theme", "show my usage", "add the Playwright server". Or run AI: Set Up a Connector for Me. The assistant searches ADCode's own feature list, runs the command or changes the setting, and adds, connects and enables MCP connectors on the Tools page for you. Some steps stay yours, and it asks for them: starting a connector's program, removing a connector, and settings that change ads, updates, where its edits land, or what runs as a command, each open a dialog first. A step only another app can do - such as turning on Enable Studio as MCP server inside Roblox Studio (Assistant, ..., Manage MCP Servers) - it names exactly. It never claims a feature is missing, or that something is connected or changed, without a result that shows it. Local models get a shorter request without these tools; they say they cannot check rather than guess.
 
 Access: `All Features → The assistant uses ADCode for you`; `Set up a connector for me`.
 

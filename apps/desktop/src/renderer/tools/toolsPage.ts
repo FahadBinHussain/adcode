@@ -386,11 +386,24 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
       if (server.status === "connected") {
         actions.append(button("Tools", "agent-box-action agent-box-action-primary", () => openServerTools(server.id)));
         actions.append(button("Disconnect", "agent-box-action", () => void act({ kind: "disconnect", id: server.id }, `${server.name} disconnected.`)));
+      } else if (server.oauth === "required") {
+        // The server named an OAuth sign-in: the browser does it, then the card connects.
+        const signIn = button("Sign in", "agent-box-action agent-box-action-primary", () => void (async () => {
+          signIn.disabled = true;
+          signIn.textContent = "Finish in your browser…";
+          say(`Sign in to ${server.name} in your browser. ADCode connects when you are done.`);
+          if (!await act({ kind: "sign-in", id: server.id }, `${server.name} signed in.`)) { signIn.disabled = false; signIn.textContent = "Sign in"; }
+        })());
+        signIn.dataset["action"] = "sign-in";
+        actions.append(signIn);
       } else {
         const label = server.status === "error" ? "Retry" : server.status === "connecting" ? "Connecting…" : "Connect";
         const connect = button(label, "agent-box-action agent-box-action-primary", () => void act({ kind: "connect", id: server.id }));
         connect.disabled = server.status === "connecting";
         actions.append(connect);
+      }
+      if (server.oauth === "signed-in") {
+        actions.append(button("Sign out", "agent-box-action", () => void act({ kind: "sign-out", id: server.id }, `${server.name} signed out.`)));
       }
       if (missingToken(server)) actions.append(button("Add token", "agent-box-action", () => openValues(server, [TOKEN_KEY])));
     }

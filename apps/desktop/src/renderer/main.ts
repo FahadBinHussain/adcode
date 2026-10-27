@@ -6008,6 +6008,16 @@ function registerCommands(): void {
   add("tools.servers", "Tools: Connectors", () => openTools("servers"));
   add("tools.skills", "Tools: Skills", () => openTools("skills"));
   add("tools.addServer", "Tools: Add a Connector", () => { openTools("servers"); toolsPage.addServer(); });
+  // The connector waiting on a sign-in, its Sign in button focused; none waiting, add one.
+  add("tools.signInConnector", "Tools: Sign In to a Connector", () => {
+    openTools("servers");
+    requestAnimationFrame(() => {
+      const waiting = document.querySelector<HTMLButtonElement>('.tool-server [data-action="sign-in"]');
+      if (waiting === null) { toolsPage.addServer(); return; }
+      waiting.scrollIntoView({ block: "center" });
+      waiting.focus();
+    });
+  });
   add("tools.memory", "Tools: Project Memory", () => openTools("memory"));
   add("tools.builtIn", "Tools: The Assistant's Built-in Tools", () => openTools("built-in"));
   add("workspace.browser", "Open Browser", () => agentBrowserPane.open());

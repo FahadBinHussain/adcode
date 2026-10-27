@@ -36,6 +36,9 @@ import {
 import { killTree, shellFor } from "./aiCommands.ts";
 import { recordDebug } from "./debugLog.ts";
 import { confirmInWindow } from "./themedConfirm.ts";
+import { currentSettings } from "./settings.ts";
+
+const askBeforeConnectorTools = (): boolean => currentSettings()["adcode.ai.askBeforeConnectorTools"] === true;
 
 /** What one hook may print before the rest is dropped. */
 const MAX_HOOK_OUTPUT = 64_000;
@@ -237,8 +240,9 @@ export function withAgentRules(runner: ToolRunner, options: AgentRulesOptions): 
     ask: (question, signal) => askInTurn(question.title, question.body, signal),
     runHook: (hook, input, signal) => runAgentHook(hook, input, options.root(), signal),
     hookFields: () => ({ session_id: options.sessionId?.() ?? null, agent: options.agent }),
-    // External MCP calls always ask in their own dialog; an ask rule does not ask twice.
-    asksItself: (name) => name === "call_mcp",
+    // External MCP calls ask in their own dialog when the person wants that; an ask rule does
+    // not ask twice, and with the dialog off an ask rule still asks.
+    asksItself: (name) => name === "call_mcp" && askBeforeConnectorTools(),
     onNote: (text) => recordDebug("warn", "ai:hooks", text),
   });
 }
