@@ -879,7 +879,7 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         async pull(controller) {
           try {
             for (;;) {
-              let chunk: ReadableStreamReadResult<Uint8Array>;
+              let chunk: Awaited<ReturnType<typeof reader.read>>;
               let safe: Uint8Array | null = null;
               try {
                 chunk = await reader.read();
