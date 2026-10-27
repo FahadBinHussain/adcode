@@ -27,6 +27,7 @@ export function Footer() {
           <h2>Product</h2>
           <Link href="/">Overview</Link>
           <Link href="/versions">Download</Link>
+          <Link href="/pricing">Pricing</Link>
           <Link href="/docs">Documentation</Link>
           <Link href="/status">Status</Link>
           <a href={SOURCE.repo}>Source code</a>

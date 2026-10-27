@@ -9,6 +9,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { breadcrumbs, changelog, faqPage, installHowTo } from "@/lib/schema";
 import { pageMetadata } from "@/lib/seo";
 import { renderMarkdown } from "@/lib/markdown";
+import { PLAN_SUMMARY } from "@/lib/pricing";
 
 /** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
 export const revalidate = 60;
@@ -57,7 +58,7 @@ const INSTALL_FAQ: readonly { q: string; a: string }[] = [
   },
   {
     q: "Is ADCode free to download?",
-    a: "Yes. ADCode is free with no subscription, trial or paid tier. It is funded by an occasional sponsored card in the corner of the editor, and half of that ad revenue is credited to you.",
+    a: `Yes. The editor is free with no subscription or trial expiry. Sponsored cards help fund it, and half of eligible ad revenue is credited to you. Optional Heabsy AI plans (${PLAN_SUMMARY}) and one-time token packs add usage; neither is required to use the editor.`,
   },
   {
     q: "Is it safe to install ADCode?",
@@ -93,7 +94,7 @@ export default async function VersionsPage() {
         <header className="public-glass-hero">
           <span className="glass-kicker">ADCode desktop · free AI code editor</span>
           <h1>Download ADCode</h1>
-          <p>Free, with no account and nothing to pay. Windows installs from the Microsoft Store in one click; Linux has a .deb and an AppImage.</p>
+          <p>The editor is free, with no account needed to start. Optional AI plans add usage when you need it. Windows installs from the Microsoft Store; Linux has a .deb and an AppImage.</p>
           {latest !== null && <small>Latest release · {latest.version} · <time dateTime={latest.published}>{latest.published}</time></small>}
         </header>
 

@@ -17,6 +17,7 @@ import {
   formatMicros,
   ECONOMICS,
 } from "./site";
+import { FREE_WEEKLY_TOKENS, PACK_SUMMARY, PLAN_SUMMARY, tokenAmount } from "./pricing";
 
 type Node = Record<string, unknown>;
 
@@ -288,15 +289,15 @@ export function changelog(
 export const FAQ: readonly { q: string; a: string }[] = [
   {
     q: "What is ADCode?",
-    a: "ADCode is a free, ad-supported code editor. It provides Monaco-based editing, integrated terminals, git, workspace search, and AI assistance. Instead of charging a subscription, it shows an occasional sponsored card in the corner of the editor and credits a share of the advertising revenue to the developer using it.",
+    a: "ADCode is a free, ad-supported code editor with Monaco editing, integrated terminals, git, workspace search and AI agents. Sponsored cards help fund the editor, and a share of eligible advertising revenue goes to the developer. Optional plans and token packs add more Heabsy AI usage.",
   },
   {
     q: "How much does ADCode cost?",
-    a: "ADCode is free. There is no subscription, no trial, and no paid tier. The editor is funded by advertisers, and a share of what they pay goes to the developer rather than only to the vendor.",
+    a: `The editor is free with no subscription required. Optional Heabsy AI plans are ${PLAN_SUMMARY}. One-time token packs are ${PACK_SUMMARY}; purchased tokens never expire. Prices are in USD before applicable tax. Compare the options on the Pricing page.`,
   },
   {
     q: "Is the AI in ADCode free?",
-    a: "Yes. ADCode includes free AI models from its partners, Tagflow AI and Heabsy. Sign in with a verified account and start building - no API key and no bill. Included AI has no personal request, token or credit quota. Provider availability and model context limits still apply. You can also use your own provider key or a model running on your computer.",
+    a: `Tagflow AI has no personal token or request quota from ADCode. Heabsy models include ${tokenAmount(FREE_WEEKLY_TOKENS)} free tokens each week per account; plans raise the allowance, and purchased tokens are used afterward. Sign in with a verified account without setting up an API key. Provider availability and context limits still apply. You can also connect your own provider or local model.`,
   },
   {
     q: "How much can you earn using ADCode?",

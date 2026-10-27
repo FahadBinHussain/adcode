@@ -7,16 +7,17 @@ import { dollars, formatTokens } from "./tokenFormatting";
 
 export const planName = (id: string): string => ({ weekly: "Weekly", monthly: "Monthly", pro: "Pro" } as Record<string, string>)[id] ?? "Plan";
 
-export function PlanCards({ plans, current, busy, onChoose, subscribed = false }: {
+export function PlanCards({ plans, current, busy, onChoose, subscribed = false, selected = null }: {
   plans: readonly PlanSpec[];
   current: string | null;
   busy: string | null;
   onChoose: (plan: PlanSpec) => void;
   subscribed?: boolean;
+  selected?: PlanId | null;
 }) {
   return <ul className="ai-plan-cards" aria-label="AI plans">
-    {plans.map((plan) => <li key={plan.id} className="ai-plan-card" data-current={current === plan.id}>
-      <div className="ai-plan-title"><h3>{plan.name}</h3>{current === plan.id && <span className="ai-plan-badge">Current plan</span>}</div>
+    {plans.map((plan) => <li key={plan.id} className="ai-plan-card" data-current={current === plan.id} data-selected={selected === plan.id}>
+      <div className="ai-plan-title"><h3>{plan.name}</h3>{current === plan.id ? <span className="ai-plan-badge">Current plan</span> : selected === plan.id && <span className="ai-plan-badge">Selected from pricing</span>}</div>
       <p className="ai-plan-price">{dollars(plan.priceCents)}<span>/{plan.interval}</span></p>
       <p className="ai-plan-allowance">{formatTokens(plan.weeklyTokens)} tokens a week</p>
       <p className="field-hint">{plan.invites > 0 ? `Invite ${plan.invites} friends. When each subscribes, you both get 4M extra tokens.` : "A bigger weekly allowance for Heabsy models."}</p>

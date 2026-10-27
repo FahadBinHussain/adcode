@@ -1,32 +1,34 @@
 import Link from "next/link";
+import { FREE_WEEKLY_TOKENS, PLANS, price, tokenAmount } from "@/lib/pricing";
 
 export function FreePlan() {
   return (
     <section className="free-plan marketplace-wrap" id="free-plan" aria-labelledby="free-plan-heading">
       <header className="free-plan-head">
-        <p className="marketplace-eyebrow">THE FREE PLAN</p>
-        <h2 id="free-plan-heading">Free AI. Room to build.</h2>
-        <p className="free-plan-intro">Start with unlimited included AI and a cloud workspace. No subscription or credit card required.</p>
+        <p className="marketplace-eyebrow">FREE TO START</p>
+        <h2 id="free-plan-heading">Free editor. More AI when you need it.</h2>
+        <p className="free-plan-intro">Start without a subscription or credit card. Tagflow AI stays free; Heabsy models include a weekly allowance, with optional plans and packs for more.</p>
       </header>
       <dl className="free-plan-grid">
         <div>
-          <dt>Included AI</dt>
-          <dd><strong>Unlimited</strong> requests</dd>
+          <dt>Heabsy models</dt>
+          <dd><strong>{tokenAmount(FREE_WEEKLY_TOKENS)}</strong> free tokens each week</dd>
         </div>
         <div>
-          <dt>Helpers</dt>
-          <dd><strong>Up to 4</strong> agents at once</dd>
+          <dt>AI plans</dt>
+          <dd><strong>From {price(PLANS[0]!.priceCents)}</strong> per week for more Heabsy usage</dd>
         </div>
         <div>
-          <dt>In your browser</dt>
-          <dd><strong>No personal</strong> time limit</dd>
+          <dt>Tagflow AI</dt>
+          <dd><strong>No personal</strong> token or request quota</dd>
         </div>
       </dl>
-      <p className="free-plan-limit">No ADCode token, request, or credit allowance. Provider availability, model context limits, and shared cloud capacity still apply.</p>
+      <p className="free-plan-limit">Plans raise the weekly Heabsy allowance. Purchased tokens are used after it and never expire. Provider availability, model context limits and shared capacity still apply.</p>
+      <p className="free-plan-foot"><Link href="/pricing" className="home-text-link">Compare plans and token packs <span aria-hidden="true">↗</span></Link></p>
       <details className="free-plan-details">
         <summary>How the free plan works</summary>
         <div>
-          <p>Keep building without waiting for a daily or weekly allowance to refill.</p>
+          <p>Heabsy&apos;s free allowance refills weekly across your signed-in devices. Tagflow AI has no personal quota from ADCode.</p>
           <p>Idle cloud workspaces sleep automatically and resume with your work saved. Your own provider key follows that provider’s billing.</p>
           <Link href="/docs/ai-credits">Read about included AI <span aria-hidden="true">↗</span></Link>
         </div>

@@ -30,6 +30,14 @@ interface CheckoutReturn { order: string; plan: PlanId | null }
 const POLL_MS = 3_000;
 const POLL_FOR_MS = 120_000;
 
+/** A pricing link highlights a plan for review; it never starts checkout by itself. */
+export function selectedPricingPlan(search: string): PlanId | null {
+  const query = new URLSearchParams(search);
+  if (query.has("order")) return null;
+  const id = query.get("plan");
+  return id === "weekly" || id === "monthly" || id === "pro" ? id : null;
+}
+
 export function refillText(resetsAt: number, now: number): string {
   const ms = resetsAt - now;
   if (ms <= 0) return "now";
@@ -101,11 +109,13 @@ export default function AiTokens() {
   const [arrival, setArrival] = useState<Arrival | null>(null);
   const [checkoutReturn, setCheckoutReturn] = useState<CheckoutReturn | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(null);
   const account = user?.uid ?? null;
   const accountRef = useRef(account);
   accountRef.current = account;
 
   useEffect(() => { setCountry(guessCountry()); }, []);
+  useEffect(() => { setSelectedPlan(selectedPricingPlan(window.location.search)); }, []);
 
   const loadOffer = useCallback(async (): Promise<void> => {
     setOfferError(null);
@@ -201,6 +211,7 @@ export default function AiTokens() {
   // The heading and the offer are rendered by the page on the server (page.tsx).
   return (
     <>
+      {selectedPlan !== null && <p className="notice" role="status">You&apos;re viewing the {planName(selectedPlan)} plan. {user === null ? "Sign in with the account you use in ADCode, then review the plan and billing country." : subscribed ? "Use Manage subscription below to review your existing billing plan." : "Review your billing country and choose the plan below to continue."}</p>}
       {user === null ? (
         <SignInCard heading="Sign in with your ADCode account" />
       ) : (
@@ -227,10 +238,10 @@ export default function AiTokens() {
                 <span className="field-hint">Two-letter code, used for tax.</span>
                 <input id="t-country" className="input" required pattern="[A-Z]{2}" autoComplete="country" maxLength={2} value={country} onChange={(event) => setCountry(event.target.value.toUpperCase())} />
               </div>
-              {(offer.plans?.length ?? 0) > 0 && <section className="ai-plans-section" aria-labelledby="ai-plans-heading"><h2 id="ai-plans-heading">A plan for every week</h2><p className="field-hint">Plans raise your weekly Heabsy allowance. They renew at the interval shown; manage or cancel in your subscription portal. Tagflow AI stays free.</p><PlanCards plans={offer.plans!} current={activity?.tokens.plan?.id ?? null} busy={activity === null ? "loading-balance" : busy} subscribed={subscribed} onChoose={(plan) => void choosePlan(plan)} /></section>}
+              {(offer.plans?.length ?? 0) > 0 && <section id="plans" className="ai-plans-section" aria-labelledby="ai-plans-heading"><h2 id="ai-plans-heading">A plan for every week</h2><p className="field-hint">Plans raise your weekly Heabsy allowance. They renew at the interval shown; manage or cancel in your subscription portal. Tagflow AI stays free.</p><PlanCards plans={offer.plans!} current={activity?.tokens.plan?.id ?? null} busy={activity === null ? "loading-balance" : busy} subscribed={subscribed} selected={selectedPlan} onChoose={(plan) => void choosePlan(plan)} /></section>}
               <CodeRedeemer key={`code:${account}`} token={token} onRedeem={() => void refresh()} />
               {subscription?.plan === "pro" && subscriptionAccess && <InviteCard key={`invite:${account}`} token={token} />}
-              <section className="ai-packs-section" aria-labelledby="ai-packs-heading"><h2 id="ai-packs-heading">One-time token packs</h2><p className="field-hint">Extra tokens are used after your weekly allowance. They never expire, and packs don&apos;t renew.</p><PackList packs={offer.packs} busy={busy} onBuy={(pack) => void buy(pack)} /></section>
+              <section id="packs" className="ai-packs-section" aria-labelledby="ai-packs-heading"><h2 id="ai-packs-heading">One-time token packs</h2><p className="field-hint">Extra tokens are used after your weekly allowance. They never expire, and packs don&apos;t renew.</p><PackList packs={offer.packs} busy={busy} onBuy={(pack) => void buy(pack)} /></section>
               <p className="field-hint">You&apos;ll pay on Dodo Payments&apos; secure page; Dodo handles sales tax. For a refund of unused tokens, contact us from the Help page.</p>
             </>
           )}

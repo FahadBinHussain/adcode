@@ -117,6 +117,9 @@
   border-color: var(--accent);
 }
 
+.ai-plan-card[data-selected="true"] { border-color: var(--accent); background: var(--control); }
+.ai-plans-section, .ai-packs-section { scroll-margin-top: 100px; }
+
 .ai-plan-title {
   display: flex;
   flex-wrap: wrap;

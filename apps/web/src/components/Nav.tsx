@@ -81,6 +81,7 @@ export function Nav() {
   const desktopLinks = (
     <>
       <Link href="/#product" className="glass-nav-link">Product</Link>
+      <Link href="/pricing" className="glass-nav-link" aria-current={pathname === "/pricing" ? "page" : undefined}>Pricing</Link>
       <Link
         href="/compare"
         className="glass-nav-link"
@@ -103,6 +104,7 @@ export function Nav() {
   const mobileLinks = (
     <>
       <Link href="/#product" className="glass-nav-link">Product</Link>
+      <Link href="/pricing" className="glass-nav-link" aria-current={pathname === "/pricing" ? "page" : undefined}>Pricing</Link>
       <a href="/#about" className="glass-nav-link">About us</a>
       <Link href="/portal" className="glass-nav-link">Advertise</Link>
       <Link

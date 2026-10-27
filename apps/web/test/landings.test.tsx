@@ -24,13 +24,14 @@ import { WEB_VERSION_URL, url } from "../src/lib/site";
  * never ranks, or - in the FAQ case - earns a structured data penalty.
  */
 describe("landing pages", () => {
-  it("explains unlimited included AI and links search visitors to the browser app", () => {
+  it("distinguishes free Tagflow and the Heabsy allowance for search visitors", () => {
     for (const slug of ["free-ai-code-editor", "online-ai-code-editor"]) {
       const page = getLanding(slug);
       expect(page).not.toBeNull();
       if (page === null) continue;
       const text = landingPlainText(page);
-      expect(text.toLowerCase()).toContain("unlimited");
+      expect(text).toContain("Tagflow AI has no personal token or request quota");
+      expect(text).toContain("10M free tokens a week");
       expect(text).not.toContain("No request cap on the AI features");
       const markup = renderToStaticMarkup(<LandingArticle page={page} />);
       expect(markup).toContain(`href="${WEB_VERSION_URL}"`);
