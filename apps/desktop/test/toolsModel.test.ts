@@ -7,7 +7,7 @@ import { AGENT_RUN_TOOLS, BUILT_IN_TOOLS } from "@adcode/ai";
 import { parseAssistantServer } from "../src/main/assistantControlsService.ts";
 import { MCP_CATALOGUE } from "../src/shared/mcpCatalogue.ts";
 import { AGENT_PICKABLE_TOOLS, BUILT_IN_TOOLS_INFO } from "../src/renderer/tools/builtInTools.ts";
-import { explainMcpError, matchesQuery, serverSummary, toolUsers } from "../src/renderer/tools/toolsModel.ts";
+import { explainMcpError, freeServerId, matchesQuery, mcpUrlProblem, serverIdFromName, serverSummary, toolUsers } from "../src/renderer/tools/toolsModel.ts";
 import type { AgentProfile } from "../src/renderer/ai/agentProfiles.ts";
 
 const agent = (name: string, toolAccess?: AgentProfile["toolAccess"]): AgentProfile => ({
@@ -75,6 +75,32 @@ describe("summaries and search", () => {
     expect(matchesQuery("PLAY", ["Playwright", "browser"])).toBe(true);
     expect(matchesQuery("", ["anything"])).toBe(true);
     expect(matchesQuery("stripe", ["Playwright", "browser"])).toBe(false);
+  });
+});
+
+describe("custom connector names and addresses", () => {
+  it("turns a name into the ID the form sends", () => {
+    expect(serverIdFromName("Notes API")).toBe("notes-api");
+    expect(serverIdFromName("  Café & Co  ")).toBe("cafe-co");
+    expect(serverIdFromName("!!!")).toBe("custom-connector");
+    expect(serverIdFromName("A".repeat(80))).toHaveLength(44);
+  });
+
+  it("adds a suffix instead of reusing an ID that is already taken", () => {
+    const taken = new Set(["notes-api", "notes-api-2"]);
+    expect(freeServerId("notes-api", new Set<string>())).toBe("notes-api");
+    expect(freeServerId("notes-api", taken)).toBe("notes-api-3");
+  });
+
+  it("accepts HTTPS and localhost, and explains every other address it refuses", () => {
+    expect(mcpUrlProblem("https://example.com/mcp")).toBeNull();
+    expect(mcpUrlProblem("http://localhost:3000/mcp")).toBeNull();
+    expect(mcpUrlProblem("http://127.0.0.1:3000/mcp")).toBeNull();
+    expect(mcpUrlProblem("not a URL")).toMatch(/full address/);
+    expect(mcpUrlProblem("http://example.com/mcp")).toMatch(/HTTPS/);
+    expect(mcpUrlProblem("https://user:pass@example.com/mcp")).toMatch(/Remove credentials/);
+    expect(mcpUrlProblem("https://example.com/mcp?token=1")).toMatch(/Remove credentials/);
+    expect(mcpUrlProblem("https://example.com/mcp#part")).toMatch(/Remove credentials/);
   });
 });
 

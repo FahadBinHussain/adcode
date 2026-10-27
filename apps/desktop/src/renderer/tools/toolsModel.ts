@@ -52,3 +52,45 @@ export function matchesQuery(query: string, fields: readonly string[]): boolean 
   const needle = query.trim().toLowerCase();
   return needle === "" || fields.some((field) => field.toLowerCase().includes(needle));
 }
+
+/** The connector ID a custom server gets when the person only types a name. */
+export function serverIdFromName(name: string): string {
+  const base = name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 44)
+    .replace(/-+$/g, "");
+  return base === "" ? "custom-connector" : base;
+}
+
+/** That ID, or the same with -2, -3 … when a connector already has it. */
+export function freeServerId(base: string, taken: ReadonlySet<string>): string {
+  const stem = base.slice(0, 44).replace(/-+$/g, "") || "custom-connector";
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const candidate = attempt === 0
+      ? stem
+      : `${stem}-${(attempt + 1).toString()}`.slice(0, 48).replace(/-+$/g, "");
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `custom-connector-${Date.now().toString(36)}`;
+}
+
+/** The same address rules the main process enforces, said early so the form can help. */
+export function mcpUrlProblem(text: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return "Enter the full address, starting with https://.";
+  }
+  if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
+    return "Remove credentials, query parameters and fragments from the address. Put a token under Advanced → Headers or environment values.";
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) {
+    return "Use an HTTPS address. Plain HTTP is accepted only for localhost.";
+  }
+  return null;
+}

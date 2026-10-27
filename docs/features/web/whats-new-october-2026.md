@@ -1,18 +1,21 @@
 ---
 slug: whats-new-october-2026
 title: "What's new in ADCode: October 2026"
-description: "What shipped in ADCode 2.2, 2.3 and 2.4, from open source and included AI to background chats, Helpers and the new Vibe window."
+description: "What shipped in ADCode 2.2, 2.3 and 2.4, plus the late-October AI plans, token packs, custom connectors and the next desktop update."
 section: Start here
 published: 2026-10-20
+updated: 2026-10-26
 order: 1
-related: adcode-in-your-browser, helpers, connectors
+related: adcode-in-your-browser, helpers, connectors, free-ai-without-the-meter
 ---
 
 # What's new in ADCode: October 2026
 
-October brought three releases: 2.2 on 9 October, 2.3 on 12 October with two fixes close behind, and 2.4 on 20 October. Some changes add capability; others change how Vibe feels.
+October brought three releases: 2.2 on 9 October, 2.3 on 12 October with two fixes close behind, and 2.4 on 20 October. The last week of the month added AI plans and token packs, and prepared a faster way to add a custom connector for the next desktop build. Some changes add capability; others change how Vibe feels.
 
 If you have not updated, install the current build from [Versions](/versions). On Windows the signed installer comes from the Microsoft Store, which avoids the SmartScreen warning and keeps ADCode updated. Linux uses a .deb or AppImage. macOS desktop builds are not published.
+
+Two parts of this page are not in the published desktop build yet: the direct custom connector button and the new update notices below. Both are marked where they appear. The website and AI service changes are live.
 
 ## Open source, under Apache-2.0
 
@@ -20,11 +23,29 @@ The source is public at [github.com/bluethenics/adcode](https://github.com/bluet
 
 Help > Open Source Licences shows ADCode's licence, its notice and the licence of every package in the installer; the same files ship in `resources/licenses`. See [Open source licences](/docs/workbench-open-source).
 
-## Included AI without a personal usage limit
+## Included AI: 10 million free tokens a week
 
-In 2.3, included AI had a daily allowance of one million tokens per account. 2.4 removes the personal usage limit: with a verified account, choose an included model and work without a daily refill or request count. The model menu lists every included model, not the first three.
+ADCode includes AI with a verified account, without an API key or a card. Tagflow AI stays free with no personal quota. Heabsy's models - GLM 5.3 Flash, Qwen 3.8 and Mimo - include 10 million free tokens each week per account, shared across your devices. The free week starts with your first Heabsy request, not on a fixed day.
 
-Capacity is not infinite: administrators choose which models are offered, providers can rate-limit or fail, context limits remain, and included AI takes text and tool calls but not images. See [Free AI credits](/docs/ai-credits).
+Past the weekly allowance, Heabsy uses tokens you buy. A task that paused because the allowance ran out carries on by itself once the tokens arrive, and bought tokens never expire. Tagflow AI does not use this allowance.
+
+This is not a return to 2.3's daily meter. The daily allowance is gone; what replaced it is one weekly balance on Heabsy's models, plus optional plans and packs. See [Free AI, every week](/docs/free-ai-without-the-meter).
+
+## A plan, a pack, or a friend's invite
+
+AI plans went live on the website on 25 October. They use the same ADCode account as the editor and raise the weekly Heabsy allowance; they do not change Tagflow AI.
+
+- **Weekly:** $3 a week for 60M tokens each week.
+- **Monthly:** $9 a month for 60M tokens each week.
+- **Pro:** $19 a month for 150M tokens each week, plus two invites.
+
+A plan renews at the interval shown, and its Heabsy tokens arrive each week. Open [AI plans and tokens](https://adcode.bluethenics.com/ai-tokens), or run AI: Upgrade Plan in ADCode, and sign in with the same account. Choose a plan and pay with Dodo; the larger allowance appears once payment is confirmed. Manage subscription on the same page changes billing details or cancels, and cancelling keeps the plan until the paid period ends.
+
+If you do not want a subscription, one-time packs add tokens without renewing: $10 for 50M, $25 for 140M or $50 for 300M. They never expire and are used only after the weekly allowance. Promo codes add tokens or plan days once per account while they are unexpired and have uses left.
+
+A Pro subscriber can share an invite code with two friends. The friend must accept it before starting any paid plan. When their first subscription becomes active while your Pro plan is still active, both accounts get 4M purchased tokens, once per friend.
+
+See [AI plans](/docs/ai-plans) and [Buying AI tokens](/docs/ai-buy-tokens) for the step-by-step versions.
 
 ## Chats keep working, and answers show their work
 
@@ -56,6 +77,12 @@ Tools → Connectors accepts MCP servers, Claude Desktop extensions, Claude Code
 
 What it finds waits as a dashed card until you press Add, so nothing installs by accident. Extension and plugin files are copied into ADCode's folder; hooks are copied but never run. Secrets go to the operating system's encrypted store, or the private cloud workspace on the web. See [Connectors](/docs/connectors).
 
+### Add a custom connector without the tour
+
+In the next desktop build, **Add custom connector** sits beside Add connector on the Connectors tab. It opens the custom form directly: give the server a name and its MCP URL, then press Continue. The ID comes from the name, so there is nothing to invent; ADCode saves the server and tries to connect straight away. If the connection fails, the server stays saved with the reason on its card. Until that build arrives, Add connector → Custom connector opens the same form.
+
+Advanced holds the optional ID, SSE, a local command, its arguments, and headers or environment values. Open Tools on the card afterwards to turn on the tools the assistant may use. The full route, including a local command, is in [Connectors](/docs/connectors).
+
 ## Team agents and the live room
 
 2.2 made Team agents talk. Give two to four named agents a shared task and they message each other mid-run, share project memory and hand work on. The live room above the chat gives each agent a window with its mascot, current file or command, and the messages between teammates. Each window ends with Checks passed, Check failed or Unverified, based on commands the agent actually ran. You can stop one agent, a team, or every run.
@@ -66,9 +93,11 @@ Teams count towards the agents working at once, and share a connection's request
 
 2.4 gives Vibe an icon rail, a sidebar card for the project and chats, a tab per open chat, new type, quieter borders and the app menus behind one button. The IDE window keeps its own chrome. [The new Vibe window, explained](/docs/the-new-vibe-window) is a full tour, including what did not change.
 
-## Invites, reports and the status page
+## Invite & earn, reports and the status page
 
 Invite & earn gives every account a link and shows who joined and what it earned. For 365 days you receive 10% of what ADCode earns from ads an invited person sees, and 5% of what an advertiser you bring spends. Both come from ADCode's share, not theirs. On Windows the Store installer drops a link's query string, so the code travels by clipboard or the paste box.
+
+This is separate from the Pro invite on the AI tokens page: Invite & earn shares ad revenue for a year, while a Pro invite gives AI tokens to you and a friend when that friend starts a paid plan.
 
 Administrators get per-model health and provider reports: demand, usage, reliability, response speed and optional feedback. Model-level data starts on 11 October; older totals are not shown as model history. The public [status page](/status) shows measured health for included models over 90 days, with an incident log and RSS feed. Only included models appear; a model on your own key is not ADCode's service.
 
@@ -78,11 +107,25 @@ The browser workspace is in preview: the repository contains browser chat, saved
 
 2.3.1 made slash commands typed with words work like chosen commands, kept attachments visible after sending, and gave local Ollama models a smaller toolset. 2.3.2 retried a free AI task after a dropped connection for about two minutes without repeating completed steps, and stopped a sign-in refresh from asking you to sign in again.
 
+In the last week of October, the AI service also closes an interrupted or cancelled answer cleanly and keeps a complete final message even when the connection closes straight after it. You get the answer or a readable error instead of a response that never finishes.
+
+## Coming in the next desktop build: updates that wait for you
+
+**Not in the published desktop build yet.** The desktop work is complete and tested, but its installers have not been published. This is what the next build will do.
+
+When a new version is available, a quiet card offers Update now or Later, once per version and only when you are not typing. Update now finishes the download in the background while the status bar shows progress. If you choose Later, a separate card appears when the update is ready and offers Restart now or Later.
+
+Restart protects your work first. Every editor window saves its exact unsaved recovery snapshot before ADCode closes. If crash recovery is off and a window has unsaved changes, ADCode asks you to save instead. An unresponsive or unprotected window blocks the install, and the current version stays usable. Ignoring the cards installs the downloaded update the next time you close ADCode normally. Microsoft Store builds open the Store, and portable builds open the official download page.
+
+The same build also retries a temporary free-AI server error a few times before ending the turn, explains when the signed-in account changes mid-task, and recovers a settings save when Windows redirects the settings folder instead of failing silently. Mouse-wheel scrolling works on overflowing chat tabs.
+
+The update settings and the in-app release notes are documented under [Automatic updates](/docs/updates-auto) and [What's New](/docs/updates-whats-new).
+
 ## What to try first
 
-1. Update to 2.4, hide the sidebar with Ctrl+B, and start a second chat with Ctrl+Shift+N.
-2. Ask for a job with independent parts and begin the message with `/helpers`.
-3. Run `/init`, read the `AGENTS.md`, and correct what it got wrong.
-4. Add one deny rule for a command you never want run unattended.
-5. Open Tools → Connectors and import one MCP server you already use.
+1. Open [AI plans and tokens](https://adcode.bluethenics.com/ai-tokens) and compare the weekly allowances with your own usage.
+2. Add a custom connector by name and URL through Add connector → Custom connector, or import one you already use in another editor.
+3. Update to 2.4, hide the sidebar with Ctrl+B, and start a second chat with Ctrl+Shift+N.
+4. Ask for a job with independent parts and begin the message with `/helpers`.
+5. Run `/init`, read the `AGENTS.md`, and correct what it got wrong.
 6. Check AI usage for cached tokens after a long chat.

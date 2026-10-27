@@ -10,11 +10,9 @@ related: helpers, team-agents-and-the-live-room, connectors
 
 ADCode has three layers of guidance. Project instructions describe the project. Permission rules decide what the assistant may do. Hooks run your commands around its steps. Of the three, only rules and hooks can stop a tool call.
 
-| Layer | Where it lives | Question it answers | Can it block? |
-| --- | --- | --- | --- |
-| Project instructions | `AGENTS.md` and similar | How does this project work? | No |
-| Permission rules | `.adcode/settings.json` → `permissions` | May the assistant do this? | Yes |
-| Hooks | `.adcode/settings.json` → `hooks` | Does my check run here? | Yes, on exit 2 |
+- **Project instructions** live in `AGENTS.md` and similar files, and answer "How does this project work?" They cannot block a tool call.
+- **Permission rules** live in `.adcode/settings.json` under `permissions`, and answer "May the assistant do this?" They can block.
+- **Hooks** live in `.adcode/settings.json` under `hooks`, and answer "Does my check run here?" They can block on exit 2.
 
 ## Project instructions: the project's own words
 

@@ -10,8 +10,9 @@
  * Connectors are covered too, because this is the only place the real page meets real
  * Chromium: kind badges on MCP, Actions and Plugin cards, the locked-values row and its
  * Forget flow, the Add-connector dialog's Scan this computer step with its dashed drafts
- * (Add through the questions dialog, Discard), the catalogue's one click, and the hand
- * typed form's NAME=value lines reaching the save action.
+ * (Add through the questions dialog, Discard), the catalogue's one click, the hand
+ * typed form's NAME=value lines reaching the save action, and the direct custom
+ * connector route that derives its ID and connects in one press.
  */
 const { app, BrowserWindow } = require('electron');
 const { readFileSync, mkdtempSync, writeFileSync, mkdirSync } = require('node:fs');
@@ -160,16 +161,51 @@ app.whenReady().then(async () => {
         // A hand-typed server, with its values typed as NAME=value lines.
         clickText(panel('servers'), 'Add connector'); await settle();
         const custom = q('dialog.tools-add-connector[open]');
-        clickText(custom, 'Custom');
+        clickText(custom, 'Custom connector');
         const form = custom.querySelector('form');
-        const inputs = form.querySelectorAll('input');
-        inputs[0].value = 'Documentation'; inputs[1].value = 'docs';
-        const select = form.querySelector('select'); select.value = 'http'; select.dispatchEvent(new Event('change'));
-        inputs[2].value = 'https://example.com/mcp';
-        form.querySelector('textarea').value = 'API_KEY=abc';
+        form.querySelector('[aria-label="Connector name"]').value = 'Documentation';
+        form.querySelector('[aria-label="Connector ID"]').value = 'docs';
+        form.querySelector('[aria-label="MCP server URL"]').value = 'https://example.com/mcp';
+        form.querySelector('[aria-label="Headers or environment values"]').value = 'API_KEY=abc';
         form.requestSubmit(); await settle();
         const customSaved = actions.find((action) => action.kind === 'save-server' && action.server.id === 'docs');
         results.saveServer = !!customSaved && customSaved.server.transport === 'http' && customSaved.values?.API_KEY === 'abc' && panel('servers').textContent.includes('Documentation');
+
+        // The direct route takes a name and a URL, derives the ID, and connects without a second press.
+        clickText(panel('servers'), 'Add custom connector'); await settle();
+        const direct = q('dialog.tools-add-connector[open]');
+        const directClose = q('.form-dialog-card > .confirm-buttons', direct);
+        const directIntro = q('.tools-dialog-sub', direct);
+        const directLinks = [...direct.querySelectorAll('.tools-dialog-link')].map((item) => item.getAttribute('href'));
+        const directChrome = q('.result-title', direct)?.textContent === 'Add custom connector'
+          && q('.tools-dialog-close', direct)?.getAttribute('aria-label') === 'Close'
+          && q('.tools-dialog-tabs', direct)?.hidden === true
+          && [...direct.querySelectorAll('.form-dialog-form button')].map((item) => item.textContent).join('|') === 'Cancel|Continue'
+          && directClose !== null && getComputedStyle(directClose).display === 'none'
+          && directIntro?.textContent.includes('Learn more about connectors')
+          && directIntro.textContent.includes('get started with pre-built ones')
+          && directLinks.includes('https://adcode.bluethenics.com/docs/connectors')
+          && directLinks.includes('https://modelcontextprotocol.io')
+          && direct.textContent.includes('Building an MCP server?')
+          && direct.querySelector('[aria-label="MCP server URL"]')?.placeholder === 'https://mcp.example.com/mcp'
+          && direct.textContent.includes('Only use connectors from developers you trust')
+          && q('details', direct)?.open === false;
+        const prebuiltLink = q('.tools-dialog-inline-link', direct);
+        prebuiltLink.click(); await settle();
+        const prebuiltShown = q('.tools-dialog-tabs', direct).hidden === false
+          && [...direct.querySelectorAll('.tools-catalogue-item')].some((item) => item.textContent.includes('Playwright'));
+        clickText(direct, 'Custom connector'); await settle();
+        direct.querySelector('[aria-label="Connector name"]').value = 'Notes API';
+        direct.querySelector('[aria-label="MCP server URL"]').value = 'https://notes.example.com/mcp';
+        direct.querySelector('form').requestSubmit(); await settle();
+        const directSaved = actions.find((action) => action.kind === 'save-server' && action.server.id === 'notes-api');
+        clickText(panel('servers'), 'Add custom connector'); await settle();
+        q('.tools-dialog-close').click(); await settle();
+        const closeWorks = !q('dialog.tools-add-connector[open]');
+        results.customConnector = directChrome && prebuiltShown && closeWorks && !!directSaved && directSaved.server.transport === 'http'
+          && actions.some((action) => action.kind === 'connect' && action.id === 'notes-api')
+          && !q('dialog.tools-add-connector[open]')
+          && panel('servers').textContent.includes('Notes API');
 
         // Browser imports use the cloud workspace, URL or pasted text, without invoking a local file picker.
         document.documentElement.dataset.surface = 'web';

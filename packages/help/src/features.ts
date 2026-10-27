@@ -281,7 +281,7 @@ const METADATA: Readonly<Record<string, FeatureMetadata>> = {
   },
   "workbench.toolsPage": {
     actions: [command("tools.open", "Open Tools"), command("tools.addServer", "Add a connector"), command("tools.servers", "Connectors"), command("tools.skills", "Skills")],
-    keywords: ["tools", "mcp", "mcp server", "model context protocol", "connectors", "skills", "plugins", "integrations", "marketplace", "playwright", "context7", "figma", "netlify", "chrome devtools", "roblox", "roblox studio", "tool access", "server not working", "agents and tools", "claude desktop extension", ".mcpb", "claude code plugin", "chatgpt plugin", "gpt actions", "openapi", "import from cursor", "import from vs code", "windsurf", "api token", "encrypted values"],
+    keywords: ["tools", "mcp", "mcp server", "model context protocol", "connectors", "custom connector", "mcp url", "server url", "skills", "plugins", "integrations", "marketplace", "playwright", "context7", "figma", "netlify", "chrome devtools", "roblox", "roblox studio", "tool access", "server not working", "agents and tools", "claude desktop extension", ".mcpb", "claude code plugin", "chatgpt plugin", "gpt actions", "openapi", "import from cursor", "import from vs code", "windsurf", "api token", "encrypted values"],
   },
   "ai.seesYourApp": {
     actions: [command("ai.checkApp", "Check my running app"), command("workspace.browser", "Open browser")],
