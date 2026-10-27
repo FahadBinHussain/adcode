@@ -10,11 +10,12 @@ import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer as createPortServer } from "node:net";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { verifyUpdateArtifacts } from "./release-artifacts.mjs";
 import { startSmokeBackend } from "./smoke-backend.mjs";
+import { captureProcess as run } from "./capture-process.mjs";
 
 if (process.argv.includes("--help")) {
   console.log("Usage: node scripts/smoke-installed-update.mjs <verified Windows asset directory>\nRequires an empty, GitHub-hosted Windows runner. Installs published v2.4.0 and updates it through the real updater.");
@@ -31,25 +32,18 @@ const assets = resolve(process.argv[2] ?? "dist");
 await verifyUpdateArtifacts(assets, version, "windows");
 const psQuote = value => `'${String(value).replaceAll("'", "''")}'`;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function run(executable, args, options = {}) {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { shell: false, windowsHide: true, ...options });
-    let output = "";
-    child.stdout?.on("data", data => { output += data; });
-    child.stderr?.on("data", data => { output += data; });
-    child.once("error", reject);
-    const timer = setTimeout(() => { child.kill(); reject(new Error(`${basename(executable)} timed out`)); }, options.timeout ?? 180_000);
-    child.once("close", code => { clearTimeout(timer); code === 0 ? resolve(output.trim()) : reject(new Error(`${basename(executable)} exited ${code}: ${output.slice(-4000)}`)); });
-  });
-}
 async function powershell(source) {
-  return run("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(`$ErrorActionPreference='Stop'\n${source}`, "utf16le").toString("base64")]);
+  return run("powershell.exe", ["-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-EncodedCommand", Buffer.from(`$ErrorActionPreference='Stop'\n$ProgressPreference='SilentlyContinue'\n${source}`, "utf16le").toString("base64")]);
 }
 // Default userData belongs to this ephemeral account. Using its normal location also
 // tests a stock installer relaunch, which intentionally passes only --updated.
 const profile = join(process.env.APPDATA ?? "", "ADCode");
 if (!process.env.APPDATA || !process.env.LOCALAPPDATA) throw new Error("Runner profile locations unavailable.");
-if (await powershell("@(Get-Process -Name ADCode -ErrorAction SilentlyContinue).Count") !== "0") throw new Error("ADCode already runs on this runner; refusing to install or stop it.");
+const existingProcessCount = await powershell("@(Get-Process -Name ADCode -ErrorAction SilentlyContinue).Count");
+if (existingProcessCount !== "0") {
+  const processes = await powershell("ConvertTo-Json -Compress -InputObject @(Get-Process -Name ADCode -ErrorAction SilentlyContinue | Select-Object -First 10 Id,Path)");
+  throw new Error(`ADCode already runs on this runner; refusing to install or stop it. Count: ${JSON.stringify(existingProcessCount)}. Processes: ${processes}`);
+}
 if (await access(profile).then(() => true, () => false)) throw new Error("Runner already has an ADCode profile; refusing to use it.");
 const existingInstallations = await powershell(`$keys=@('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'); @($keys | Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object { Get-ChildItem -LiteralPath $_ } | Get-ItemProperty | Where-Object { $_.DisplayName -match '^ADCode(?:\\s|$)' }).Count`);
 if (existingInstallations !== "0") throw new Error("Runner already has an ADCode installation; refusing to replace it.");
