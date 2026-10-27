@@ -13,7 +13,7 @@ import { isWebSurface, openWebAccount } from "../surface.ts";
  */
 import type { ConfirmDialog } from "../dialogs/confirmDialog.ts";
 import type { AccountState, LinkOutcome } from "../../shared/api.ts";
-import { BUY_TOKENS_URL, aiPlanName } from "../../shared/tagflow.ts";
+import { BUY_TOKENS_URL, aiPlanName, percentLeft } from "../../shared/tagflow.ts";
 import { formatTokens as shortTokens } from "../../shared/aiUsage.ts";
 
 export interface AccountMenu {
@@ -144,7 +144,7 @@ export function createAccountMenu(
     planBox.dataset["plan"] = plan === null ? "free" : plan.toLowerCase();
     planName.textContent = plan === null ? "Free plan" : `${plan} plan`;
     const ends = plan !== null && tokens.plan ? ` · ${tokens.plan.source === "gift" ? "gift ends" : "renews"} ${new Date(tokens.plan.endsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "";
-    planDetail.textContent = `${shortTokens(Math.max(0, tokens.free.remaining))} of ${shortTokens(tokens.free.limit)} Heabsy tokens left this week${tokens.purchased > 0 ? `, + ${shortTokens(tokens.purchased)} purchased` : ""}${ends}. Tagflow AI is unlimited.`;
+    planDetail.textContent = `${percentLeft(tokens.free.remaining, tokens.free.limit)}% of this week's Heabsy tokens left${tokens.purchased > 0 ? `, + ${shortTokens(tokens.purchased)} purchased` : ""}${ends}. Tagflow AI is unlimited.`;
     planAction.textContent = plan === null ? "Upgrade plan" : "Manage plan";
   }
 

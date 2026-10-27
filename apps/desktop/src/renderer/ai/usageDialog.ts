@@ -21,7 +21,7 @@ import { askThemed } from "../dialogs/confirmDialog.ts";
 import { button, el, openFormModal } from "../dialogs/formDialog.ts";
 import { createUsageActivity } from "./usageActivityView.ts";
 import { allowanceSummary } from "./allowanceSummary.ts";
-import { BUY_TOKENS_URL, UNLIMITED_REQUESTS_PER_MINUTE, aiPlanName, creditWindowSummary, untilText, type CreditsAllowance, type TagflowAllowanceView } from "../../shared/tagflow.ts";
+import { BUY_TOKENS_URL, UNLIMITED_REQUESTS_PER_MINUTE, aiPlanName, creditWindowSummary, percentLeft, untilText, type CreditsAllowance, type TagflowAllowanceView } from "../../shared/tagflow.ts";
 import { openAudienceProfile } from "./audienceProfile.ts";
 
 const RANGE_KEY = "adcode.usage.range";
@@ -395,7 +395,7 @@ function includedSplit(paid: NonNullable<TagflowAllowanceView["tokens"]>, reques
   const refill = free.resetsAt === null ? "Your week starts with your first Heabsy request" : `Refills in ${untilText(free.resetsAt, now)}`;
   heabsy.append(
     el("span", "usage-split-name", plan === null ? "Heabsy models · Free" : `Heabsy models · ${plan} plan`),
-    el("strong", "usage-split-value", `${formatTokens(Math.max(0, free.remaining))} left`),
+    el("strong", "usage-split-value", `${percentLeft(free.remaining, free.limit)}% left`),
     progress,
     el("span", "usage-stat-detail", `${formatTokens(used)} of ${formatTokens(free.limit)} this week · ${refill}${paid.purchased > 0 ? ` · then ${formatTokens(paid.purchased)} purchased` : ""}`),
   );

@@ -62,6 +62,15 @@ const shortTokens = (tokens: number): string => {
   return String(Math.max(0, Math.round(tokens)));
 };
 
+/**
+ * How much of an allowance is left, as a whole percent: what people read in place of "6.3M tokens
+ * left". Rounded down so a nearly empty week never claims 1% it does not have; zero limit is 0.
+ */
+export function percentLeft(remaining: number, limit: number): number {
+  if (!Number.isFinite(remaining) || !Number.isFinite(limit) || limit <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.floor((remaining / limit) * 100)));
+}
+
 /** A current, recognised plan name. Older relays omit plans. */
 export function aiPlanName(plan: NonNullable<TagflowAllowanceView["tokens"]>["plan"], now: number): string | null {
   if (plan == null || plan.endsAt <= now) return null;
@@ -75,7 +84,7 @@ export function paidTokensSummary(tokens: NonNullable<TagflowAllowanceView["toke
   const kind = plan === null ? "free" : "included";
   const week = free.resetsAt === null
     ? `${shortTokens(free.limit)} ${kind} tokens a week, starting with your first request on them`
-    : `${shortTokens(free.remaining)} of ${shortTokens(free.limit)} ${kind} tokens left this week (refill in ${untilText(free.resetsAt, now)})`;
+    : `${percentLeft(free.remaining, free.limit)}% of your ${kind} tokens left this week (refill in ${untilText(free.resetsAt, now)})`;
   const bought = tokens.purchased > 0 ? `, then ${shortTokens(tokens.purchased)} purchased tokens` : "";
   return `Heabsy models: ${plan === null ? "" : `${plan} plan, `}${week}${bought}. Tagflow AI stays unlimited.`;
 }

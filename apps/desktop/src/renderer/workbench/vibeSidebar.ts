@@ -1,6 +1,6 @@
 import { createWorkspaceControls } from "./workspaceControls.ts";
 import { formatTokens } from "../../shared/aiUsage.ts";
-import { untilText } from "../../shared/tagflow.ts";
+import { percentLeft, untilText } from "../../shared/tagflow.ts";
 import { openWebAccount } from "../surface.ts";
 /**
  * The Vibe window's sidebar: one place to start, switch project, and see what needs you.
@@ -528,7 +528,8 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
       if (paid?.enabled === true) {
         const left = Math.max(0, paid.free.remaining) + Math.max(0, paid.purchased);
         const refill = paid.free.resetsAt === null ? "" : ` Refills in ${untilText(paid.free.resetsAt, Date.now())}.`;
-        setBadge(row, "Included AI", `${formatTokens(left)} left`, left <= 0,
+        const week = percentLeft(paid.free.remaining, paid.free.limit);
+        setBadge(row, "Included AI", week === 0 && paid.purchased > 0 ? "Purchased" : `${week}% left`, left <= 0,
           `Tagflow AI has no limit. Heabsy models: ${formatTokens(Math.max(0, paid.free.remaining))} of ${formatTokens(paid.free.limit)} free tokens left this week, then ${formatTokens(paid.purchased)} purchased.${refill}`);
         return;
       }
@@ -536,7 +537,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
       const session = view?.credits?.session;
       if (session === undefined) { setBadge(row, "Included AI", "", false, "See your free AI usage"); return; }
       const left = Math.max(0, Math.floor(session.remaining));
-      setBadge(row, "Included AI", left.toLocaleString(), left <= session.limit * 0.1, `${left.toLocaleString()} of ${session.limit.toLocaleString()} left in this session`);
+      setBadge(row, "Included AI", `${percentLeft(left, session.limit)}% left`, left <= session.limit * 0.1, `${left.toLocaleString()} of ${session.limit.toLocaleString()} left in this session`);
     };
     window.adcode.aiUsage.onChanged(() => void paint());
     window.setInterval(() => { if (!document.hidden) void paint(); }, 60_000);
