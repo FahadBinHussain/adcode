@@ -542,7 +542,7 @@
 .settings-panel { container-type: inline-size; }
 .settings-layout {
   display: grid;
-  grid-template-columns: 204px minmax(0, 1fr);
+  grid-template-columns: 232px minmax(0, 1fr);
   min-height: 0;
 }
 .settings-layout > .settings-body { min-height: 0; overflow-y: auto; }
@@ -586,9 +586,6 @@
 .settings-layout[data-searching="false"] .settings-group { animation: settings-section-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both; }
 @keyframes settings-section-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* A row that changes is acknowledged, not just updated. */
-.settings-row { transition: background-color 160ms ease; }
-.settings-row:hover { background: color-mix(in srgb, var(--bg-hover) 55%, transparent); }
 
 /* Narrow windows: the sections become a row of chips above the list. */
 @container (max-width: 620px) {
@@ -600,3 +597,34 @@
 @media (prefers-reduced-motion: reduce) { .settings-layout .settings-group { animation: none !important; } .settings-nav-item:active { transform: none; } }
 :root[data-reduced-motion="true"] .settings-layout .settings-group { animation: none !important; }
 :root[data-reduced-motion="true"] .settings-nav-item:active { transform: none; }
+
+/* ── Room to breathe (2026-10-27: "settings feels compacted") ─────────────────────────────── */
+.popup-shell[data-popup-id="settings"][data-popup-size] .popup-shell-surface {
+  width: min(1040px, calc(100vw - 48px));
+  height: min(780px, calc(100vh - 48px));
+}
+.settings-layout .settings-nav { gap: 4px; padding: 20px 14px 20px 18px; }
+.settings-layout .settings-nav-item { min-height: 38px; padding: 0 12px; gap: 12px; font-size: 14px; border-radius: 10px; }
+.settings-layout .settings-nav-item svg { width: 17px; height: 17px; }
+.settings-layout > .settings-body { padding: 28px 40px 40px; }
+.settings-layout .settings-group { margin-bottom: 36px; }
+.settings-layout .settings-group-title { margin: 0 0 6px; font-size: var(--text-lg, 17px); font-weight: 650; letter-spacing: -0.015em; color: var(--text-primary); }
+.settings-layout .settings-group-caption { margin: 0 0 20px; font-size: var(--text-sm); line-height: 1.6; color: var(--text-secondary); }
+/* Each section's rows sit in one quiet card, with hairlines between them. */
+.settings-layout .inset-list {
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-app) 35%, transparent);
+}
+.settings-layout .settings-row { padding: 18px 22px; gap: 28px; }
+.settings-layout .settings-row + .settings-row { border-top: 1px solid var(--border-hairline); }
+.settings-layout .settings-row-label { font-size: 14px; font-weight: 600; }
+.settings-layout .settings-row-description { margin-top: 6px; font-size: 13px; line-height: 1.6; }
+.settings-layout .connection-card { margin-top: 20px; }
+.settings-header { padding-top: 20px; padding-bottom: 14px; }
+.settings-search { margin-bottom: 18px; }
+@container (max-width: 620px) {
+  .settings-layout > .settings-body { padding: 20px 18px 28px; }
+  .settings-layout .settings-row { padding: 16px; }
+}

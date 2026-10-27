@@ -3112,7 +3112,7 @@ checks.fileIcons = await evaluate(
 checks.tabStripStaysUsable = await evaluate(
   `(async () => {
      const files = [...document.querySelectorAll('.tree-row')]
-       .filter((r) => r.querySelector('.tree-twisty')?.textContent === '');
+       .filter((r) => r.querySelector('.tree-twisty svg') === null);
      for (const row of files.slice(0, 14)) {
        row.click();
        await new Promise((r) => setTimeout(r, 180));
@@ -6614,6 +6614,7 @@ async function openSettingsSheet() {
  */
 checks.themePickerRecordsAChoice = await (async () => {
   if ((await openSettingsSheet()) !== true) return "settings would not open";
+  await evaluate(`document.querySelector('.settings-nav-item[data-group="appearance"]')?.click(); true`);
 
   const shape = await evaluate(
     `(() => {
@@ -6685,6 +6686,7 @@ checks.themePickerRecordsAChoice = await (async () => {
  */
 checks.settingsMcpCardStatesNode = await (async () => {
   if ((await openSettingsSheet()) !== true) return "settings would not open";
+  await evaluate(`document.querySelector('.settings-nav-item[data-group="ai"]')?.click(); true`);
   // The command arrives asynchronously, after a `node --version` on Windows.
   await sleep(1500);
 
@@ -6795,7 +6797,12 @@ checks.midnightThemeRepaints = await (async () => {
 
 checks.everySettingHasAQuestionMark = await evaluate(
   `(() => {
-     const rows = [...document.querySelectorAll('.settings-row[data-setting-id]')];
+     // Walk every section: the screen shows one at a time.
+     const rows = [];
+     for (const item of document.querySelectorAll('.settings-nav-item')) {
+       item.click();
+       rows.push(...document.querySelectorAll('.settings-row[data-setting-id]'));
+     }
      if (rows.length < 40) return false;
      const without = rows.filter((r) => r.querySelector('.help-button') === null);
      return { rows: rows.length > 40, allExplained: without.length === 0 };
