@@ -102,15 +102,15 @@ describe("the admin rail", () => {
    */
   const items = ADMIN_NAV.flatMap((group) => group.items);
 
-  it("includes website analytics and growth alongside the existing destinations in seven groups", () => {
+  it("keeps every destination, with everything about ads in one Ads group", () => {
     expect(ADMIN_NAV.map((group) => group.label)).toEqual([
       "Now",
+      "Ads",
       "Queues",
       "Money",
       "Growth",
       "People",
       "Publishing",
-      "Tools",
     ]);
     expect(items.map((item) => item.href)).toEqual([
       "/admin",
@@ -118,11 +118,12 @@ describe("the admin rail", () => {
       "/admin/models",
       "/admin/tagflow",
       "/admin/status",
-      "/admin/review",
-      "/admin/review?tab=feedback",
       "/admin/ad-networks",
-      "/admin/money",
+      "/admin/review",
       "/admin/money?tab=advertisers",
+      "/admin/tools",
+      "/admin/review?tab=feedback",
+      "/admin/money",
       "/admin/money?tab=countries",
       "/admin/growth",
       "/admin/growth?tab=partners",
@@ -134,7 +135,6 @@ describe("the admin rail", () => {
       "/admin/content",
       "/admin/content?tab=releases",
       "/admin/content?tab=notices",
-      "/admin/tools",
     ]);
   });
 

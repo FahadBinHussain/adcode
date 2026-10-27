@@ -4,7 +4,7 @@ import Link from "@/components/IntentLink";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthProvider";
-import { SignInCard } from "./SignInCard";
+import { SignInCard, type SignInAudience } from "./SignInCard";
 import { Mark } from "./Mark";
 import { Icon } from "@/components/Icon";
 import { ArrowUpRight } from "lucide";
@@ -225,9 +225,12 @@ export function AppShell({
   tabs,
   sidebar,
   requireAdmin = false,
+  audience = "developer",
   children,
 }: {
   title: string;
+  /** Who the signed-out screen speaks to. */
+  audience?: SignInAudience;
   subtitle?: string;
   tabs?: Tab[];
   /** Sections of this workspace. When present, the page gains the split-view rail. */
@@ -308,7 +311,7 @@ export function AppShell({
     return (
       <section className="auth-screen">
         <div className="wrap">
-          <SignInCard heading={`Sign in to ${title.toLowerCase()}`} />
+          <SignInCard heading={`Sign in to ${title.toLowerCase()}`} audience={audience} />
         </div>
       </section>
     );

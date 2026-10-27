@@ -40,14 +40,19 @@ describe("ad network administration", () => {
     expect(beehiiv).toContain("desktop payouts");
   });
   it("shows write-only key state and disables tests that cannot run", () => {
-    const html = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("imprezia"), imprezia: { kind: "app", id: "" }, id: "imprezia", keyConfigured: true, readiness: "documentation-required" }]} selected={null} busy={null} onEdit={() => undefined} onTest={() => undefined} />);
+    const html = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("imprezia"), imprezia: { kind: "app", id: "" }, id: "imprezia", keyConfigured: true, readiness: "documentation-required" }]} selected={null} busy={null} onEdit={() => undefined} onKey={() => undefined} onToggle={() => undefined} onTest={() => undefined} />);
     expect(html).toContain("API documentation needed");
-    expect(html).toContain("Configured");
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Test saved connection<\/button>/);
-    const beehiiv = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("beehiiv"), id: "newsletter", keyConfigured: true, readiness: "newsletter-preview-only" }]} selected={null} busy={null} onEdit={() => undefined} onTest={() => undefined} />);
+    expect(html).toContain("Set · Change");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Test<\/button>/);
+    const beehiiv = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("beehiiv"), id: "newsletter", keyConfigured: true, readiness: "newsletter-preview-only" }]} selected={null} busy={null} onEdit={() => undefined} onKey={() => undefined} onToggle={() => undefined} onTest={() => undefined} />);
     expect(beehiiv).not.toContain("disabled");
-    const missingKey = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("http-json"), id: "generic", keyConfigured: false, readiness: "key-required" }]} selected={null} busy={null} onEdit={() => undefined} onTest={() => undefined} />);
-    expect(missingKey).toMatch(/<button[^>]*disabled=""[^>]*>Test saved connection<\/button>/);
+    const missingKey = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("http-json"), id: "generic", keyConfigured: false, readiness: "key-required" }]} selected={null} busy={null} onEdit={() => undefined} onKey={() => undefined} onToggle={() => undefined} onTest={() => undefined} />);
+    expect(missingKey).toMatch(/<button[^>]*disabled=""[^>]*>Test<\/button>/);
+    // Without a key a network cannot be turned on from its row, and the key cell asks for one.
+    expect(missingKey).toMatch(/<button[^>]*disabled=""[^>]*title="Add an API key first"[^>]*>Turn on<\/button>/);
+    expect(missingKey).toContain(">Add key</button>");
+    const live = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("imprezia"), id: "imprezia", enabled: true, keyConfigured: true, readiness: "ready" }]} selected={null} busy={null} onEdit={() => undefined} onKey={() => undefined} onToggle={() => undefined} onTest={() => undefined} />);
+    expect(live).toContain(">Turn off</button>");
   });
   it("renders provider content as text and makes preview-only status clear", () => {
     const html = renderToStaticMarkup(<NetworkTestPreview result={{ advertisements: [{ id: "ad", name: "Sponsor", headline: "<script>alert(1)</script>", text: "Sample", description: "" }] }} />);

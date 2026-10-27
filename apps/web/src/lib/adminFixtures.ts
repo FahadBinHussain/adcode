@@ -274,7 +274,18 @@ const GROWTH_FIXTURES: Record<string, (data: AdminPreviewData) => unknown> = {
   "/admin/referral-config": () => ({ userPercent: "10", advertiserPercent: "5", windowDays: 365, claimDays: 14, houseAdvertiserIds: [] }),
 };
 
+/** Ad networks: Imprezia live on a sandbox key, one JSON API waiting on its key. */
+const adNetworks = (data: AdminPreviewData): unknown => ({
+  credentialsManageable: data !== "worst",
+  networks: data === "empty" ? [] : [
+    { id: "imprezia", name: "Imprezia", provider: "imprezia", enabled: true, priority: 10, viewPayoutMicros: "2000", clickPayoutMicros: "0", imprezia: { kind: "chat", id: "editor_sponsored_card" }, keyConfigured: true, readiness: "ready" },
+    { id: "northwind-ads", name: "Northwind Ads", provider: "http-json", enabled: false, priority: 50, viewPayoutMicros: "1500", clickPayoutMicros: "40000", keyConfigured: false, readiness: "key-required",
+      http: { serveUrl: "https://ads.northwind.example/v1/serve", verifyUrl: "https://ads.northwind.example/v1/verify", method: "POST", authHeader: "authorization", authPrefix: "Bearer ", requestTemplate: { tags: "{{tags}}" }, creativePath: "ad", fields: { id: "id", advertiser: "brand", headline: "title", body: "text", clickUrl: "url", logoLight: "logo", logoDark: "" }, verifyTemplate: { id: "{{eventId}}" }, verifiedPath: "ok", eventIdPath: "event" } },
+  ],
+});
+
 const FIXTURES: Record<string, (data: AdminPreviewData) => unknown> = {
+  "/admin/ad-networks": adNetworks,
   ...MORE_FIXTURES,
   ...GROWTH_FIXTURES,
   // BYOK models: the built-in catalogue is in the page; this is only the saved curation and health.

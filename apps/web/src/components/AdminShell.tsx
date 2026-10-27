@@ -62,16 +62,35 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     ],
   },
   {
-    label: "Queues",
+    /*
+     * Everything about ads in one place: where they come from (networks and their keys),
+     * what is waiting for approval, who pays for them, and a safe test. It used to be spread
+     * over Queues, Money and Tools, so changing a provider key started with a hunt.
+     */
+    label: "Ads",
     items: [
+      { href: "/admin/ad-networks", label: "Ad networks", hint: "Imprezia and other providers: API keys, on and off, per-view and per-click pay", icon: "target" },
       {
         href: "/admin/review",
         label: "Creatives",
         hint: "Ads waiting on a decision",
         tab: "creatives",
-        icon: "target",
+        icon: "doc",
         badge: (c) => c.creativesWaiting,
       },
+      {
+        href: "/admin/money?tab=advertisers",
+        label: "Advertisers",
+        hint: "Funding, campaigns, delivery",
+        tab: "advertisers",
+        icon: "card",
+      },
+      { href: "/admin/tools", label: "Test delivery", hint: "Show a test ad, no money moves", icon: "wrench" },
+    ],
+  },
+  {
+    label: "Queues",
+    items: [
       {
         href: "/admin/review?tab=feedback",
         label: "Feedback",
@@ -85,7 +104,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
   {
     label: "Money",
     items: [
-      { href: "/admin/ad-networks", label: "Ad networks", hint: "Provider connections, keys and per-event payouts", icon: "target" },
       {
         href: "/admin/money",
         label: "Payouts",
@@ -93,13 +111,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         tab: "payouts",
         icon: "send",
         badge: (c) => c.withdrawalsPending,
-      },
-      {
-        href: "/admin/money?tab=advertisers",
-        label: "Advertisers",
-        hint: "Funding, campaigns, delivery",
-        tab: "advertisers",
-        icon: "card",
       },
       {
         href: "/admin/money?tab=countries",
@@ -113,7 +124,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
   {
     label: "Growth",
     items: [
-      { href: "/admin/growth", label: "Overview", hint: "Setup, and where new people came from", tab: "overview", icon: "chart" },
+      { href: "/admin/growth", label: "Growth overview", hint: "Setup, and where new people came from", tab: "overview", icon: "chart" },
       { href: "/admin/growth?tab=partners", label: "Partners", hint: "Who invites, and what they brought", tab: "partners", icon: "person" },
       { href: "/admin/growth?tab=links", label: "Links", hint: "A link for each post you run", tab: "links", icon: "tag" },
       { href: "/admin/growth?tab=loops", label: "Loops", hint: "Every place ADCode asks people to share", tab: "loops", icon: "send" },
@@ -163,12 +174,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         tab: "notices",
         icon: "bell",
       },
-    ],
-  },
-  {
-    label: "Tools",
-    items: [
-      { href: "/admin/tools", label: "Delivery", hint: "Test ads, no money moves", icon: "wrench" },
     ],
   },
 ];
@@ -438,6 +443,8 @@ export function AdminShell({
         <i aria-hidden="true" />
         <span>{health === null ? "Status unknown" : health.state === "operational" ? "All systems operational" : health.title}</span>
       </Link>
+      {/* The website's own nav steps aside on /admin, so the way out lives here. */}
+      <Link href="/" className="admin-rail-exit"><span aria-hidden="true">←</span> Back to the website</Link>
     </>
   );
 

@@ -52,6 +52,7 @@ export default function PortalHome() {
   return (
     <AppShell
       title="Advertiser workspace"
+      audience="advertiser"
       subtitle="Reach developers. Keep every campaign, credit, and result in view."
       sidebar={PORTAL_SIDEBAR}
     >

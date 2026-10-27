@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { adNetworkReadiness, parseAdNetworkConfig, type AdNetworkConfig, type AdNetworkProvider, type HttpAdNetworkConfig } from "@adcode/api/src/adNetworkConfig.ts";
 import type { ServedCreative } from "@adcode/api/src/contract.ts";
@@ -56,13 +56,30 @@ export function ProviderReadiness({ provider, chat = false }: { provider: AdNetw
   return <p className="row-sub">Connect a documented JSON ad API. Serve and event verification URLs must share an HTTPS origin. User payouts are credited only after the provider verifies each view or click.</p>;
 }
 
-export function AdNetworkTable({ networks, selected, busy, onEdit, onTest }: { networks: readonly AdNetworkView[]; selected: string | null; busy: string | null; onEdit: (network: AdNetworkView) => void; onTest: (network: AdNetworkView) => void }) {
-  if (networks.length === 0) return <p className="row-sub">No ad networks connected yet. Add a provider below.</p>;
-  return <div className="admin-models-scroll" role="region" aria-label="Ad network connections" tabIndex={0}><table className="admin-models-table">
-    <thead><tr><th scope="col">Network</th><th scope="col">Status</th><th scope="col">Key</th><th scope="col">Users paid</th><th scope="col">Actions</th></tr></thead>
+/** A view row back to the config the server stores: the key and readiness are the server's to say. */
+export function configOf(network: AdNetworkView): AdNetworkConfig {
+  const { keyConfigured: _key, readiness: _readiness, ...config } = network;
+  return config;
+}
+
+/**
+ * One row per provider, with the three things an operator actually comes here to do on the
+ * row itself: change its key, turn it on or off, and test it. Everything else is in Edit.
+ */
+export function AdNetworkTable({ networks, selected, busy, onEdit, onKey, onToggle, onTest }: { networks: readonly AdNetworkView[]; selected: string | null; busy: string | null; onEdit: (network: AdNetworkView) => void; onKey: (network: AdNetworkView) => void; onToggle: (network: AdNetworkView) => void; onTest: (network: AdNetworkView) => void }) {
+  if (networks.length === 0) return <div className="ad-network-empty"><h4>No ad networks yet</h4><p className="row-sub">Add Imprezia Chat Ads with its publisher API key to start filling the sponsored card, or connect any documented JSON ad API.</p></div>;
+  return <div className="admin-models-scroll" role="region" aria-label="Ad network connections" tabIndex={0}><table className="admin-models-table ad-network-table">
+    <thead><tr><th scope="col">Network</th><th scope="col">Status</th><th scope="col">API key</th><th scope="col">Users paid</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
     <tbody>{networks.map((network) => <tr key={network.id} aria-selected={selected === network.id}>
-      <td><strong>{network.name}</strong><small>{providerName(network.provider)}{isChat(network) ? " Chat Ads" : ""} / {network.id}</small></td><td>{readinessLabel[network.readiness] ?? "Unknown"}</td><td>{network.keyConfigured ? "Configured" : "Not configured"}</td><td>{pays(network) ? payoutSummary(network) : "Preview only"}</td>
-      <td><div className="ad-network-actions"><button type="button" className="btn btn-small" onClick={() => onEdit(network)}>Edit</button><button type="button" className="btn btn-small" disabled={busy !== null || !network.keyConfigured || ["documentation-required", "inventory-required"].includes(network.readiness)} onClick={() => onTest(network)}>{busy === network.id ? "Testing…" : "Test saved connection"}</button></div></td>
+      <td><strong>{network.name}</strong><small>{providerName(network.provider)}{isChat(network) ? " Chat Ads" : ""} / {network.id}</small></td>
+      <td><span className="ad-network-state" data-state={network.readiness}>{readinessLabel[network.readiness] ?? "Unknown"}</span></td>
+      <td><button type="button" className="ad-network-key" data-set={network.keyConfigured} onClick={() => onKey(network)} aria-label={`${network.keyConfigured ? "Change" : "Add"} the API key for ${network.name}`}>{network.keyConfigured ? "Set · Change" : "Add key"}</button></td>
+      <td>{pays(network) ? payoutSummary(network) : "Preview only"}</td>
+      <td><div className="ad-network-actions">
+        {pays(network) && <button type="button" className="btn btn-small" data-on={network.enabled} disabled={busy !== null || (!network.enabled && !network.keyConfigured)} title={!network.enabled && !network.keyConfigured ? "Add an API key first" : undefined} onClick={() => onToggle(network)}>{busy === `toggle:${network.id}` ? "Saving…" : network.enabled ? "Turn off" : "Turn on"}</button>}
+        <button type="button" className="btn btn-small" disabled={busy !== null || !network.keyConfigured || ["documentation-required", "inventory-required"].includes(network.readiness)} onClick={() => onTest(network)}>{busy === network.id ? "Testing…" : "Test"}</button>
+        <button type="button" className="btn btn-small" onClick={() => onEdit(network)}>Edit</button>
+      </div></td>
     </tr>)}</tbody>
   </table></div>;
 }
@@ -71,8 +88,11 @@ function TextField({ label, value, onChange, required = true, hint, pattern, typ
   return <label className="tagflow-field"><span>{label}</span><input className="input" type={type} required={required} maxLength={type === "url" ? 2048 : 200} {...(type === "number" ? { min: 0, max: 10, step: "0.000001" } : {})} {...(pattern === undefined ? {} : { pattern })} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />{hint && <small>{hint}</small>}</label>;
 }
 
-function SecretEditor({ network, manageable, request, onChange }: { network: AdNetworkView; manageable: boolean; request: Request; onChange: (configured: boolean) => void }) {
+function SecretEditor({ network, manageable, request, onChange, focus = 0 }: { network: AdNetworkView; manageable: boolean; request: Request; onChange: (configured: boolean) => void; focus?: number }) {
   const [secret, setSecret] = useState("");
+  const field = useRef<HTMLInputElement>(null);
+  // Arriving from a row's key button: the box is where the eye and the cursor already are.
+  useEffect(() => { if (focus === 0) return; field.current?.scrollIntoView({ block: "center" }); field.current?.focus(); }, [focus]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   async function save(remove = false): Promise<void> {
@@ -80,7 +100,7 @@ function SecretEditor({ network, manageable, request, onChange }: { network: AdN
     setBusy(true); setNotice(null);
     try {
       const result = await request<{ keyConfigured: boolean }>(`/admin/ad-networks/${encodeURIComponent(network.id)}/key`, "PUT", { key: remove ? null : secret.trim() });
-      setSecret(""); onChange(result.keyConfigured); setNotice({ text: remove ? "API key removed." : "API key saved securely. Test the saved connection to check it.", error: false });
+      setSecret(""); onChange(result.keyConfigured ?? !remove); setNotice({ text: remove ? "API key removed. Delivery from this network stops until a new key is saved." : "New API key saved and used from the next ad. Press Test to check it.", error: false });
     } catch (error) { setNotice({ text: error instanceof Error ? error.message : "The key wasn't saved. Try again.", error: true }); }
     finally { setBusy(false); }
   }
@@ -88,7 +108,7 @@ function SecretEditor({ network, manageable, request, onChange }: { network: AdN
     <h4>API key</h4><p className="row-sub">{network.keyConfigured ? "A key is configured. Enter a replacement to rotate it." : "No key is configured."} Keys are encrypted on the server and are never returned to this page.</p>
     {!manageable && <p className="notice" role="alert">Encrypted key storage isn&apos;t configured on the server. Configure server encryption before saving provider keys.</p>}
     <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <label className="tagflow-field"><span>{network.keyConfigured ? "Replacement API key" : "Provider API key"}</span><input className="input" type="password" required autoComplete="new-password" spellCheck={false} maxLength={8192} disabled={busy || !manageable} value={secret} onChange={(event) => setSecret(event.target.value)} /></label>
+      <label className="tagflow-field"><span>{network.keyConfigured ? "Replacement API key" : "Provider API key"}</span><input ref={field} className="input" type="password" required autoComplete="new-password" spellCheck={false} maxLength={8192} disabled={busy || !manageable} value={secret} onChange={(event) => setSecret(event.target.value)} /></label>
       <div className="ad-network-actions"><button className="btn" disabled={busy || !manageable || secret.trim() === ""}>{busy ? "Saving…" : "Save API key"}</button>{network.keyConfigured && <button type="button" className="btn" disabled={busy || !manageable} onClick={() => void save(true)}>Remove API key</button>}</div>
     </form>
     {notice && <p className="notice" data-tone={notice.error ? "error" : "success"} role={notice.error ? "alert" : "status"}>{notice.text}</p>}
@@ -183,10 +203,17 @@ export function AdNetworksAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [keyFocus, setKeyFocus] = useState(0);
+  const [toggling, setToggling] = useState<string | null>(null);
   const [newNetwork, setNewNetwork] = useState<AdNetworkConfig | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [test, setTest] = useState<{ id: string; name: string; value?: TestView; error?: string } | null>(null);
   const request = useCallback(async <T,>(path: string, method: "GET" | "PUT" | "POST" = "GET", body?: unknown): Promise<T> => {
+    // The admin panel's made-up data while building it (adminPreview.ts). Dead code in a production build.
+    if (process.env["NODE_ENV"] === "development") {
+      const preview = (await import("@/lib/adminFixtures")).previewResponse<T>(path, method);
+      if (preview !== null && preview.ok) return preview.value;
+    }
     const idToken = await token();
     if (!idToken) throw new Error("Your session expired. Sign in again.");
     let response: Response;
@@ -215,6 +242,13 @@ export function AdNetworksAdmin() {
     setView((previous) => previous === null ? previous : { ...previous, networks: [...previous.networks.filter((network) => network.id !== config.id), network].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id)) });
     setNewNetwork(null); setSelected(config.id);
   }
+  async function toggle(network: AdNetworkView): Promise<void> {
+    if (toggling !== null) return;
+    setToggling(network.id); setError("");
+    try { await save({ ...configOf(network), enabled: !network.enabled }); setSelected(null); }
+    catch (error) { setError(error instanceof Error ? error.message : "That change wasn't saved."); }
+    finally { setToggling(null); }
+  }
   async function testNetwork(network: AdNetworkView): Promise<void> {
     if (testing !== null) return;
     setTesting(network.id); setTest(null);
@@ -228,11 +262,12 @@ export function AdNetworksAdmin() {
     <section className="admin-models-provider"><header className="admin-card-head"><h3>Ad network connections</h3><button type="button" className="btn" disabled={loading} onClick={() => void load()}>{loading ? "Loading…" : "Refresh"}</button></header>
       <p className="row-sub">Connect provider inventory and choose whether users earn per view, per click, or both. Each provider keeps its own encrypted API key.</p>
       {error && <p className="notice" data-tone="error" role="alert">{error} Use Refresh to retry.</p>}
-      {loading && view === null ? <p role="status">Loading ad networks…</p> : view !== null && <AdNetworkTable networks={view.networks} selected={selected} busy={testing} onEdit={(network) => { setSelected(network.id); setNewNetwork(null); }} onTest={(network) => void testNetwork(network)} />}
+      {loading && view === null ? <p role="status">Loading ad networks…</p> : view !== null && <AdNetworkTable networks={view.networks} selected={selected} busy={toggling !== null ? `toggle:${toggling}` : testing} onEdit={(network) => { setSelected(network.id); setNewNetwork(null); setKeyFocus(0); }} onKey={(network) => { setSelected(network.id); setNewNetwork(null); setKeyFocus((count) => count + 1); }} onToggle={(network) => void toggle(network)} onTest={(network) => void testNetwork(network)} />}
       {view !== null && <div className="ad-network-actions ad-network-add" aria-label="Add ad provider"><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("http-json")); }}>Add generic JSON API</button><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("imprezia")); }}>Add Imprezia Chat Ads</button><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("beehiiv")); }}>Add beehiiv preview</button></div>}
     </section>
     {test && <section className="admin-models-provider" aria-label={`Test result for ${test.name}`}><h3>{test.name}</h3>{test.error ? <p className="notice" data-tone="error" role="alert">{test.error}</p> : test.value && <NetworkTestPreview result={test.value} />}</section>}
+    {/* The key first: rotating it is the most common reason to open a network. */}
+    {saved && newNetwork === null && view !== null && <section className="admin-models-provider"><SecretEditor key={saved.id} focus={keyFocus} network={saved} manageable={view.credentialsManageable} request={request} onChange={(configured) => setView((previous) => previous === null ? previous : { ...previous, networks: previous.networks.map((network) => network.id !== saved.id ? network : { ...network, keyConfigured: configured, readiness: adNetworkReadiness(network, configured) }) })} /></section>}
     {draft && <NetworkEditor key={`${newNetwork ? "new" : "saved"}:${draft.provider}:${draft.id}`} initial={draft} saved={saved !== undefined && newNetwork === null} onSave={save} onCancel={() => { setSelected(null); setNewNetwork(null); }} />}
-    {saved && newNetwork === null && view !== null && <section className="admin-models-provider"><SecretEditor key={saved.id} network={saved} manageable={view.credentialsManageable} request={request} onChange={(configured) => setView((previous) => previous === null ? previous : { ...previous, networks: previous.networks.map((network) => network.id !== saved.id ? network : { ...network, keyConfigured: configured, readiness: adNetworkReadiness(network, configured) }) })} /></section>}
   </div>;
 }
