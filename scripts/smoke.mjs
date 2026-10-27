@@ -6833,6 +6833,10 @@ checks.helpPopoverOpensAndCloses = await (async () => {
     await sleep(500);
   }
 
+  // Settings shows one section at a time (8a9dc466): the minimap row exists only under Editing.
+  await evaluate(`(document.querySelector('.settings-nav-item[data-group="editing"]')?.click(), true)`);
+  await sleep(200);
+
   const opened = await evaluate(
     `(() => {
        const row = document.querySelector('[data-setting-id="adcode.editing.minimap"]');
