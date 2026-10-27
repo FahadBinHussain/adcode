@@ -846,6 +846,24 @@ describe("included Tagflow AI", () => {
     expect(interrupted).not.toContain("server-secret");
     expect(await usage()).toMatchObject({ requests: 2, outputTokens: 106, reservedTokens: 0 });
   });
+  it("asks again when a stream fails before its first token, so the person never sees the interruption", async () => {
+    const sse = (text: string): Response => new Response(text, { headers: { "content-type": "text/event-stream" } });
+    // 2026-10-27: tagflow-code-27b streams died within ~6 s, before any token - an error event, or EOF without [DONE].
+    upstream.mockImplementationOnce(async () => sse(event({ choices: [{ delta: { role: "assistant" } }] }) + event({ error: { message: "overloaded" } })));
+    upstream.mockImplementationOnce(async () => sse(event({ choices: [{ delta: { role: "assistant" } }] })));
+    upstream.mockImplementationOnce(async () => sse(event({ choices: [{ delta: { content: "answered" }, finish_reason: "stop" }] }) + "data: [DONE]\n\n"));
+    const text = await (await chat()).text();
+    expect(text).toContain("answered");
+    expect(text).not.toContain("stream-interrupted");
+    expect(upstream).toHaveBeenCalledTimes(3);
+  });
+  it("never asks again once text has gone out, because a retry would repeat it", async () => {
+    upstream.mockImplementation(async () => new Response(event({ choices: [{ delta: { content: "half an answ" } }] }), { headers: { "content-type": "text/event-stream" } }));
+    const text = await (await chat()).text();
+    expect(text).toContain("half an answ");
+    expect(text).toContain('"code":"stream-interrupted"');
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
   it("supports non-stream replies and hides the feature when the server key is absent", async () => {
     upstream.mockImplementation(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 2 } }), { headers: { "content-type": "application/json" } }));
     expect((await chat("user", { ...body, stream: false })).status).toBe(200); expect(await usage()).toMatchObject({ inputTokens: 10, outputTokens: 2, reservedTokens: 0 });

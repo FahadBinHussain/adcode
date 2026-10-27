@@ -55,6 +55,8 @@ export const UPSTREAM_RATE_LIMIT_WAITS_MS: readonly number[] = [700, 1600];
  * model that recovers is tried again within a minute everywhere.
  */
 /** Waiting for a provider to start answering; then silence allowed mid-stream; then the longest any answer may run. */
+/** How many times a stream that failed before its first token is asked again. */
+export const STREAM_RESTARTS = 2;
 export const RELAY_TIMEOUTS = { firstMs: 180_000, idleMs: 120_000, maxMs: 1_200_000 } as const;
 
 /** Unpaid token checkouts one account may open in `CHECKOUT_WINDOW_MS`. */
@@ -155,7 +157,9 @@ class UsageObserver {
   private readonly onOutput: () => void;
   constructor(onOutput: () => void = () => undefined) { this.onOutput = onOutput; }
   private pending = "";
-  private readonly decoder = new TextDecoder();
+  private decoder = new TextDecoder();
+  /** A fresh upstream attempt: drop the half-read frame of the one that failed. */
+  restart(): void { this.pending = ""; this.decoder = new TextDecoder(); this.completed = false; this.finishReason = null; }
   reported: { input: number; output: number } | null = null;
   outputBytes = 0;
   completed = false;
@@ -846,21 +850,48 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
         await upstream.body.cancel(); cleanup(); await settle(); await finishMetric("provider_error","invalid-stream");
         return fail(502, "upstream", "The included AI provider did not return a chat stream.");
       }
-      const reader = upstream.body.getReader();
+      let reader = upstream.body.getReader();
       // Once headers have been sent, an AI failure belongs in the SSE protocol. Erroring
       // the response body rejects Next's pipeToNodeResponse and destroys its response;
       // the Workers bridge can then be left waiting for a response that never finishes.
       // The desktop already throws on data.error (including released 2.4.0 clients).
       const interrupted = new TextEncoder().encode(`data: ${JSON.stringify({ error: { code: "stream-interrupted", message: "Included AI stream interrupted. Try again or choose another model." } })}\n\n`);
       let cancelled = false;
+      let restarts = 0;
+      /*
+       * Reported 2026-10-27: 8% of tagflow-code-27b's streams failed within ~6 s and before a
+       * single token - 27 "stream interrupted" reports in a day. Nothing had reached the person,
+       * so the same request is asked again (twice at most) instead of failing their turn. Once
+       * any text or tool call has gone out, a retry would repeat it, so the failure stands.
+       */
+      const restart = async (): Promise<boolean> => {
+        if (cancelled || restarts >= STREAM_RESTARTS || abort.signal.aborted || observer.outputBytes > 0 || observer.toolCalls.size > 0) return false;
+        restarts += 1;
+        await reader.cancel().catch(() => undefined);
+        try { reader.releaseLock(); } catch { /* already released */ }
+        let next: Response;
+        try { next = await route.send(); } catch { return false; }
+        if (!next.ok || next.body === null || !next.headers.get("content-type")?.includes("text/event-stream")) { await next.body?.cancel().catch(() => undefined); return false; }
+        observer.restart(); reader = next.body.getReader(); stillSending();
+        return true;
+      };
       const stream = new ReadableStream<Uint8Array>({
         async pull(controller) {
           try {
             for (;;) {
-              const chunk = await reader.read();
+              let chunk: ReadableStreamReadResult<Uint8Array>;
+              let safe: Uint8Array | null = null;
+              try {
+                chunk = await reader.read();
+                if (!chunk.done) safe = observer.push(chunk.value);
+              } catch (error) {
+                if (!request.signal.aborted && await restart()) continue;
+                throw error;
+              }
               if (!chunk.done) stillSending();
               if (chunk.done) {
                 const trailing = observer.finish();
+                if (!observer.completed && await restart()) continue;
                 if (trailing !== null && !cancelled) controller.enqueue(trailing);
                 await settle(false, true);
                 await finishMetric(observer.completed ? "success" : "provider_error",observer.completed ? null : "incomplete-stream");
@@ -871,7 +902,6 @@ export function createTagflowHandler(deps: TagflowOptions): (request: Request) =
                 }
                 break;
               }
-              const safe = observer.push(chunk.value);
               if (safe !== null) { controller.enqueue(safe); break; }
             }
           } catch {
