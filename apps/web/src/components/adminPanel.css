@@ -1585,3 +1585,15 @@ a.adm-queue:active {
   vertical-align: middle;
   text-align: left;
 }
+
+/* ── "Updated 12 seconds ago" and Refresh (components/RefreshStamp.tsx) ─────────────────── */
+.refresh-stamp { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.refresh-stamp-text { transition: opacity 160ms ease; }
+.refresh-stamp[data-cached="true"] .refresh-stamp-text { opacity: 0.7; }
+.refresh-stamp-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border: 1px solid var(--hairline); border-radius: 8px; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1); }
+.refresh-stamp-button:hover { background: var(--card); color: var(--text); }
+.refresh-stamp-button:active:not(:disabled) { transform: scale(0.97); }
+.refresh-stamp-button:disabled { cursor: default; }
+.refresh-stamp[data-refreshing="true"] .refresh-stamp-button .icon { animation: refresh-stamp-spin 700ms linear infinite; }
+@keyframes refresh-stamp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .refresh-stamp-button .icon { animation: none !important; } .refresh-stamp-button:active:not(:disabled) { transform: none; } }

@@ -536,3 +536,67 @@
 .theme-card[aria-checked="true"] .theme-card-label {
   color: var(--text-primary);
 }
+
+/* ── Sections in a sidebar, one at a time (2026-10-27: "a huge scroll") ──────────────────── */
+
+.settings-panel { container-type: inline-size; }
+.settings-layout {
+  display: grid;
+  grid-template-columns: 204px minmax(0, 1fr);
+  min-height: 0;
+}
+.settings-layout > .settings-body { min-height: 0; overflow-y: auto; }
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 10px 14px 14px;
+  border-right: 1px solid var(--border-subtle);
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 500 var(--text-sm) var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.settings-nav-item svg { flex: none; width: 16px; height: 16px; color: var(--text-tertiary); transition: color 140ms ease; }
+.settings-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav-count { flex: none; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--bg-hover); color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; }
+.settings-nav-count:empty { display: none; }
+.settings-nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.settings-nav-item:active { transform: scale(0.98); }
+.settings-nav-item[aria-current="page"] { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text-primary); font-weight: 600; }
+.settings-nav-item[aria-current="page"] svg { color: var(--accent); }
+.settings-nav-item[data-empty="true"] { opacity: 0.45; }
+.settings-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* A section arrives with a short rise; while typing a search, results swap instantly. */
+.settings-layout[data-searching="false"] .settings-group { animation: settings-section-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes settings-section-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* A row that changes is acknowledged, not just updated. */
+.settings-row { transition: background-color 160ms ease; }
+.settings-row:hover { background: color-mix(in srgb, var(--bg-hover) 55%, transparent); }
+
+/* Narrow windows: the sections become a row of chips above the list. */
+@container (max-width: 620px) {
+  .settings-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings-nav { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--border-subtle); scrollbar-width: none; }
+  .settings-nav-item { flex: none; min-height: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) { .settings-layout .settings-group { animation: none !important; } .settings-nav-item:active { transform: none; } }
+:root[data-reduced-motion="true"] .settings-layout .settings-group { animation: none !important; }
+:root[data-reduced-motion="true"] .settings-nav-item:active { transform: none; }

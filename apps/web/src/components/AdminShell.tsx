@@ -11,6 +11,7 @@ import { adminPreviewData, type AdminPreviewData } from "@/lib/adminPreview";
 import { parseStatusView, type StatusView } from "@/lib/statusView";
 import { Mark } from "./Mark";
 import "./adminPanel.css";
+import { readCached, writeCached } from "@/lib/adminCache";
 
 /**
  * The admin panel's chrome.
@@ -224,12 +225,19 @@ export function AdminShell({
   const admitted = isAdmin || preview !== null;
 
   const loadCounts = useCallback(async () => {
+    // The rail's badges draw from the last copy at once, then catch up (lib/adminCache.ts).
+    const cached = readCached<{ counts: AdminOverviewView | null; status: unknown }>("rail");
+    if (cached !== null) {
+      if (cached.value.counts !== null) setCounts(cached.value.counts);
+      if (cached.value.status != null) setHealth(parseStatusView(cached.value.status)?.overall ?? null);
+    }
     const [found, status] = await Promise.all([
       apiFetch<AdminOverviewView>({ path: "/admin/overview", token: await token() }),
       apiFetch<unknown>({ path: "/status", token: await token() }),
     ]);
     if (found.ok) setCounts(found.value);
     if (status.ok) setHealth(parseStatusView(status.value)?.overall ?? null);
+    if (found.ok || status.ok) writeCached("rail", { counts: found.ok ? found.value : cached?.value.counts ?? null, status: status.ok ? status.value : cached?.value.status ?? null }, Date.now());
   }, [token]);
 
   useEffect(() => {

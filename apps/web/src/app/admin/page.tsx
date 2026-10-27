@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { AdminShell } from "@/components/AdminShell";
 import { useAuth } from "@/components/AuthProvider";
 import { money } from "@/components/money";
@@ -9,6 +9,8 @@ import { apiFetch, type AdminOverviewView } from "@/lib/api";
 import { dollars, parseGrowth, type Growth } from "@/lib/growth";
 import { LEVEL_LABELS, parseStatusView, type StatusModel, type StatusView } from "@/lib/statusView";
 import { Icon } from "@/components/Icon";
+import { RefreshStamp } from "@/components/RefreshStamp";
+import { useCachedResource } from "@/lib/adminCache";
 import { ArrowRight, ArrowUpRight } from "lucide";
 
 /**
@@ -24,11 +26,32 @@ import { ArrowRight, ArrowUpRight } from "lucide";
  * detail is. Nothing is computed that the API did not already send.
  */
 export default function AdminPage() {
+  const data = useOverviewData();
   return (
-    <AdminShell title="Overview" subtitle="What needs you, how ADCode is doing, and whether the AI is up.">
-      <Overview />
+    <AdminShell title="Overview" subtitle="What needs you, how ADCode is doing, and whether the AI is up."
+      actions={<RefreshStamp asOf={data.asOf} refreshing={data.refreshing} fromCache={data.fromCache} onRefresh={() => void data.refresh()} />}>
+      <Overview data={data} />
     </AdminShell>
   );
+}
+
+/** Raw API answers, kept as they came so the browser can show them again instantly. */
+interface OverviewBundle { overview: AdminOverviewView | null; growth: unknown; status: unknown; subscribers: Subscribers | null }
+
+function useOverviewData() {
+  const { token } = useAuth();
+  const load = useCallback(async (): Promise<OverviewBundle | null> => {
+    const auth = await token();
+    const [overview, growth, status, subscribers] = await Promise.all([
+      apiFetch<AdminOverviewView>({ path: "/admin/overview", token: auth }),
+      apiFetch<unknown>({ path: "/admin/growth", token: auth }),
+      apiFetch<unknown>({ path: "/status", token: auth }),
+      apiFetch<Subscribers>({ path: "/admin/status/subscribers", token: auth }),
+    ]);
+    if (!overview.ok && !growth.ok && !status.ok) return null;
+    return { overview: overview.ok ? overview.value : null, growth: growth.ok ? growth.value : null, status: status.ok ? status.value : null, subscribers: subscribers.ok ? subscribers.value : null };
+  }, [token]);
+  return useCachedResource("overview", load);
 }
 
 interface Subscribers {
@@ -49,32 +72,15 @@ const bigDollars = (micros: bigint): string =>
     ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(Number(micros / 1_000_000n))
     : dollars(micros);
 
-function Overview() {
-  const { token } = useAuth();
-  const [counts, setCounts] = useState<AdminOverviewView | null>(null);
-  const [growth, setGrowth] = useState<Growth | null>(null);
-  const [status, setStatus] = useState<StatusView | null>(null);
-  const [subscribers, setSubscribers] = useState<Subscribers | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [asOf, setAsOf] = useState<number | null>(null);
-
-  const load = useCallback(async () => {
-    const auth = await token();
-    const [overview, growthResult, statusResult, subscriberResult] = await Promise.all([
-      apiFetch<AdminOverviewView>({ path: "/admin/overview", token: auth }),
-      apiFetch<unknown>({ path: "/admin/growth", token: auth }),
-      apiFetch<unknown>({ path: "/status", token: auth }),
-      apiFetch<Subscribers>({ path: "/admin/status/subscribers", token: auth }),
-    ]);
-    if (overview.ok) setCounts(overview.value);
-    setGrowth(growthResult.ok ? parseGrowth(growthResult.value) : null);
-    setStatus(statusResult.ok ? parseStatusView(statusResult.value) : null);
-    setSubscribers(subscriberResult.ok ? subscriberResult.value : null);
-    setAsOf(Date.now());
-    setLoaded(true);
-  }, [token]);
-
-  useEffect(() => { void load(); }, [load]);
+function Overview({ data }: { data: ReturnType<typeof useOverviewData> }) {
+  const bundle = data.value;
+  const counts = bundle?.overview ?? null;
+  const growth = useMemo<Growth | null>(() => bundle?.growth == null ? null : parseGrowth(bundle.growth), [bundle]);
+  const status = useMemo<StatusView | null>(() => bundle?.status == null ? null : parseStatusView(bundle.status), [bundle]);
+  const subscribers = bundle?.subscribers ?? null;
+  const loaded = data.asOf !== null;
+  const asOf = data.asOf;
+  const load = data.refresh;
 
   return (
     <div className="adm-overview">
@@ -167,7 +173,7 @@ function Delta({ value }: { value: number | null }) {
   );
 }
 
-function Pulse({ growth, loaded, asOf, onRefresh }: { growth: Growth | null; loaded: boolean; asOf: number | null; onRefresh: () => void }) {
+function Pulse({ growth, loaded, asOf }: { growth: Growth | null; loaded: boolean; asOf: number | null; onRefresh: () => void }) {
   const daily = growth?.daily ?? [];
   const active = daily.map((day) => day.active), joined = daily.map((day) => day.joined), ads = daily.map((day) => day.adsShown);
   const kpis = growth === null ? [] : [
@@ -181,8 +187,7 @@ function Pulse({ growth, loaded, asOf, onRefresh }: { growth: Growth | null; loa
       <header className="adm-section-head">
         <h2 id="adm-pulse-heading">Pulse</h2>
         <span className="adm-section-meta">
-          {asOf === null ? "Loading…" : `Last 30 days · updated ${new Date(asOf).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`}
-          <button type="button" className="adm-link-button" onClick={onRefresh}>Refresh</button>
+          {asOf === null ? "Loading…" : "Last 30 days"}
         </span>
       </header>
       {growth === null ? (

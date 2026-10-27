@@ -22,8 +22,11 @@ import {
   GROUPS,
   searchSettings,
   type Setting,
+  type SettingGroupId,
   type SettingValue,
 } from "@adcode/settings";
+import { Braces, CircleArrowDown, Compass, GitBranch, Megaphone, Network, Palette, PenLine, RotateCcw, Sparkles, WandSparkles, type IconNode } from "lucide";
+import { createIcon } from "../workbench/icons.ts";
 import { createHelpButton, createHelpPopover } from "../help/helpPopover.ts";
 import { themePicker } from "./themePicker.ts";
 
@@ -247,10 +250,28 @@ export function createSettingsTargetLifecycle(deps: {
   };
 }
 
+/** One icon per section, from the same library as the rest of the app. */
+const GROUP_ICONS: Record<SettingGroupId, IconNode> = {
+  ads: Megaphone, appearance: Palette, editing: PenLine, formatting: WandSparkles, git: GitBranch,
+  navigation: Compass, structure: Network, language: Braces, session: RotateCcw, updates: CircleArrowDown, ai: Sparkles,
+};
+const LAST_GROUP = "adcode.settings.section";
+
+/**
+ * Which section the screen opens on: the one somebody last used, else the first.
+ *
+ * Reported 2026-10-27: one sheet of sixty-odd rows was "a huge scroll". Sections now sit in a
+ * sidebar and one shows at a time; search still looks through every section at once.
+ */
+export function initialSettingsGroup(stored: string | null): SettingGroupId {
+  return GROUPS.find((group) => group.id === stored)?.id ?? GROUPS[0]!.id;
+}
+
 export function createSettingsView(deps: SettingsViewDeps): SettingsView {
   let values: Record<string, SettingValue> = {};
   let query = "";
   let open = false;
+  let activeGroup = initialSettingsGroup((() => { try { return localStorage.getItem(LAST_GROUP); } catch { return null; } })());
 
   const sheet = document.createElement("div");
   sheet.className = "settings-sheet";
@@ -294,6 +315,47 @@ export function createSettingsView(deps: SettingsViewDeps): SettingsView {
   const body = document.createElement("div");
   body.className = "settings-body";
 
+  const nav = document.createElement("nav");
+  nav.className = "settings-nav";
+  nav.setAttribute("aria-label", "Settings sections");
+  const navButtons = new Map<SettingGroupId, HTMLButtonElement>();
+  for (const group of GROUPS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "settings-nav-item";
+    button.dataset["group"] = group.id;
+    const name = document.createElement("span");
+    name.className = "settings-nav-label";
+    name.textContent = group.title;
+    const count = document.createElement("span");
+    count.className = "settings-nav-count";
+    button.append(createIcon(GROUP_ICONS[group.id]), name, count);
+    button.addEventListener("click", () => showGroup(group.id));
+    navButtons.set(group.id, button);
+    nav.append(button);
+  }
+  // Up and Down walk the sections, the way a sidebar list is expected to behave.
+  nav.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const order = [...navButtons.values()];
+    const at = order.indexOf(document.activeElement as HTMLButtonElement);
+    if (at < 0) return;
+    event.preventDefault();
+    order[(at + (event.key === "ArrowDown" ? 1 : order.length - 1)) % order.length]!.focus();
+  });
+
+  const layout = document.createElement("div");
+  layout.className = "settings-layout";
+  layout.append(nav, body);
+
+  function showGroup(id: SettingGroupId): void {
+    activeGroup = id;
+    try { localStorage.setItem(LAST_GROUP, id); } catch { /* Storage off: the section is simply not remembered. */ }
+    if (query !== "") { query = ""; search.value = ""; }
+    renderBody();
+    body.scrollTop = 0;
+  }
+
   const footer = document.createElement("footer");
   footer.className = "settings-footer";
 
@@ -321,7 +383,7 @@ export function createSettingsView(deps: SettingsViewDeps): SettingsView {
   about.textContent = "";
 
   footer.append(resetButton, about);
-  panel.append(stickyHeader, body, footer);
+  panel.append(stickyHeader, layout, footer);
 
   // One popover for the whole screen, not one per row. It remains a descendant of the
   // modal dialog so the browser does not make it inert when promoting it to the top layer.
@@ -478,11 +540,24 @@ export function createSettingsView(deps: SettingsViewDeps): SettingsView {
   function renderBody(): void {
     body.replaceChildren();
 
-    const matches = new Set(searchSettings(query).map((setting) => setting.id));
+    const found = searchSettings(query);
+    const matches = new Set(found.map((setting) => setting.id));
+    const searching = query.trim().length > 0;
     let shown = 0;
+    layout.dataset["searching"] = String(searching);
+    // The sidebar says where the matches are while searching, and which section is open otherwise.
+    for (const [id, button] of navButtons) {
+      const hits = found.filter((setting) => setting.group === id).length;
+      const count = button.querySelector<HTMLElement>(".settings-nav-count")!;
+      count.textContent = searching && hits > 0 ? String(hits) : "";
+      button.dataset["empty"] = String(searching && hits === 0);
+      if (!searching && id === activeGroup) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    }
 
     for (const group of GROUPS) {
-      const inGroup = searchSettings(query).filter(
+      if (!searching && group.id !== activeGroup) continue;
+      const inGroup = found.filter(
         (setting) => setting.group === group.id,
       );
       if (inGroup.length === 0) continue;
@@ -572,6 +647,8 @@ export function createSettingsView(deps: SettingsViewDeps): SettingsView {
       // jump that lands nowhere is worse than not offering one.
       query = "";
       search.value = "";
+      const group = searchSettings("").find((setting) => setting.id === settingId)?.group;
+      if (group !== undefined) activeGroup = group;
       targetLifecycle.openAt(settingId);
     },
 

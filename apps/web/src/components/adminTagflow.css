@@ -19,3 +19,15 @@
 .plans-admin .notice { margin-top: 14px; overflow-wrap: anywhere; }
 .plans-admin .admin-models-scroll { max-width: 100%; }
 .plans-admin .btn { max-width: 100%; }
+
+/* ── One click to any part of Free models (admin/tagflow/page.tsx SectionBar) ───────────── */
+.admin-section-bar { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; margin: 0 0 16px; padding: 8px 0; overflow-x: auto; scrollbar-width: none; background: color-mix(in srgb, var(--bg, #0f0f0e) 92%, transparent); backdrop-filter: blur(8px); }
+.admin-section-bar a { flex: none; padding: 6px 12px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1); }
+.admin-section-bar a:hover { color: var(--text); border-color: var(--faint); }
+.admin-section-bar a:active { transform: scale(0.97); }
+.admin-section-bar a[aria-current="location"] { background: var(--text); border-color: var(--text); color: var(--bg, #0f0f0e); }
+[id^="free-"] { scroll-margin-top: 64px; }
+.admin-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.admin-row-note { color: var(--muted); animation: admin-note-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes admin-note-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .admin-section-bar a:active { transform: none; } .admin-row-note { animation: none; } }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminShell, AdminTabs } from "@/components/AdminShell";
 import { GrowthPanel } from "@/components/GrowthPanel";
@@ -9,6 +9,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { TimeChart } from "@/components/charts/TimeChart";
 import { DailyChange } from "@/components/DailyChange";
 import { apiFetch } from "@/lib/api";
+import { useCachedResource } from "@/lib/adminCache";
+import { RefreshStamp } from "@/components/RefreshStamp";
 import { browserExcluded, setBrowserExcluded, type Ranking, type WebsiteAnalyticsReport } from "@/lib/websiteAnalytics";
 import "@/components/websiteAnalytics.css";
 
@@ -99,23 +101,18 @@ function ThisBrowser() {
 function Reports() {
   const { token } = useAuth();
   const [days, setDays] = useState(30);
-  const [refresh, setRefresh] = useState(0);
-  const [report, setReport] = useState<WebsiteAnalyticsReport | null>(null);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    setLoading(true); setError(false); setReport(null);
-    void (async () => {
-      try {
-        const result = await apiFetch<WebsiteAnalyticsReport>({ path: `/admin/website-analytics?days=${days}`, token: await token() });
-        if (!active) return;
-        if (result.ok) setReport(result.value); else setError(true);
-      } catch { if (active) setError(true); }
-      finally { if (active) setLoading(false); }
-    })();
-    return () => { active = false; };
-  }, [days, refresh, token]);
+  // The last report for this period shows at once; a fresh one replaces it (lib/adminCache.ts).
+  const load = useCallback(async (): Promise<WebsiteAnalyticsReport | null> => {
+    try {
+      const result = await apiFetch<WebsiteAnalyticsReport>({ path: `/admin/website-analytics?days=${days}`, token: await token() });
+      setError(!result.ok);
+      return result.ok ? result.value : null;
+    } catch { setError(true); return null; }
+  }, [days, token]);
+  const cached = useCachedResource(`analytics:${days}`, load);
+  const report = cached.value;
+  const loading = cached.refreshing && report === null;
   const exportReport = () => {
     if (!report) return;
     const link = document.createElement("a");
@@ -125,9 +122,9 @@ function Reports() {
   };
   return <>
     <ThisBrowser />
-    <div className="website-analytics-controls"><label>Period <select value={days} onChange={e => setDays(Number(e.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label><button type="button" className="btn btn-small" disabled={loading} onClick={() => setRefresh(n => n + 1)}>Refresh</button><button type="button" className="btn btn-small" disabled={!report} onClick={exportReport}>Export report</button></div>
+    <div className="website-analytics-controls"><label>Period <select value={days} onChange={e => setDays(Number(e.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label><RefreshStamp asOf={cached.asOf} refreshing={cached.refreshing} fromCache={cached.fromCache} onRefresh={() => void cached.refresh()} /><button type="button" className="btn btn-small" disabled={!report} onClick={exportReport}>Export report</button></div>
     {loading && <p role="status">Loading website analytics…</p>}
-    {error && <p role="alert">Analytics could not be loaded. Retry, or check that the website analytics database migration has been applied.</p>}
+    {error && report === null && <p role="alert">Analytics could not be loaded. Retry, or check that the website analytics database migration has been applied.</p>}
     {report && <>
       {report.truncated && <p role="status">This period exceeds 20,000 events. Figures below cover the most recent 20,000 events only; choose a shorter period for a complete report.</p>}
       {report.totalEvents === 0 && <p className="website-analytics-note">No events in this period. Measurements start when visitors allow analytics. Earlier visits cannot be recovered.</p>}
