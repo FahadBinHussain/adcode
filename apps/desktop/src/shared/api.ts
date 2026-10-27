@@ -620,6 +620,7 @@ export const CHANNELS = {
   aiRenameSession: "ai:rename-session",
   aiDeleteSession: "ai:delete-session",
   aiPinSession: "ai:pin-session",
+  aiReorderPinnedSessions: "ai:reorder-pinned",
   aiClearSessions: "ai:clear-sessions",
   aiCheckKey: "ai:check-key",
   aiQuickConnect: "ai:quick-connect",
@@ -2172,6 +2173,11 @@ export interface AdcodeApi {
     remove(id: string): Promise<readonly ChatSessionView[]>;
     /** Pin to the top of History (true) or drop the pin (false); last pinned first. */
     pin(id: string, pinned: boolean): Promise<readonly ChatSessionView[]>;
+    /**
+     * Seat the pinned conversations in this order, dragged first. The order names every
+     * pin exactly once; the main process refuses anything else rather than guessing.
+     */
+    reorderPinned(order: readonly string[]): Promise<readonly ChatSessionView[]>;
     clear(): Promise<readonly ChatSessionView[]>;
     /** The conversation being added to, for the strip that says what is remembered. */
     current(): Promise<ChatSessionView | null>;

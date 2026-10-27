@@ -104,6 +104,36 @@ export function sortSessions(sessions: readonly ChatSession[]): ChatSession[] {
 }
 
 /**
+ * Seat the pinned conversations in the order the user dragged them into.
+ *
+ * The pin timestamps are what order the pinned group, so there is no second field for a
+ * manual rank: a new order is written by handing each pin the timestamp that says it -
+ * the first name in the list gets the newest one, and they descend from there. Every
+ * reader of `pinnedAt` (the list, the groups, a search) then agrees without being taught
+ * a second rule.
+ *
+ * The order has to name every pinned conversation exactly once. Anything else - a name
+ * that is not pinned, a name twice, a pin left out - throws rather than guessing, because
+ * half an order silently rearranges whichever conversations it failed to mention.
+ */
+export function reorderPinned(sessions: readonly ChatSession[], order: readonly string[]): ChatSession[] {
+  const pinnedIds = new Set(sessions.filter((one) => one.pinnedAt !== undefined).map((one) => one.id));
+  const listed = new Set(order);
+  if (order.length !== pinnedIds.size || listed.size !== order.length || [...pinnedIds].some((id) => !listed.has(id))) {
+    throw new Error("the order must name every pinned conversation exactly once");
+  }
+
+  // Above the newest current pin, so the rewritten stamps land strictly inside the range
+  // the rest of the app already produces; the previous top is then simply in the past.
+  const top = sessions.reduce((max, one) => Math.max(max, one.pinnedAt ?? 0), 0);
+  const seat = new Map(order.map((id, index) => [id, top - index]));
+  return sessions.map((one) => {
+    const at = seat.get(one.id);
+    return at === undefined ? one : { ...one, pinnedAt: at };
+  });
+}
+
+/**
  * Sessions matching a query.
  *
  * Searches the messages, not just the title. Somebody looking for the conversation where

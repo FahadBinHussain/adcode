@@ -5,6 +5,7 @@ import {
   summaryCoverage,
   withSummary,
   pruneSessions,
+  reorderPinned,
   searchSessions,
   sortSessions,
   titleFor,
@@ -99,6 +100,30 @@ describe("sortSessions", () => {
     ];
     // The pins are ordered by pin time (40 above 30), not by what the transcript says.
     expect(sortSessions(all).map((one) => one.id)).toEqual(["pinned-old", "pinned-new"]);
+  });
+});
+
+describe("reorderPinned", () => {
+  const pinned = (id: string, at: number): ChatSession => ({ ...session(id, 1), pinnedAt: at });
+
+  it("writes the dragged order as pin timestamps, so the list keeps agreeing", () => {
+    const all = [pinned("a", 90), pinned("b", 70), pinned("c", 50), session("free", 40)];
+    const reordered = reorderPinned(all, ["c", "a", "b"]);
+    // The first name in the order gets the newest pin: the array keeps its shape, but
+    // c now carries the top timestamp, so the list reads c, a, b.
+    expect(reordered.map((one) => one.id)).toEqual(["a", "b", "c", "free"]);
+    expect(reordered.map((one) => one.pinnedAt)).toEqual([89, 88, 90, undefined]);
+    expect(sortSessions(reordered).map((one) => one.id)).toEqual(["c", "a", "b", "free"]);
+    // The unpinned conversation is left exactly as it was.
+    expect(reordered.find((one) => one.id === "free")).toBe(all[3]);
+  });
+
+  it("refuses an order that does not name every pin exactly once", () => {
+    const all = [pinned("a", 90), pinned("b", 70), session("free", 40)];
+    expect(() => reorderPinned(all, ["a"])).toThrow(/exactly once/);
+    expect(() => reorderPinned(all, ["a", "a"])).toThrow(/exactly once/);
+    expect(() => reorderPinned(all, ["a", "b", "free"])).toThrow(/exactly once/);
+    expect(() => reorderPinned(all, [])).toThrow(/exactly once/);
   });
 });
 

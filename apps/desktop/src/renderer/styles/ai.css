@@ -4326,3 +4326,43 @@ input[type="checkbox"]:checked + .chat-question-mark::after { content: "✓"; }
 .chat-quick-action.chat-quick-continue[hidden] {
   display: none;
 }
+
+/*
+ * The handle a pinned conversation is dragged by. Faint until the row is under the
+ * pointer, so the list still reads as a list of titles rather than a column of handles.
+ */
+.chat-history-grip {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+
+.chat-history-grip svg { width: 12px; height: 12px; stroke-width: 1.8; }
+
+.chat-history-row:hover .chat-history-grip,
+.chat-history-grip:focus-visible { opacity: 1; }
+
+.chat-history-grip:hover { background: var(--bg-active); color: var(--text-primary); }
+
+/*
+ * The pin in flight, and the row that will take it. The file tree's own drop marker
+ * keys off [data-drop-target], so this outline is drawn only by the pin drag - neither
+ * gesture can paint the other's state.
+ */
+.chat-history-row[data-dragging="true"] { opacity: 0.45; }
+
+.chat-history-row[data-pinned-drop="true"] {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  background: var(--bg-selected);
+}
+
+:root[data-reduced-motion="true"] .chat-history-grip { transition: none; }
