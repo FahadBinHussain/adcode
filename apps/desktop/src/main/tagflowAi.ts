@@ -120,9 +120,15 @@ export async function submitTagflowFeedback(raw: unknown): Promise<TagflowFeedba
 }
 
 export async function readTagflowAllowance(): Promise<TagflowAllowanceView | null> {
+  // The whole read has one deadline, sign-in refresh included. Reported 2026-10-27: AI usage
+  // sat on "Checking included AI allowance…" because only the fetch itself had a timeout.
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("allowance timed out")), 12_000); });
   try {
-    const response = await fetch(`${apiBaseUrl()}/ai/tagflow/usage`, { headers: { authorization: `Bearer ${await token()}` }, signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return null;
-    return await response.json() as TagflowAllowanceView;
-  } catch { return null; }
+    return await Promise.race([deadline, (async () => {
+      const response = await fetch(`${apiBaseUrl()}/ai/tagflow/usage`, { headers: { authorization: `Bearer ${await token()}` }, signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) return null;
+      return await response.json() as TagflowAllowanceView;
+    })()]);
+  } catch { return null; } finally { clearTimeout(timer); }
 }

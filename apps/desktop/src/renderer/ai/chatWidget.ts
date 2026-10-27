@@ -110,7 +110,7 @@ import { openUsageDialog } from "./usageDialog.ts";
 import { firstBuildPrompt, looksLikeBuildRequest } from "../../shared/firstBuild.ts";
 import { BUY_TOKENS_URL } from "../../shared/tagflow.ts";
 import { createLimitPauseCard, parseLimitPause } from "./limitPause.ts";
-import { ArrowDown, ArrowRight, CircleAlert, Folder, Maximize2 } from "lucide";
+import { AppWindow, ArrowDown, ArrowRight, CalendarClock, CircleAlert, Folder, Maximize2, Mic, Users, type IconNode } from "lucide";
 
 export interface ChatWidget {
   readonly element: HTMLElement;
@@ -1996,7 +1996,32 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   livePreviewButton.className = "chat-team-button";
   livePreviewButton.textContent = "Live preview";
   livePreviewButton.addEventListener("click", () => { void chatPreview.start(); });
-  toolsMenu.append(livePreviewButton, manualTeam, scheduleMessage, voiceButton);
+  /*
+   * Each tool as a menu row: icon, name, and what it does. Reported 2026-10-27: the rows
+   * sat at different indents and the voice button was a lone microphone with no name.
+   */
+  const toolRow = (button: HTMLButtonElement, icon: IconNode, label: string, hint: string): HTMLButtonElement => {
+    button.className = button.className.replace("chat-team-button", "composer-tools-item");
+    button.setAttribute("role", "menuitem");
+    const text = document.createElement("span");
+    text.className = "composer-tools-text";
+    const name = document.createElement("span");
+    name.className = "composer-tools-name";
+    name.textContent = label;
+    const detail = document.createElement("span");
+    detail.className = "composer-tools-hint";
+    detail.textContent = hint;
+    text.append(name, detail);
+    button.replaceChildren(createIcon(icon), text);
+    return button;
+  };
+  toolsMenu.setAttribute("role", "menu");
+  toolsMenu.append(
+    toolRow(livePreviewButton, AppWindow, "Live preview", "Run the project and watch it update"),
+    toolRow(manualTeam, Users, "Team", "Split this task across AI roles"),
+    toolRow(scheduleMessage, CalendarClock, "Schedule", "Send this message later"),
+    toolRow(voiceButton, Mic, "Dictate", "Speak instead of typing"),
+  );
   composerTools.append(toolsLabel, toolsMenu);
   toolsMenu.addEventListener("click", () => { composerTools.open = false; });
   document.addEventListener("pointerdown", event => {

@@ -21,7 +21,7 @@ import { askThemed } from "../dialogs/confirmDialog.ts";
 import { button, el, openFormModal } from "../dialogs/formDialog.ts";
 import { createUsageActivity } from "./usageActivityView.ts";
 import { allowanceSummary } from "./allowanceSummary.ts";
-import { BUY_TOKENS_URL, UNLIMITED_REQUESTS_PER_MINUTE, creditWindowSummary, paidTokensSummary, untilText, type CreditsAllowance } from "../../shared/tagflow.ts";
+import { BUY_TOKENS_URL, UNLIMITED_REQUESTS_PER_MINUTE, aiPlanName, creditWindowSummary, untilText, type CreditsAllowance, type TagflowAllowanceView } from "../../shared/tagflow.ts";
 import { openAudienceProfile } from "./audienceProfile.ts";
 
 const RANGE_KEY = "adcode.usage.range";
@@ -163,7 +163,7 @@ export function openUsageDialog(): Promise<void> {
           const paid = view.tokens?.enabled === true ? view.tokens : null;
           allowance.replaceChildren(...(paid === null
             ? [el("strong", "", "Unlimited included AI"), el("p", "usage-note", "No ADCode token, request, or credit allowance. Provider availability and model context limits still apply.")]
-            : [el("strong", "", "Included AI"), el("p", "usage-note", paidTokensSummary(paid, Date.now())), button("Buy tokens", "ad-btn ad-btn-tertiary", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"))]));
+            : [includedSplit(paid, view.usage.requests)]));
           allowanceHelp.hidden = true;
           return;
         }
@@ -365,4 +365,46 @@ export function openUsageDialog(): Promise<void> {
     void refresh();
     tabButtons.find((tab) => tab.dataset["range"] === range)?.focus();
   });
+}
+
+/**
+ * Tagflow and Heabsy, side by side. Reported 2026-10-27: usage read as one pool, while the
+ * two work differently - Tagflow has no ADCode limit, Heabsy has a weekly allowance, a plan
+ * and purchased tokens.
+ */
+function includedSplit(paid: NonNullable<TagflowAllowanceView["tokens"]>, requestsToday: number): HTMLElement {
+  const now = Date.now();
+  const split = el("div", "usage-split");
+  const tagflow = el("section", "usage-split-card");
+  tagflow.dataset["kind"] = "tagflow";
+  tagflow.append(
+    el("span", "usage-split-name", "Tagflow AI"),
+    el("strong", "usage-split-value", "Unlimited"),
+    el("span", "usage-stat-detail", `No ADCode limit · ${requestsToday.toLocaleString()} included AI requests today`),
+  );
+  const plan = aiPlanName(paid.plan, now);
+  const free = paid.free;
+  const used = Math.max(0, free.used + free.held);
+  const heabsy = el("section", "usage-split-card");
+  heabsy.dataset["kind"] = "heabsy";
+  heabsy.dataset["out"] = String(free.remaining <= 0 && paid.purchased <= 0);
+  const progress = el("progress", "ad-progress");
+  progress.max = Math.max(1, free.limit);
+  progress.value = Math.min(free.limit, used);
+  progress.setAttribute("aria-label", "Heabsy tokens used this week");
+  const refill = free.resetsAt === null ? "Your week starts with your first Heabsy request" : `Refills in ${untilText(free.resetsAt, now)}`;
+  heabsy.append(
+    el("span", "usage-split-name", plan === null ? "Heabsy models · Free" : `Heabsy models · ${plan} plan`),
+    el("strong", "usage-split-value", `${formatTokens(Math.max(0, free.remaining))} left`),
+    progress,
+    el("span", "usage-stat-detail", `${formatTokens(used)} of ${formatTokens(free.limit)} this week · ${refill}${paid.purchased > 0 ? ` · then ${formatTokens(paid.purchased)} purchased` : ""}`),
+  );
+  const actions = el("div", "usage-split-actions");
+  actions.append(
+    button(plan === null ? "Upgrade plan" : "Manage plan", "ad-btn ad-btn-secondary", () => void window.open(`${BUY_TOKENS_URL}#plans`, "_blank", "noopener")),
+    button("Buy tokens", "ad-btn ad-btn-tertiary", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener")),
+  );
+  heabsy.append(actions);
+  split.append(tagflow, heabsy);
+  return split;
 }
