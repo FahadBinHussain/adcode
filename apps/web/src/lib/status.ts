@@ -19,6 +19,7 @@ export {
   LEVEL_LABELS,
   parseStatusView,
   type StatusDay,
+  type StatusCandle,
   type StatusIncident,
   type StatusIncidentUpdate,
   type StatusModel,

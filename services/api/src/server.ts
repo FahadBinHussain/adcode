@@ -949,8 +949,21 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
       const days = Math.min(90, daysFrom(url, 30));
       const end = Math.floor(clock.now() / 86400000) * 86400000 + 86400000;
       const start = end - days * 86400000;
-      const result = await options.websiteAnalytics.read(start, end);
-      send(res, 200, summarizeWebsiteEvents(result.events, start, end, result.truncated), { ...cors, "cache-control": "no-store" });
+      const now = clock.now();
+      const baselineEnd = now + 1 - 86400000, baselineStart = start - 86400000;
+      const baselineAvailable = baselineStart >= now - 90 * 86400000;
+      const [result, baseline] = await Promise.all([
+        options.websiteAnalytics.read(start, now + 1),
+        baselineAvailable ? options.websiteAnalytics.read(baselineStart, baselineEnd).catch(() => null) : Promise.resolve(null),
+      ]);
+      const previous = baseline === null ? null : summarizeWebsiteEvents(baseline.events, baselineStart, baselineEnd, baseline.truncated);
+      send(res, 200, { ...summarizeWebsiteEvents(result.events, start, end, result.truncated), dayComparison: {
+        asOf: baselineEnd,
+        reason: result.truncated || baseline?.truncated ? "partial-data" : !baselineAvailable ? "retention-limit" : baseline === null ? "unavailable" : null,
+        previous: result.truncated || previous?.truncated ? null : previous === null ? null : {
+          pageViews: previous.pageViews, sessions: previous.sessions, installSessions: previous.installSessions, errorCount: previous.errorCount,
+        },
+      } }, { ...cors, "cache-control": "no-store" });
       return;
     }
 
@@ -1074,7 +1087,12 @@ export function createRequestHandler(options: ApiOptions = {}): RequestHandler {
     if (path === "/v1/admin/growth" && req.method === "GET") {
       const now = clock.now();
       await store.writeAudit({ adminUid: auth.uid, action: "read-growth", subjectUid: "*", at: now });
-      send(res, 200, { ...growthToWire(await store.growthStats(now)), asOf: now }, { ...cors, "cache-control": "no-store" });
+      const [stats, previous] = await Promise.all([
+        store.growthStats(now), store.growthDayBaseline?.(now - 86400000).catch(() => null) ?? Promise.resolve(null),
+      ]);
+      send(res, 200, { ...growthToWire(stats), asOf: now, dayComparison: { asOf: now - 86400000,
+        previous: previous === null ? null : { ...previous, creditedMicros: previous.creditedMicros.toString(), paidOutMicros: previous.paidOutMicros?.toString() ?? null },
+      } }, { ...cors, "cache-control": "no-store" });
       return;
     }
 

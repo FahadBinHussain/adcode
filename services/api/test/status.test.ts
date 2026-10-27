@@ -258,7 +258,7 @@ describe("assembleStatusView", () => {
     expect(view.models[0]).toMatchObject({ state: "operational", lastActiveDay: day(2) });
   });
 
-  it("reads overall health from models when no incident is active", () => {
+  it("reports partial degradation when one model fails and another is working", () => {
     const view = assembleStatusView({
       now,
       days: 30,
@@ -270,7 +270,7 @@ describe("assembleStatusView", () => {
       updates: [],
     });
     expect(view.overall).toEqual({
-      state: "outage",
+      state: "degraded",
       title: "One model is failing requests",
       activeIncidents: 0,
     });

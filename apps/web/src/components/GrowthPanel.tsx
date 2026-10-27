@@ -6,6 +6,8 @@ import { TimeChart } from "@/components/charts/TimeChart";
 import { apiFetch } from "@/lib/api";
 import { buildPost, DEFAULT_SHARE, dollars, MILESTONE_LABELS, parseGrowth, percent, SHARE_METRICS, shareLine, xIntentUrl, type Growth, type GrowthFunnel, type ShareMetric } from "@/lib/growth";
 import { SITE } from "@/lib/site";
+import { DailyChange } from "@/components/DailyChange";
+import type { GrowthDayValues } from "@/lib/growth";
 
 /**
  * How many people use ADCode and how many ads it showed - and a way to post it.
@@ -54,22 +56,22 @@ export function GrowthPanel() {
 }
 
 function GrowthReport({ growth }: { growth: Growth }) {
-  const tiles: [string, string, string][] = [
+  const tiles: [string, string, string, keyof GrowthDayValues][] = [
     [
       growth.developers.toLocaleString(),
       "Developers",
       growth.accounts === null
         ? `+${growth.joined7d.toLocaleString()} this week · +${growth.joined30d.toLocaleString()} in 30 days`
-        : `Did something at least once · ${growth.accounts.toLocaleString()} accounts in all · +${growth.joined7d.toLocaleString()} first seen in 7 days`,
+        : `Did something at least once · ${growth.accounts.toLocaleString()} accounts in all · +${growth.joined7d.toLocaleString()} first seen in 7 days`, "developers",
     ],
-    [growth.active1d.toLocaleString(), "Active, last 24 hours", "Seen in the past 24 hours - a rolling window, not the UTC day"],
+    [growth.active1d.toLocaleString(), "Active, last 24 hours", "Seen in the past 24 hours - a rolling window, not the UTC day", "active1d"],
     growth.returning7d === null
-      ? [growth.active7d.toLocaleString(), "Active, last 7 days", "Rolling 7 days"]
-      : [growth.returning7d.toLocaleString(), "Came back, last 7 days", `Of ${growth.active7d.toLocaleString()} active - seen again at least a day after first using the editor`],
-    [growth.active30d.toLocaleString(), "Active, last 30 days", "Rolling 30 days"],
-    [growth.adsShown.toLocaleString(), "Ads shown", `${growth.adsShown7d.toLocaleString()} in 7 days · ${growth.clicks.toLocaleString()} clicks`],
-    [dollars(growth.creditedMicros), "Earned by developers", "Credited from every billed view and click - not all of it withdrawn"],
-    ...(growth.paidOutMicros === null ? [] : [[dollars(growth.paidOutMicros), "Paid out", "Withdrawals actually sent to developers"] as [string, string, string]]),
+      ? [growth.active7d.toLocaleString(), "Active, last 7 days", "Rolling 7 days", "active7d"]
+      : [growth.returning7d.toLocaleString(), "Came back, last 7 days", `Of ${growth.active7d.toLocaleString()} active - seen again at least a day after first using the editor`, "returning7d"],
+    [growth.active30d.toLocaleString(), "Active, last 30 days", "Rolling 30 days", "active30d"],
+    [growth.adsShown.toLocaleString(), "Ads shown", `${growth.adsShown7d.toLocaleString()} in 7 days · ${growth.clicks.toLocaleString()} clicks`, "adsShown"],
+    [dollars(growth.creditedMicros), "Earned by developers", "Credited from every billed view and click - not all of it withdrawn", "creditedMicros"],
+    ...(growth.paidOutMicros === null ? [] : [[dollars(growth.paidOutMicros), "Paid out", "Withdrawals actually sent to developers", "paidOutMicros"] as [string, string, string, keyof GrowthDayValues]]),
   ];
   // Fields this build reads that the API did not send: the report is from an older API or
   // an unapplied migration, and its numbers follow the older rules.
@@ -86,10 +88,11 @@ function GrowthReport({ growth }: { growth: Growth }) {
         </p>
       )}
       <div className="admin-tiles growth-tiles">
-        {tiles.map(([value, label, note]) => (
-          <div className="admin-tile" key={label}><strong>{value}</strong><span>{label}</span><small>{note}</small></div>
+        {tiles.map(([value, label, note, key]) => (
+          <div className="admin-tile" key={label}><strong>{value}</strong><span>{label}</span><DailyChange current={growth[key]} previous={growth.dayComparison?.previous?.[key]} /><small>{note}</small></div>
         ))}
       </div>
+      <p className="website-analytics-note">Compared with the same time yesterday. Seven- and 30-day windows keep their length; totals stop at each cutoff. “New” means the earlier value was zero.</p>
       <p className="website-analytics-note">
         A developer is an account that fetched an ad, reported editor activity or reached a first-session milestone at least once; an account that never did - most are web-only, such as advertisers - is counted only in the total. A developer joins the first time they are seen, not when the account was made, so somebody who signed up on the website and opened the editor days later is new on that day. Came back means seen again at least a day after first being seen - the number that says whether people stay. An ad shown means a sponsored card was seen and billed, not merely fetched. Earned is what developers were credited; paid out is what was withdrawn.
       </p>

@@ -75,7 +75,7 @@ export async function handleAnnounce(deps: AnnounceDeps, adminUid: string, raw: 
     const keys = Object.keys(fields).filter((key) => key !== "topic");
     if (keys.length === 1 && keys[0] === "performance" && fields["performance"] === true) {
       // The report is the status page's own measurement, never typed in: one per UTC day at most.
-      const view = await readStatusView({ store: deps.store, clock: deps.clock }, MODEL_REPORT_DAYS);
+      const view = await readStatusView({ store: deps.store, clock: deps.clock }, MODEL_REPORT_DAYS, { daily: true });
       const lines = modelReportLines(view.models);
       if (lines.length === 0) return { status: 409, body: { error: "no-model-data" } };
       const day = new Date(view.asOf).toISOString().slice(0, 10);

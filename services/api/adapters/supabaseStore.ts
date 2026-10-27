@@ -461,6 +461,15 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
       };
     },
 
+    async growthDayBaseline(at) {
+      const raw = await scalar<Record<string, number | string | null>>("growthDayBaseline", db => db.rpc("read_growth_day_baseline", { p_at: at }));
+      return {
+        developers: Number(raw["developers"]), active1d: Number(raw["active1d"]), active7d: Number(raw["active7d"]),
+        active30d: Number(raw["active30d"]), returning7d: Number(raw["returning7d"]), adsShown: Number(raw["adsShown"]),
+        creditedMicros: toMicros(raw["creditedMicros"]), paidOutMicros: raw["paidOutMicros"] == null ? null : toMicros(raw["paidOutMicros"]),
+      };
+    },
+
     async statsForCampaign(campaignId): Promise<CampaignStats> {
       // Aggregated in the database. The in-memory store folds every receipt in JavaScript,
       // which is correct for a test double and would mean shipping the whole receipts
@@ -858,6 +867,14 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
           .order("created_at", { ascending: false }),
       );
       return rows.map(toCreditOrder);
+    },
+
+    async recordReceiptPayment(payment) {
+      await scalar("recordReceiptPayment", (db) => db.rpc("email_record_purchase_payment", {
+        p_payment: payment.paymentId, p_webhook: payment.webhookId, p_subscription: payment.subscriptionId,
+        p_order: payment.orderId, p_customer: payment.customerId, p_amount: payment.amountMinor,
+        p_currency: payment.currency, p_paid_at: payment.paidAt, p_received_at: payment.receivedAt,
+      }));
     },
 
     async applyCreditEvent(event) {
@@ -1276,6 +1293,13 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
         p_items: items.map((item) => ({ day, provider: item.provider, model: item.model, outcome: item.outcome, ms: item.ms })),
       });
       if (error !== null) fail("recordModelOutcomes", error);
+    },
+
+    async modelStatusBuckets(from, to) {
+      const { data, error } = await (await lazy()).rpc("read_model_status_buckets", { p_from: from, p_to: to });
+      if (error !== null) fail("modelStatusBuckets", error);
+      if (!Array.isArray(data)) throw new Error("Invalid model status buckets");
+      return data as import("../src/statusTelemetry.ts").StatusBucketRow[];
     },
 
     async modelOutcomesSince(day) {

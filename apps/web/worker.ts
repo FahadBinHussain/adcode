@@ -16,8 +16,9 @@ import { withClientCancellation } from "./src/lib/clientCancellation";
 
 export default {
   /*
-   * Every quarter hour: the status watcher and its alerts, so "a model is failing" arrives within
-   * minutes. The return campaign and announcements keep their hourly pace, on the hour's tick.
+   * Every quarter hour: new advertiser welcomes, purchase receipts, the status watcher
+   * and its alerts. The return campaign and announcements keep their hourly pace, on
+   * the hour's tick.
    */
   async scheduled(controller: { scheduledTime: number }): Promise<void> {
     const status = await runScheduledStatus(controller.scheduledTime);

@@ -316,5 +316,6 @@ export interface WebsiteAnalyticsReport {
   /** Invite-page visits by the loop that sent them (`?from=`). Absent from a server older than Growth > Loops. */
   invitePages?: Ranking[];
   metrics: { name: string; samples: number; p75: number | null }[];
+  dayComparison?: { asOf: number; reason: "partial-data" | "retention-limit" | "unavailable" | null; previous: { pageViews: number; sessions: number; installSessions: number; errorCount: number } | null };
 }
 export interface Ranking { label: string; count: number }

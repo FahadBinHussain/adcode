@@ -13,14 +13,25 @@ async function setup() {
     verifier: { async verify(token) { return token === "owner" ? { uid: "owner", claims: { email: "owner@site.test", email_verified: true } } : token === "user" ? { uid: "user", claims: {} } : null; } },
     websiteAnalytics: {
       async append(events) { for (const e of events) if (!records.has(e.id)) records.set(e.id, e); },
-      async read() { return { events: [...records.values()], truncated: false }; },
+      async read(start, end) { return { events: [...records.values()].filter(e => e.occurredAt >= start && e.occurredAt < end), truncated: false }; },
     },
   });
   const post = (events: unknown[] = [event], requestOrigin = origin, agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0") => handler(new Request(`${origin}/v1/website-events`, { method: "POST", headers: { origin: requestOrigin, "content-type": "application/json", "user-agent": agent }, body: JSON.stringify(events) }));
-  const report = (token: string) => handler(new Request(`${origin}/v1/admin/website-analytics?days=7`, { headers: { authorization: `Bearer ${token}` } }));
+  const report = (token: string, days = 7) => handler(new Request(`${origin}/v1/admin/website-analytics?days=${days}`, { headers: { authorization: `Bearer ${token}` } }));
   return { records, post, report };
 }
 describe("website analytics routes", () => {
+  it("compares the same partial window a day earlier and excludes future events", async () => {
+    const api = await setup();
+    for (const [index, at] of [Date.UTC(2026,8,6,10),Date.UTC(2026,8,12,11),Date.UTC(2026,8,12,13),Date.UTC(2026,8,13,11),Date.UTC(2026,8,13,13)].entries()) {
+      api.records.set(String(index), { ...event, id: String(index), session: String(index), occurredAt: at, receivedAt: at });
+    }
+    const data = await (await api.report("owner")).json() as { pageViews: number; dayComparison: { previous: { pageViews: number }; asOf: number } };
+    expect(data.pageViews).toBe(3); expect(data.dayComparison.previous.pageViews).toBe(2);
+    expect(data.dayComparison.asOf).toBe(Date.UTC(2026,8,12,12)+1);
+    const long = await (await api.report("owner",90)).json() as { dayComparison: unknown };
+    expect(long.dayComparison).toMatchObject({ previous: null, reason: "retention-limit" });
+  });
   it("collects anonymous events but only lets verified admins read reports", async () => {
     const api = await setup();
     expect((await api.post()).status).toBe(200);

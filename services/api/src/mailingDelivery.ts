@@ -83,7 +83,7 @@ export async function runMailingBatch(options: MailerOptions): Promise<{ status:
 }
 
 /** One Resend send. Retryable: rate limits, server errors and ambiguous network failures. */
-async function resendEmail(fetcher: typeof fetch, apiKey: string, idempotencyKey: string, body: Record<string, unknown>): Promise<SendResult> {
+export async function resendEmail(fetcher: typeof fetch, apiKey: string, idempotencyKey: string, body: Record<string, unknown>): Promise<SendResult> {
   try {
     const response = await fetcher("https://api.resend.com/emails", {
       method: "POST",
@@ -94,6 +94,15 @@ async function resendEmail(fetcher: typeof fetch, apiKey: string, idempotencyKey
     if (response.ok) {
       const data = await response.json() as { id?: string };
       return typeof data.id === "string" ? { providerId: data.id } : { retry: true, code: "invalid-provider-response" };
+    }
+    if (response.status === 409) {
+      // An earlier ambiguous send can still be running under this key. Retry only
+      // that documented conflict; a changed/invalid payload must stop for review.
+      let name: unknown;
+      try { name = (await response.json() as { name?: unknown }).name; } catch { /* Unknown conflict stays permanent. */ }
+      return name === "concurrent_idempotent_requests"
+        ? { retry: true, code: "provider-idempotency-in-progress" }
+        : { retry: false, code: "provider-409" };
     }
     return { retry: response.status === 429 || response.status >= 500, code: "provider-" + response.status };
   } catch {

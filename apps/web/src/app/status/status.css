@@ -12,6 +12,8 @@
  */
 
 .status-page {
+  /* Off-screen tooltip text must not widen the page. */
+  overflow-x: clip;
   --status-ok: var(--success);
   --status-warn: var(--warn);
   --status-bad: var(--danger);
@@ -271,7 +273,7 @@
 .status-bars {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(2px, 1fr);
+  grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
   align-items: end;
   height: 34px;
@@ -306,7 +308,9 @@
   background: var(--text);
   color: var(--surface);
   font: 400 11px/1.5 var(--font-mono);
-  white-space: nowrap;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 40px));
+  white-space: normal;
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 4px);
@@ -322,6 +326,43 @@
   right: 0;
   left: auto;
   transform: translate(0, 4px);
+}
+
+.status-candle-details {
+  margin-top: 10px;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.status-candle-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.status-candle-details summary::-webkit-details-marker { display: none; }
+.status-candle-details summary::after { content: "+"; font-size: 18px; }
+.status-candle-details[open] summary::after { content: "−"; }
+.status-candle-details summary:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+
+.status-candle-details ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-candle-details li {
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline);
+  overflow-wrap: anywhere;
+  font: 400 11px/1.8 var(--font-mono);
 }
 
 .status-row-foot {
@@ -955,22 +996,78 @@
 /* ── Narrow screens ──────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
+  .status-section { margin-top: 32px; }
+
+  .status-row {
+    min-width: 0;
+    padding: 16px 14px 10px;
+  }
+
   .status-banner {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr);
+    gap: 10px 12px;
+    padding: 18px 16px;
+  }
+
+  .status-banner-copy {
+    grid-column: 2;
+    overflow-wrap: anywhere;
   }
 
   .status-banner-time {
-    width: 100%;
-    margin-left: 24px;
+    grid-column: 2;
+    width: auto;
+    margin-left: 0;
     text-align: left;
   }
 
   .status-row-head,
   .status-section-head {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .status-row-name {
+    width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .status-row-meta { line-height: 1.8; }
+  .status-window { max-width: 100%; letter-spacing: 0; }
+  .status-candle-details li { font-size: 12px; }
+  .status-bars:has(.status-day:hover) .status-day:not(:hover) { opacity: 1; }
+
+  .status-row-foot {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "from to" "uptime uptime";
+    gap: 6px 10px;
+  }
+
+  .status-row-foot > :first-child { grid-area: from; }
+  .status-row-foot > :last-child { grid-area: to; }
+  .status-uptime { grid-area: uptime; }
+
+  .status-subscribe { gap: 20px; padding: 18px 16px; }
+  .status-subscribe .copy-field { min-width: 0; max-width: 100%; }
+  .status-subscribe .copy-value { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+  .status-subscribe .copy-button { min-height: 44px; padding-inline: 16px; }
+  .status-incident { min-width: 0; }
+  .status-incident-head { flex-wrap: wrap; gap: 8px; }
+  .status-incident h4, .status-update-body { overflow-wrap: anywhere; }
+
+  .status-subscription-actions { flex-wrap: wrap; }
+
+  .status-subscription-actions :is(a, button) { min-width: 0; }
+
+  .status-day-tip {
+    display: none;
   }
 
   .status-bars {
     height: 28px;
+    gap: 1px;
   }
 }

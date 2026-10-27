@@ -7,6 +7,7 @@ import { GrowthPanel } from "@/components/GrowthPanel";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { TimeChart } from "@/components/charts/TimeChart";
+import { DailyChange } from "@/components/DailyChange";
 import { apiFetch } from "@/lib/api";
 import { browserExcluded, setBrowserExcluded, type Ranking, type WebsiteAnalyticsReport } from "@/lib/websiteAnalytics";
 import "@/components/websiteAnalytics.css";
@@ -131,10 +132,13 @@ function Reports() {
       {report.truncated && <p role="status">This period exceeds 20,000 events. Figures below cover the most recent 20,000 events only; choose a shorter period for a complete report.</p>}
       {report.totalEvents === 0 && <p className="website-analytics-note">No events in this period. Measurements start when visitors allow analytics. Earlier visits cannot be recovered.</p>}
       <div className="admin-tiles">{[
-        ["Page views", report.pageViews.toLocaleString()], ["Sessions", report.sessions.toLocaleString()],
-        ["Install intent", report.sessions ? `${(report.installSessions / report.sessions * 100).toFixed(1)}%` : "—"],
-        ["Browser errors", report.errorCount.toLocaleString()],
-      ].map(([label, value]) => <div className="admin-tile" key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
+        { label: "Page views", value: report.pageViews.toLocaleString(), current: report.pageViews, previous: report.dayComparison?.previous?.pageViews },
+        { label: "Sessions", value: report.sessions.toLocaleString(), current: report.sessions, previous: report.dayComparison?.previous?.sessions },
+        { label: "Install intent", value: report.sessions ? `${(report.installSessions / report.sessions * 100).toFixed(1)}%` : "—", current: report.sessions ? report.installSessions / report.sessions : null,
+          previous: report.dayComparison?.previous?.sessions ? report.dayComparison.previous.installSessions / report.dayComparison.previous.sessions : null },
+        { label: "Browser errors", value: report.errorCount.toLocaleString(), current: report.errorCount, previous: report.dayComparison?.previous?.errorCount },
+      ].map(tile => <div className="admin-tile" key={tile.label}><strong>{tile.value}</strong><span>{tile.label}</span><DailyChange current={tile.current} previous={tile.previous} lowerIsBetter={tile.label === "Browser errors"} unavailableReason={report.dayComparison?.reason === "retention-limit" ? "The previous window reaches beyond the 90-day retention period. Choose 7 or 30 days." : report.dayComparison?.reason === "partial-data" ? "A comparison is unavailable because one window exceeds the event limit." : undefined} /></div>)}</div>
+      <p className="website-analytics-note">Changes compare the selected period so far with the same window shifted one day earlier, ending at the same time of day. Install intent shows relative percentage change, not percentage points. Comparisons are unavailable for partial reports or windows beyond retained history.</p>
       <details className="adm-method"><summary>How these figures are counted</summary><p className="website-analytics-note">Only visitors who allowed analytics are measured; how many declined is deliberately not recorded. Admin pages, administrators&apos; browsers, automated browsers and crawlers are excluded. A session ends after 30 minutes with nobody scrolling, clicking or typing, and is not a unique person; one that resumes later starts a new session with its own page view. Install intent means a session with a copied install command or download click, not a completed installation - website visits are not linked to installs. Events are dated by when they happened, in UTC days; the growth figures above use rolling windows instead (last 24 hours, 7 and 30 days). Traffic sources group the spellings of one place - t.co, x.com and twitter count as x, l.threads.com as threads. Raw events are kept for 90 days.</p></details>
       <section className="website-analytics-card"><h2>Traffic over time</h2><TimeChart days={report.daily.map(d => d.day)} series={[{ label: "Page views", color: "#78a9ff", values: report.daily.map(d => d.views) }, { label: "Sessions", color: "#55c9a2", values: report.daily.map(d => d.sessions) }]} summary={`Daily traffic: ${report.pageViews} page views and ${report.sessions} sessions in the selected period.`} /></section>
       <div className="website-analytics-grid">{report.funnels.map(funnel => <FunnelCard key={funnel.label} funnel={funnel} />)}</div>

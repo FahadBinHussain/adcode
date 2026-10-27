@@ -17,6 +17,7 @@ import { verifyWebhook, type WebhookHeaders } from "./billing.ts";
 import { parseProviderEvent } from "./providerEvents.ts";
 import { PLANS, type PlanId } from "./aiPlans.ts";
 import { TOKEN_ORDER_PREFIX } from "./paidTokens.ts";
+import { parseReceiptPayment } from "./purchaseReceiptPayments.ts";
 import type { Clock, Store } from "./store.ts";
 
 export interface FundingDeps {
@@ -53,6 +54,20 @@ export async function handleFundingWebhook(
     return { ok: false, status: 400, reason: "malformed" };
   }
 
+  // Persist actual signed charge facts even when subscription fulfilment arrives in
+  // another webhook. A journal failure must never hold back what the buyer paid for:
+  // fulfilment runs first, then the failure reaches the provider as a retryable server
+  // error, and the financial application below is idempotent across that retry.
+  const receiptPayment = parseReceiptPayment(parsed, headers.id ?? "", nowMs);
+  let journalFailed = false;
+  if (receiptPayment && deps.store.recordReceiptPayment) {
+    try { await deps.store.recordReceiptPayment(receiptPayment); } catch { journalFailed = true; }
+  }
+  const outcome = await fund(deps, parsed, headers, nowMs);
+  return journalFailed && outcome.ok ? { ok: false, status: 503, reason: "receipt-journal" } : outcome;
+}
+
+async function fund(deps: FundingDeps, parsed: unknown, headers: WebhookHeaders, nowMs: number): Promise<FundingOutcome> {
   const event = parseProviderEvent(parsed, headers.id ?? "");
   if (event === null) {
     // Not an event we fund on. 200, so the provider stops retrying something we are

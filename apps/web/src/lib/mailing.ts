@@ -4,9 +4,15 @@ import { runAnnouncementBatch, runMailingBatch, sendReportReply } from "@adcode/
 import { createSupabaseStatusAlertStore } from "@adcode/api/adapters/supabaseStatusAlertStore.ts";
 import { createSupabaseStore } from "@adcode/api/adapters/supabaseStore.ts";
 import { runStatusAlertBatch, runStatusWatch, sendStatusConfirmation } from "@adcode/api/src/statusAlerts.ts";
+import { createSupabaseAdvertiserWelcomeStore } from "@adcode/api/adapters/supabaseAdvertiserWelcomeStore.ts";
+import { runAdvertiserWelcomeBatch } from "@adcode/api/src/advertiserWelcome.ts";
+import { createSupabasePurchaseReceiptStore } from "@adcode/api/adapters/supabasePurchaseReceiptStore.ts";
+import { runPurchaseReceiptBatch } from "@adcode/api/src/purchaseReceipts.ts";
 
 export const mailingStore = createSupabaseMailingStore();
 export const statusAlertStore = createSupabaseStatusAlertStore();
+const advertiserWelcomeStore = createSupabaseAdvertiserWelcomeStore();
+const purchaseReceiptStore = createSupabasePurchaseReceiptStore();
 // The watcher reads the same model counts as /status; its own client, created on first use.
 const statusReadStore = createSupabaseStore();
 const siteOrigin = (): string => process.env["NEXT_PUBLIC_SITE_ORIGIN"] ?? "https://adcode.bluethenics.com";
@@ -41,10 +47,19 @@ export async function sendReportReplyEmail(input: { replyId: string; to: string;
 }
 
 /**
- * The status page's quarter-hourly job: judge every included model on the turns since the last
- * check, queue an alert for each change, then send what is due. Each half fails on its own.
+ * The status page's quarter-hourly job: welcome new advertisers, send purchase
+ * receipts, judge every included model on the turns since the last check, queue an
+ * alert for each change, then send what is due. Each part fails on its own.
  */
 export async function runScheduledStatus(now = Date.now()) {
+  const advertiserWelcomes = await runAdvertiserWelcomeBatch({
+    store: advertiserWelcomeStore, settings: () => mailingStore.settings(), ...keys(), siteOrigin: siteOrigin(),
+    render: async (...args) => (await import("@/emails/AdvertiserWelcome")).renderAdvertiserWelcome(...args),
+  }).catch((error: unknown) => ({ error: error instanceof Error ? error.message : "welcome failed" }));
+  const purchaseReceipts = await runPurchaseReceiptBatch({
+    store: purchaseReceiptStore, settings: () => mailingStore.settings(), ...keys(), siteOrigin: siteOrigin(),
+    render: async (...args) => (await import("@/emails/PurchaseReceipt")).renderPurchaseReceipt(...args),
+  }).catch((error: unknown) => ({ error: error instanceof Error ? error.message : "receipts failed" }));
   const watch = await runStatusWatch({ store: statusReadStore, alerts: statusAlertStore, siteOrigin: siteOrigin(), now })
     .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "watch failed" }));
   const alerts = await runStatusAlertBatch({
@@ -54,7 +69,7 @@ export async function runScheduledStatus(now = Date.now()) {
     siteOrigin: siteOrigin(),
     render: async (...args) => (await import("@/emails/StatusAlert")).renderStatusAlert(...args),
   }).catch((error: unknown) => ({ error: error instanceof Error ? error.message : "send failed" }));
-  return { watch, alerts };
+  return { watch, alerts, advertiserWelcomes, purchaseReceipts };
 }
 
 /** The one email an unconfirmed address can get, sent at once from noreply@. */
