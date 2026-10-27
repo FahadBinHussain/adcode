@@ -8,7 +8,7 @@ import "./adNetworksAdmin.css";
 
 export interface AdNetworkView extends AdNetworkConfig { keyConfigured: boolean; readiness: string }
 interface NetworksView { networks: AdNetworkView[]; credentialsManageable: boolean }
-interface TestView { creative?: ServedCreative | null; advertisements?: { id: string; name: string; headline: string; text: string; description: string }[] }
+interface TestView { sandbox?: boolean; creative?: ServedCreative | null; advertisements?: { id: string; name: string; headline: string; text: string; description: string }[] }
 type Request = <T>(path: string, method?: "GET" | "PUT" | "POST", body?: unknown) => Promise<T>;
 
 const providerName = (provider: AdNetworkProvider): string => ({ "http-json": "Generic JSON API", imprezia: "Imprezia", beehiiv: "beehiiv" })[provider];
@@ -22,14 +22,35 @@ export function payoutMicros(usd: string): string | null {
 }
 const usd = (micros: string): string => String(Number(micros) / 1_000_000);
 
+/** What users earn on, as the admin chose it: views, clicks, or both. */
+export type PayoutBasis = "view" | "click" | "both";
+export function payoutBasis(config: Pick<AdNetworkConfig, "viewPayoutMicros" | "clickPayoutMicros">): PayoutBasis {
+  const views = config.viewPayoutMicros !== "0", clicks = config.clickPayoutMicros !== "0";
+  return views && clicks ? "both" : clicks ? "click" : "view";
+}
+/** Turn the chosen basis and amounts into the two stored rates; the unchosen one pays nothing. */
+export function payoutRates(basis: PayoutBasis, viewUsd: string, clickUsd: string): { viewPayoutMicros: string; clickPayoutMicros: string } | null {
+  const views = basis === "click" ? "0" : payoutMicros(viewUsd), clicks = basis === "view" ? "0" : payoutMicros(clickUsd);
+  return views === null || clicks === null ? null : { viewPayoutMicros: views, clickPayoutMicros: clicks };
+}
+const isChat = (config: AdNetworkConfig): boolean => config.provider === "imprezia" && config.imprezia?.kind === "chat";
+const pays = (config: AdNetworkConfig): boolean => config.provider === "http-json" || isChat(config);
+export function payoutSummary(config: Pick<AdNetworkConfig, "viewPayoutMicros" | "clickPayoutMicros">): string {
+  const basis = payoutBasis(config);
+  if (basis === "view" && config.viewPayoutMicros === "0") return "Nothing yet";
+  const view = `$${usd(config.viewPayoutMicros)} per view`, click = `$${usd(config.clickPayoutMicros)} per click`;
+  return basis === "both" ? `${view} + ${click}` : basis === "click" ? click : view;
+}
+
 export function newAdNetwork(provider: AdNetworkProvider): AdNetworkConfig {
   const config: AdNetworkConfig = { id: "", name: provider === "http-json" ? "" : providerName(provider), provider, enabled: false, priority: 50, viewPayoutMicros: "0", clickPayoutMicros: "0" };
   if (provider === "beehiiv") return { ...config, beehiiv: { publicationId: "", offerId: "" } };
-  if (provider === "imprezia") return { ...config, imprezia: { kind: "app", id: "" } };
+  if (provider === "imprezia") return { ...config, imprezia: { kind: "chat", id: "" } };
   return { ...config, http: { serveUrl: "", verifyUrl: "", method: "POST", authHeader: "authorization", authPrefix: "Bearer ", requestTemplate: {}, creativePath: "", fields: { id: "", advertiser: "", headline: "", body: "", clickUrl: "", logoLight: "", logoDark: "" }, verifyTemplate: {}, verifiedPath: "", eventIdPath: "" } };
 }
 
-export function ProviderReadiness({ provider }: { provider: AdNetworkProvider }) {
+export function ProviderReadiness({ provider, chat = false }: { provider: AdNetworkProvider; chat?: boolean }) {
+  if (provider === "imprezia" && chat) return <p className="notice">Imprezia Chat Ads fill the desktop sponsored card when no direct campaign does. Paste the publisher API key from Imprezia&apos;s API Keys page. Only the project&apos;s language tags are sent, never anyone&apos;s code or prompts. A sandbox key (<code>api_pub_sandbox_…</code>) delivers Imprezia test ads and never pays users; switch to the live key for paid delivery. Views are reported to Imprezia, clicks go through its tracking link, and Imprezia&apos;s reporting is the record of revenue.</p>;
   if (provider === "imprezia") return <p className="notice">Use an Exchange-enabled serving key and the app bundle or domain provisioned by Imprezia. Test requests a non-billable Native ad preview. No win, billing or tracking notices are sent. Delivery stays disabled. Live desktop delivery requires approved inventory, privacy and tracking support, and an agreed billing and reconciliation process; a notice acknowledgement does not confirm revenue.</p>;
   if (provider === "beehiiv") return <p className="notice">beehiiv provides newsletter advertisement content. Test fetches a content preview for your publication and offer. These creatives aren&apos;t delivered to the desktop, and this connection can&apos;t be enabled for desktop payouts.</p>;
   return <p className="row-sub">Connect a documented JSON ad API. Serve and event verification URLs must share an HTTPS origin. User payouts are credited only after the provider verifies each view or click.</p>;
@@ -38,9 +59,9 @@ export function ProviderReadiness({ provider }: { provider: AdNetworkProvider })
 export function AdNetworkTable({ networks, selected, busy, onEdit, onTest }: { networks: readonly AdNetworkView[]; selected: string | null; busy: string | null; onEdit: (network: AdNetworkView) => void; onTest: (network: AdNetworkView) => void }) {
   if (networks.length === 0) return <p className="row-sub">No ad networks connected yet. Add a provider below.</p>;
   return <div className="admin-models-scroll" role="region" aria-label="Ad network connections" tabIndex={0}><table className="admin-models-table">
-    <thead><tr><th scope="col">Network</th><th scope="col">Status</th><th scope="col">Key</th><th scope="col">User payout / view</th><th scope="col">User payout / click</th><th scope="col">Actions</th></tr></thead>
+    <thead><tr><th scope="col">Network</th><th scope="col">Status</th><th scope="col">Key</th><th scope="col">Users paid</th><th scope="col">Actions</th></tr></thead>
     <tbody>{networks.map((network) => <tr key={network.id} aria-selected={selected === network.id}>
-      <td><strong>{network.name}</strong><small>{providerName(network.provider)} / {network.id}</small></td><td>{readinessLabel[network.readiness] ?? "Unknown"}</td><td>{network.keyConfigured ? "Configured" : "Not configured"}</td><td>${usd(network.viewPayoutMicros)}</td><td>${usd(network.clickPayoutMicros)}</td>
+      <td><strong>{network.name}</strong><small>{providerName(network.provider)}{isChat(network) ? " Chat Ads" : ""} / {network.id}</small></td><td>{readinessLabel[network.readiness] ?? "Unknown"}</td><td>{network.keyConfigured ? "Configured" : "Not configured"}</td><td>{pays(network) ? payoutSummary(network) : "Preview only"}</td>
       <td><div className="ad-network-actions"><button type="button" className="btn btn-small" onClick={() => onEdit(network)}>Edit</button><button type="button" className="btn btn-small" disabled={busy !== null || !network.keyConfigured || ["documentation-required", "inventory-required"].includes(network.readiness)} onClick={() => onTest(network)}>{busy === network.id ? "Testing…" : "Test saved connection"}</button></div></td>
     </tr>)}</tbody>
   </table></div>;
@@ -76,6 +97,7 @@ function SecretEditor({ network, manageable, request, onChange }: { network: AdN
 
 function NetworkEditor({ initial, saved, onSave, onCancel }: { initial: AdNetworkConfig; saved: boolean; onSave: (config: AdNetworkConfig) => Promise<void>; onCancel: () => void }) {
   const [draft, setDraft] = useState(initial);
+  const [basis, setBasis] = useState<PayoutBasis>(payoutBasis(initial));
   const [viewPay, setViewPay] = useState(usd(initial.viewPayoutMicros));
   const [clickPay, setClickPay] = useState(usd(initial.clickPayoutMicros));
   const [requestJson, setRequestJson] = useState(JSON.stringify(initial.http?.requestTemplate ?? {}, null, 2));
@@ -87,9 +109,9 @@ function NetworkEditor({ initial, saved, onSave, onCancel }: { initial: AdNetwor
   async function save(): Promise<void> {
     if (busy) return;
     setNotice(null);
-    const views = payoutMicros(viewPay), clicks = payoutMicros(clickPay);
-    if (views === null || clicks === null) { setNotice({ text: "Use a payout from $0 to $10, with at most six decimal places.", error: true }); return; }
-    let configured = { ...draft, id: draft.id.trim(), name: draft.name.trim(), viewPayoutMicros: views, clickPayoutMicros: clicks };
+    const rates = pays(draft) ? payoutRates(basis, viewPay, clickPay) : { viewPayoutMicros: "0", clickPayoutMicros: "0" };
+    if (rates === null) { setNotice({ text: "Use a payout from $0 to $10, with at most six decimal places.", error: true }); return; }
+    let configured = { ...draft, id: draft.id.trim(), name: draft.name.trim(), ...rates };
     if (draft.http) {
       try { configured = { ...configured, http: { ...draft.http, requestTemplate: JSON.parse(requestJson), verifyTemplate: JSON.parse(verifyJson) } }; }
       catch { setNotice({ text: "The request or verification template isn't valid JSON. Check it and try again.", error: true }); return; }
@@ -104,14 +126,14 @@ function NetworkEditor({ initial, saved, onSave, onCancel }: { initial: AdNetwor
   const mappingLabels: Record<keyof HttpAdNetworkConfig["fields"], string> = { id: "Creative ID", advertiser: "Advertiser name", headline: "Headline", body: "Body text (optional)", clickUrl: "Click destination URL", logoLight: "Light logo URL", logoDark: "Dark logo URL (optional)" };
   return <section className="admin-models-provider ad-network-editor">
     <header className="admin-card-head"><h3>{saved ? `Edit ${initial.name}` : `Add ${providerName(initial.provider)}`}</h3><button type="button" className="btn" disabled={busy} onClick={onCancel}>Close editor</button></header>
-    <ProviderReadiness provider={draft.provider} />
+    <ProviderReadiness provider={draft.provider} chat={isChat(draft)} />
     <form onSubmit={(event) => { event.preventDefault(); void save(); }} aria-label="Ad network settings">
       <fieldset disabled={busy}>
         <legend>Connection</legend><div className="tagflow-fields">
           <TextField label="Network ID" value={draft.id} pattern="[a-z][a-z0-9-]{1,39}" disabled={saved} hint="2–40 lowercase letters, numbers or hyphens. Starts with a letter." onChange={(id) => change({ id })} />
           <TextField label="Display name" value={draft.name} onChange={(name) => change({ name })} />
           <label className="tagflow-field"><span>Priority</span><input className="input" type="number" required min={0} max={100} step={1} value={draft.priority} onChange={(event) => change({ priority: event.target.valueAsNumber })} /><small>Lower numbers are tried first.</small></label>
-          <label className="admin-models-check"><input type="checkbox" checked={draft.enabled} disabled={draft.provider !== "http-json"} onChange={(event) => change({ enabled: event.target.checked })} /> Enable desktop delivery</label>
+          <label className="admin-models-check"><input type="checkbox" checked={draft.enabled} disabled={!pays(draft)} onChange={(event) => change({ enabled: event.target.checked })} /> Enable desktop delivery</label>
         </div>
       </fieldset>
       {draft.provider === "http-json" && draft.http && <>
@@ -136,8 +158,14 @@ function NetworkEditor({ initial, saved, onSave, onCancel }: { initial: AdNetwor
         </div></fieldset>
       </>}
       {draft.provider === "beehiiv" && <fieldset disabled={busy}><legend>Newsletter content preview</legend><div className="tagflow-fields"><TextField label="Publication ID" value={draft.beehiiv?.publicationId ?? ""} hint="The pub_ ID from beehiiv." onChange={(publicationId) => change({ beehiiv: { publicationId, offerId: draft.beehiiv?.offerId ?? "" } })} /><TextField label="Offer ID" value={draft.beehiiv?.offerId ?? ""} onChange={(offerId) => change({ beehiiv: { publicationId: draft.beehiiv?.publicationId ?? "", offerId } })} /></div></fieldset>}
-      {draft.provider === "imprezia" && <fieldset disabled={busy}><legend>Approved Exchange inventory</legend><div className="tagflow-fields"><label className="tagflow-field"><span>Inventory type</span><select className="select" value={draft.imprezia?.kind ?? "app"} onChange={(event) => change({ imprezia: { kind: event.target.value as "app" | "site", id: "" } })}><option value="app">App bundle</option><option value="site">Website domain</option></select></label><TextField label={draft.imprezia?.kind === "site" ? "Approved website domain" : "Approved app bundle"} value={draft.imprezia?.id ?? ""} hint="Use the exact inventory provisioned by Imprezia. Tests never generate earnings." onChange={(id) => change({ imprezia: { kind: draft.imprezia?.kind ?? "app", id } })} /></div></fieldset>}
-      {draft.provider === "http-json" && <fieldset disabled={busy}><legend>User payouts</legend><div className="tagflow-fields"><TextField label="Per verified view (USD)" type="number" value={viewPay} onChange={setViewPay} hint="Up to $10 per event, with at most six decimal places." /><TextField label="Per verified click (USD)" type="number" value={clickPay} onChange={setClickPay} /></div><p className="row-sub">Payout rates are saved with each ad delivery. Later rate changes apply to new deliveries.</p></fieldset>}
+      {draft.provider === "imprezia" && <fieldset disabled={busy}><legend>{isChat(draft) ? "Imprezia Chat Ads" : "Approved Exchange inventory"}</legend><div className="tagflow-fields"><label className="tagflow-field"><span>Integration</span><select className="select" value={draft.imprezia?.kind ?? "chat"} onChange={(event) => { const kind = event.target.value as "app" | "site" | "chat"; change({ imprezia: { kind, id: "" }, ...(kind === "chat" ? {} : { enabled: false }) }); }}><option value="chat">Chat Ads (publisher API key)</option><option value="app">Exchange preview: app bundle</option><option value="site">Exchange preview: website domain</option></select></label>{isChat(draft)
+        ? <TextField label="Placement ID (optional)" value={draft.imprezia?.id ?? ""} required={false} pattern="[A-Za-z0-9_-]{1,64}" hint="A label Imprezia registered for this slot, such as editor_sponsored_card. Leave blank for the default." onChange={(id) => change({ imprezia: { kind: "chat", id } })} />
+        : <TextField label={draft.imprezia?.kind === "site" ? "Approved website domain" : "Approved app bundle"} value={draft.imprezia?.id ?? ""} hint="Use the exact inventory provisioned by Imprezia. Tests never generate earnings." onChange={(id) => change({ imprezia: { kind: draft.imprezia?.kind ?? "app", id } })} />}</div></fieldset>}
+      {pays(draft) && <fieldset disabled={busy}><legend>User payouts</legend><div className="tagflow-fields">
+        <label className="tagflow-field"><span>Pay users per</span><select className="select" aria-label="Pay users per" value={basis} onChange={(event) => setBasis(event.target.value as PayoutBasis)}><option value="view">View</option><option value="click">Click</option><option value="both">View and click</option></select><small>Users earn only on what you choose here.</small></label>
+        {basis !== "click" && <TextField label="Per view (USD)" type="number" value={viewPay} onChange={setViewPay} hint="Up to $10 per event, with at most six decimal places." />}
+        {basis !== "view" && <TextField label="Per click (USD)" type="number" value={clickPay} onChange={setClickPay} hint="Up to $10 per event, with at most six decimal places." />}
+      </div><p className="row-sub">{isChat(draft) ? "A view counts once the card has been on screen; a click once it is opened. Imprezia reconciles what it pays ADCode in its own reports." : "User payouts are credited only after the provider verifies each view or click."} Payout rates are saved with each ad delivery, so a change applies to new deliveries.</p></fieldset>}
       <div className="ad-network-actions"><button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save connection"}</button></div>
     </form>
     {notice && <p className="notice" data-tone={notice.error ? "error" : "success"} role={notice.error ? "alert" : "status"}>{notice.text}</p>}
@@ -146,7 +174,7 @@ function NetworkEditor({ initial, saved, onSave, onCancel }: { initial: AdNetwor
 
 export function NetworkTestPreview({ result }: { result: TestView }) {
   if (result.advertisements) return <div className="ad-network-preview"><h4>Newsletter content preview</h4><p className="row-sub">Preview only. These advertisements haven&apos;t been delivered to desktop users.</p>{result.advertisements.length === 0 ? <p>No advertisements returned for this offer.</p> : result.advertisements.map((ad) => <article key={ad.id}><h5>{ad.headline || ad.name || "Untitled advertisement"}</h5><p>{ad.text || ad.description}</p></article>)}</div>;
-  return <div className="ad-network-preview"><h4>Connection test</h4>{result.creative ? <article><p className="row-sub">{result.creative.advertiser}</p><h5>{result.creative.headline}</h5>{result.creative.body && <p>{result.creative.body}</p>}<p className="row-sub">{result.creative.clickUrl}</p></article> : <p>The provider connected, but returned no ad for this test.</p>}<p className="row-sub">This preview creates no user delivery or payout.</p></div>;
+  return <div className="ad-network-preview"><h4>Connection test</h4>{result.sandbox && <p className="notice">Sandbox key: this is an Imprezia test ad. Sandbox deliveries never pay users.</p>}{result.creative ? <article><p className="row-sub">{result.creative.advertiser}</p><h5>{result.creative.headline}</h5>{result.creative.body && <p>{result.creative.body}</p>}<p className="row-sub">{result.creative.clickUrl}</p></article> : <p>The provider connected, but returned no ad for this test.</p>}<p className="row-sub">This preview creates no user delivery or payout.</p></div>;
 }
 
 export function AdNetworksAdmin() {
@@ -198,10 +226,10 @@ export function AdNetworksAdmin() {
   const draft = newNetwork ?? saved;
   return <div className="admin-models ad-networks-admin">
     <section className="admin-models-provider"><header className="admin-card-head"><h3>Ad network connections</h3><button type="button" className="btn" disabled={loading} onClick={() => void load()}>{loading ? "Loading…" : "Refresh"}</button></header>
-      <p className="row-sub">Connect provider inventory and set what users earn per verified view or click. Each provider keeps its own encrypted API key.</p>
+      <p className="row-sub">Connect provider inventory and choose whether users earn per view, per click, or both. Each provider keeps its own encrypted API key.</p>
       {error && <p className="notice" data-tone="error" role="alert">{error} Use Refresh to retry.</p>}
       {loading && view === null ? <p role="status">Loading ad networks…</p> : view !== null && <AdNetworkTable networks={view.networks} selected={selected} busy={testing} onEdit={(network) => { setSelected(network.id); setNewNetwork(null); }} onTest={(network) => void testNetwork(network)} />}
-      {view !== null && <div className="ad-network-actions ad-network-add" aria-label="Add ad provider"><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("http-json")); }}>Add generic JSON API</button><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("imprezia")); }}>Add Imprezia</button><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("beehiiv")); }}>Add beehiiv preview</button></div>}
+      {view !== null && <div className="ad-network-actions ad-network-add" aria-label="Add ad provider"><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("http-json")); }}>Add generic JSON API</button><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("imprezia")); }}>Add Imprezia Chat Ads</button><button type="button" className="btn" onClick={() => { setSelected(null); setNewNetwork(newAdNetwork("beehiiv")); }}>Add beehiiv preview</button></div>}
     </section>
     {test && <section className="admin-models-provider" aria-label={`Test result for ${test.name}`}><h3>{test.name}</h3>{test.error ? <p className="notice" data-tone="error" role="alert">{test.error}</p> : test.value && <NetworkTestPreview result={test.value} />}</section>}
     {draft && <NetworkEditor key={`${newNetwork ? "new" : "saved"}:${draft.provider}:${draft.id}`} initial={draft} saved={saved !== undefined && newNetwork === null} onSave={save} onCancel={() => { setSelected(null); setNewNetwork(null); }} />}

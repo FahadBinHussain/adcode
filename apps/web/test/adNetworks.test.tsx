@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AdNetworkTable, NetworkTestPreview, ProviderReadiness, newAdNetwork, payoutMicros } from "../src/components/AdNetworksAdmin";
+import { AdNetworkTable, NetworkTestPreview, ProviderReadiness, newAdNetwork, payoutBasis, payoutMicros, payoutRates, payoutSummary } from "../src/components/AdNetworksAdmin";
 
 describe("ad network administration", () => {
   it("converts dollars exactly and rejects precision or payout-limit mistakes", () => {
@@ -16,6 +16,23 @@ describe("ad network administration", () => {
       expect(config).not.toHaveProperty("key");
     }
   });
+  it("pays users per view, per click or both, and the unchosen event pays nothing", () => {
+    expect(payoutRates("view", "0.001", "0.05")).toEqual({ viewPayoutMicros: "1000", clickPayoutMicros: "0" });
+    expect(payoutRates("click", "0.001", "0.05")).toEqual({ viewPayoutMicros: "0", clickPayoutMicros: "50000" });
+    expect(payoutRates("both", "0.001", "0.05")).toEqual({ viewPayoutMicros: "1000", clickPayoutMicros: "50000" });
+    expect(payoutRates("click", "bad", "0.05")).not.toBeNull();
+    expect(payoutRates("view", "bad", "0.05")).toBeNull();
+    expect(payoutBasis({ viewPayoutMicros: "0", clickPayoutMicros: "50000" })).toBe("click");
+    expect(payoutSummary({ viewPayoutMicros: "0", clickPayoutMicros: "50000" })).toBe("$0.05 per click");
+    expect(payoutSummary({ viewPayoutMicros: "0", clickPayoutMicros: "0" })).toBe("Nothing yet");
+  });
+  it("offers Imprezia Chat Ads as a deliverable connection with a clear sandbox rule", () => {
+    expect(newAdNetwork("imprezia").imprezia).toEqual({ kind: "chat", id: "" });
+    const chat = renderToStaticMarkup(<ProviderReadiness provider="imprezia" chat />);
+    expect(chat).toContain("never pays users");
+    expect(chat).toContain("never anyone&#x27;s code or prompts");
+    expect(renderToStaticMarkup(<NetworkTestPreview result={{ sandbox: true, creative: null }} />)).toContain("Sandbox deliveries never pay users");
+  });
   it("states the real limitations of named providers", () => {
     expect(renderToStaticMarkup(<ProviderReadiness provider="imprezia" />)).toContain("Delivery stays disabled");
     const beehiiv = renderToStaticMarkup(<ProviderReadiness provider="beehiiv" />);
@@ -23,7 +40,7 @@ describe("ad network administration", () => {
     expect(beehiiv).toContain("desktop payouts");
   });
   it("shows write-only key state and disables tests that cannot run", () => {
-    const html = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("imprezia"), id: "imprezia", keyConfigured: true, readiness: "documentation-required" }]} selected={null} busy={null} onEdit={() => undefined} onTest={() => undefined} />);
+    const html = renderToStaticMarkup(<AdNetworkTable networks={[{ ...newAdNetwork("imprezia"), imprezia: { kind: "app", id: "" }, id: "imprezia", keyConfigured: true, readiness: "documentation-required" }]} selected={null} busy={null} onEdit={() => undefined} onTest={() => undefined} />);
     expect(html).toContain("API documentation needed");
     expect(html).toContain("Configured");
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Test saved connection<\/button>/);

@@ -25,9 +25,9 @@ function template(raw: unknown, values: Record<string, unknown>, depth = 0): unk
   return raw;
 }
 /** Never follow redirects with an API key and never reflect upstream bodies or errors into the admin page. */
-async function json(url: string, init: RequestInit, fetchImpl: typeof fetch): Promise<unknown> {
+export async function json(url: string, init: RequestInit, fetchImpl: typeof fetch, timeoutMs = 1_200): Promise<unknown> {
   try {
-    const response = await fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(1_200) });
+    const response = await fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) throw new AdNetworkProviderError();
     const reader = response.body?.getReader();
     if (!reader) throw new AdNetworkProviderError();

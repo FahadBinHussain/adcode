@@ -23,7 +23,11 @@ export interface AdNetworkConfig {
   clickPayoutMicros: string;
   http?: HttpAdNetworkConfig;
   beehiiv?: { publicationId: string; offerId: string };
-  imprezia?: { kind: "app" | "site"; id: string };
+  /**
+   * `chat` is Imprezia's Chat Ads API (publisher key; `id` is an optional placement label)
+   * and can deliver and pay. `app` and `site` are its OpenRTB Exchange, preview only.
+   */
+  imprezia?: { kind: "app" | "site" | "chat"; id: string };
 }
 export interface EncryptedAdNetworkKey { version: 1; nonce: string; ciphertext: string; tag: string }
 export interface AdNetworkDelivery {
@@ -72,14 +76,20 @@ export function parseAdNetworkConfig(raw: unknown): AdNetworkConfig | null {
   const provider = raw["provider"];
   if (provider !== "http-json" && provider !== "imprezia" && provider !== "beehiiv") return null;
   const base: AdNetworkConfig = { id: raw["id"], name: raw["name"].trim(), provider, enabled: raw["enabled"], priority: Number(raw["priority"]), viewPayoutMicros: raw["viewPayoutMicros"], clickPayoutMicros: raw["clickPayoutMicros"] };
-  // Named providers currently support non-billable previews only.
-  if (provider !== "http-json" && base.enabled) return null;
+  // Named providers support non-billable previews only, except Imprezia Chat Ads.
+  const chat = provider === "imprezia" && record(raw["imprezia"]) && raw["imprezia"]["kind"] === "chat";
+  if (provider !== "http-json" && !chat && base.enabled) return null;
   if (provider === "beehiiv") {
     const bee = raw["beehiiv"];
     if (!record(bee) || typeof bee["publicationId"] !== "string" || !/^pub_[0-9a-fA-F-]{1,60}$/.test(bee["publicationId"]) || typeof bee["offerId"] !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(bee["offerId"])) return null;
     return { ...base, beehiiv: { publicationId: bee["publicationId"], offerId: bee["offerId"] } };
   }
   if (provider === "imprezia") {
+    if (chat) {
+      const placement = (raw["imprezia"] as Record<string, unknown>)["id"] ?? "";
+      if (typeof placement !== "string" || placement !== "" && !/^[A-Za-z0-9_-]{1,64}$/.test(placement)) return null;
+      return { ...base, imprezia: { kind: "chat", id: placement } };
+    }
     if (base.viewPayoutMicros !== "0" || base.clickPayoutMicros !== "0") return null;
     const supply = raw["imprezia"];
     if (supply === undefined) return base;
@@ -99,6 +109,7 @@ export function parseAdNetworkConfig(raw: unknown): AdNetworkConfig | null {
   return { ...base, http: { serveUrl: http["serveUrl"], verifyUrl: http["verifyUrl"], method: http["method"] as "GET" | "POST", authHeader: http["authHeader"], authPrefix: http["authPrefix"], requestTemplate, verifyTemplate, creativePath: http["creativePath"], verifiedPath: http["verifiedPath"], eventIdPath: http["eventIdPath"], fields: fields as unknown as HttpAdNetworkConfig["fields"] } };
 }
 export function adNetworkReadiness(config: AdNetworkConfig, keyConfigured: boolean): string {
+  if (config.provider === "imprezia" && config.imprezia?.kind === "chat") return !keyConfigured ? "key-required" : config.enabled ? "ready" : "disabled";
   if (config.provider === "imprezia" && !config.imprezia) return "inventory-required";
   if (config.provider === "imprezia") return keyConfigured ? "exchange-test-only" : "key-required";
   if (config.provider === "beehiiv") return "newsletter-preview-only";
