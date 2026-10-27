@@ -22,6 +22,7 @@
     "wrangler": "^4.125.0"
   },
   "dependencies": {
+    "lucide": "1.59.0",
     "next": "~16.4.3"
   },
   "overrides": {

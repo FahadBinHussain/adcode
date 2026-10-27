@@ -5,6 +5,8 @@ import { useState } from "react";
 import { moneyProgress } from "@/components/money";
 import { coverageText, sourceCells, SOURCE_COLUMNS } from "@/lib/sources";
 import { useCampaignCodes, useReferralConfig, useSources, WindowPicker } from "./useGrowthData";
+import { Icon } from "@/components/Icon";
+import { Check } from "lucide";
 
 /** Minutes until the next 00:30 UTC, when pg_cron settles the last seven days. */
 export function nextSettlement(now: number): { at: number; label: string } {
@@ -64,7 +66,7 @@ export function GrowthOverview() {
         <ol className="growth-steps">
           {steps.map((step) => (
             <li key={step.title} data-done={step.done}>
-              <span className="growth-step-mark" aria-hidden="true">{step.done ? "✓" : ""}</span>
+              <span className="growth-step-mark" aria-hidden="true">{step.done && <Icon node={Check} />}</span>
               <div>
                 <strong>{step.title}</strong>
                 <p>{step.detail}</p>

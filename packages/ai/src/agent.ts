@@ -532,7 +532,7 @@ export function createAgent(deps: AgentDeps): Agent {
               break;
 
             case "status":
-              yield { kind: "status", text: event.text };
+              yield { kind: "status", text: event.text, ...(event.limit === undefined ? {} : { limit: event.limit }) };
               break;
 
             case "thinking":

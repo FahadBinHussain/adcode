@@ -17,7 +17,8 @@ import {
   formatMicros,
   ECONOMICS,
 } from "./site";
-import { FREE_WEEKLY_TOKENS, PACK_SUMMARY, PLAN_SUMMARY, tokenAmount } from "./pricing";
+import { FREE_WEEKLY_TOKENS, PACK_SUMMARY, PLANS, PLAN_SUMMARY, tokenAmount } from "./pricing";
+import type { PaidPack } from "@adcode/api/src/paidTokens.ts";
 
 type Node = Record<string, unknown>;
 
@@ -160,6 +161,36 @@ export function webApplication(): Node {
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     publisher: { "@id": url("/#organization") },
     subjectOf: { "@type": "WebPage", "@id": url("/online-ai-code-editor") },
+  };
+}
+
+/**
+ * What the pricing page sells, as offers on the same application node (`/#app`) the layout
+ * already declares free. Plans carry their billing unit, so "$9" is never read as one-off.
+ */
+export function pricingOffers(packs: readonly PaidPack[]): Node {
+  const dollars = (cents: number): string => (cents / 100).toFixed(2);
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "@id": url("/#app"),
+    name: SITE.name,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Windows, Linux",
+    offers: [
+      { "@type": "Offer", name: "Free editor", price: "0", priceCurrency: "USD", url: url("/versions"),
+        description: `The editor, Tagflow AI and ${tokenAmount(FREE_WEEKLY_TOKENS)} free Heabsy tokens each week.` },
+      ...PLANS.map((plan) => ({
+        "@type": "Offer", name: `${plan.name} AI plan`, price: dollars(plan.priceCents), priceCurrency: "USD", url: url(`/ai-tokens?plan=${plan.id}`),
+        description: `${tokenAmount(plan.weeklyTokens)} Heabsy tokens each week, billed every ${plan.interval}.`,
+        priceSpecification: { "@type": "UnitPriceSpecification", price: dollars(plan.priceCents), priceCurrency: "USD",
+          referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: plan.interval === "week" ? "WEE" : "MON" } },
+      })),
+      ...packs.map((pack) => ({
+        "@type": "Offer", name: `${tokenAmount(pack.tokens)} token pack`, price: dollars(pack.priceCents), priceCurrency: "USD", url: url("/ai-tokens#packs"),
+        description: "One-time Heabsy tokens that never expire.",
+      })),
+    ],
   };
 }
 

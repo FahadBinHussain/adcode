@@ -8,6 +8,8 @@ import { money } from "@/components/money";
 import { apiFetch, type AdminOverviewView } from "@/lib/api";
 import { dollars, parseGrowth, type Growth } from "@/lib/growth";
 import { LEVEL_LABELS, parseStatusView, type StatusModel, type StatusView } from "@/lib/statusView";
+import { Icon } from "@/components/Icon";
+import { ArrowRight, ArrowUpRight } from "lucide";
 
 /**
  * The front desk: what needs a decision, how ADCode is doing, and whether the AI is up.
@@ -114,7 +116,7 @@ function Queues({ counts }: { counts: AdminOverviewView | null }) {
               </span>
               <span className="adm-queue-label">{queue.label}</span>
               <span className="adm-queue-hint">{busy || queue.count === undefined ? queue.hint : queue.clear}</span>
-              <span className="adm-queue-go" aria-hidden="true">{busy ? "Review" : "Open"} →</span>
+              <span className="adm-queue-go" aria-hidden="true">{busy ? "Review" : "Open"} <Icon node={ArrowRight} /></span>
             </Link>
           );
         })}
@@ -257,7 +259,7 @@ function ModelHealth({ status, loaded }: { status: StatusView | null; loaded: bo
       )}
       <footer className="adm-card-foot">
         <Link href="/admin/status" className="adm-cta">Post an incident</Link>
-        <a href="/status" target="_blank" rel="noreferrer">Public page ↗</a>
+        <a href="/status" target="_blank" rel="noreferrer">Public page <Icon node={ArrowUpRight} /></a>
       </footer>
     </section>
   );
@@ -292,7 +294,7 @@ function Alerts({ subscribers, loaded }: { subscribers: Subscribers | null; load
       )}
       <footer className="adm-card-foot">
         <Link href="/admin/status" className="adm-cta">Status page tools</Link>
-        <a href="/status#subscribe" target="_blank" rel="noreferrer">The sign-up form ↗</a>
+        <a href="/status#subscribe" target="_blank" rel="noreferrer">The sign-up form <Icon node={ArrowUpRight} /></a>
       </footer>
     </section>
   );

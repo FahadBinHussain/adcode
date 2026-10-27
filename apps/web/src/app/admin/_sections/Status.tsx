@@ -6,6 +6,8 @@ import { apiFetch, MESSAGES } from "@/lib/api";
 import { LEVEL_LABELS, parseStatusView, type StatusView } from "@/lib/statusView";
 import { when } from "@/components/money";
 import "@/components/adminStatus.css";
+import { Icon } from "@/components/Icon";
+import { ArrowUpRight } from "lucide";
 
 interface StatusUpdate {
   updateId: string;
@@ -202,7 +204,7 @@ export function StatusBody() {
           </span>
           <span className="adm-summary-sub">
             {overall === null ? "The status service did not answer." : LEVEL_LABELS[overall.state] ?? overall.state} ·{" "}
-            <a href="/status" target="_blank" rel="noreferrer">Open ↗</a>
+            <a href="/status" target="_blank" rel="noreferrer">Open <Icon node={ArrowUpRight} /></a>
           </span>
         </div>
         <div className="adm-card">

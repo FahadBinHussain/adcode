@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { trackWebsiteEvent } from "@/lib/websiteAnalytics";
+import { Icon } from "@/components/Icon";
+import { Check, Copy } from "lucide";
 
 /**
  * The one-line install, with a copy button.
@@ -41,7 +43,7 @@ export function InstallCommand({ command, label, placement }: { command: string;
         <span className="install-prompt" aria-hidden="true">$</span>
         <code className="install-text">{command}</code>
         <button type="button" className="install-copy" onClick={() => void copy()} aria-label={label ? `Copy ${label} install command` : "Copy install command"} aria-live="polite" data-copied={copied}>
-          <span aria-hidden="true" className="hero-install-copy-icon">{copied ? "✓" : "⧉"}</span>
+          <span aria-hidden="true" className="hero-install-copy-icon"><Icon node={copied ? Check : Copy} /></span>
           {copied ? "Copied" : "Copy"}
         </button>
       </div>

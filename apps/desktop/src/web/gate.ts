@@ -14,6 +14,8 @@ import { mountMark } from "./asciiMark.ts";
 import { currentUser, firebaseConfigured, idToken, resetPassword, signInWith, signInWithEmail, signOutHere } from "./firebaseAuth.ts";
 import { firebaseErrorText } from "./gateText.ts";
 import { WEB_APP_GUIDE_URL, WEB_APP_HEADING, WEB_APP_INTRO } from "./seo.ts";
+import { createIcon } from "../renderer/workbench/icons.ts";
+import { Check, CircleCheck } from "lucide";
 
 declare const __ADCODE_WEB_DEV__: boolean;
 
@@ -98,7 +100,8 @@ function line(step: typeof RUN[number]): HTMLLIElement {
   if (step.kind === "ask") {
     item.append(element("span", "web-gate-prompt", "›"), element("span", "web-gate-typed", ""));
   } else {
-    item.append(element("span", "web-gate-tick", step.kind === "done" ? "●" : "✓"), element("strong", undefined, step.text), element("span", "web-gate-detail", step.detail ?? ""));
+    const tick = element("span", "web-gate-tick", ""); tick.append(createIcon(step.kind === "done" ? CircleCheck : Check));
+    item.append(tick, element("strong", undefined, step.text), element("span", "web-gate-detail", step.detail ?? ""));
   }
   return item;
 }

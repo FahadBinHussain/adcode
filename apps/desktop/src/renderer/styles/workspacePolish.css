@@ -136,3 +136,4 @@ body[data-workspace-mode="vibe"] #workbench { border:0; border-radius:0; box-sha
 /* A tab change keeps its containing surface still; only the tabs move. */
 :root .floating-panel.workspace-panel-docked:not([hidden]) { animation:none; }
 .agent-browser-tabs > .workspace-tab-add { position:sticky; right:0; background:var(--bg-app); box-shadow:-6px 0 8px var(--bg-app); }
+.agent-browser button svg { display: block; width: 15px; height: 15px; }

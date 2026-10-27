@@ -17,6 +17,8 @@ const RETRY_MS = 20_000;
 
 export interface UpdatePromptDeps {
   readonly statusItem: HTMLButtonElement;
+  /** The one-click update in the title bar, beside Changes and Preview (the frame's top bar). */
+  readonly titleItem?: HTMLButtonElement;
   readonly notifications: NotificationCentre;
   /** Write a recovery draft for every unsaved buffer, before the restart. */
   readonly flushDrafts: () => void;
@@ -125,6 +127,19 @@ export function createUpdatePrompt(deps: UpdatePromptDeps): UpdatePrompt {
      */
     if (view.title === "") delete deps.statusItem.dataset["tip"];
     else deps.statusItem.dataset["tip"] = view.title;
+    const title = deps.titleItem;
+    if (title !== undefined) {
+      title.hidden = view.label === null;
+      title.disabled = deps.statusItem.disabled;
+      title.dataset["state"] = restarting ? "restarting" : status.state;
+      title.dataset["tip"] = view.title;
+      title.setAttribute("aria-label", view.label === null ? "Update ADCode" : `${view.label}. ${view.title}`);
+      // The ring fills as the download does; a ready update pulses once to be noticed, then rests.
+      const percent = status.state === "downloading" && typeof status.percent === "number" && Number.isFinite(status.percent) ? Math.max(0, Math.min(100, status.percent)) : null;
+      title.style.setProperty("--update-progress", percent === null ? "0" : String(percent));
+      const text = title.querySelector<HTMLElement>(".web-tabs-update-text");
+      if (text !== null) text.textContent = status.state === "downloading" && percent !== null ? `${Math.round(percent)}%` : status.state === "ready" ? "Update" : "";
+    }
   };
 
   const offer = async (): Promise<void> => {
@@ -195,6 +210,7 @@ export function createUpdatePrompt(deps: UpdatePromptDeps): UpdatePrompt {
   };
 
   deps.statusItem.addEventListener("click", () => void update());
+  deps.titleItem?.addEventListener("click", () => void update());
   window.addEventListener("focus", () => {
     if (["ready", "available", "downloading"].includes(status.state)) void offer();
   });

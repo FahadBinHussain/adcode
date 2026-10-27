@@ -1,4 +1,6 @@
 import { createWorkspaceControls } from "./workspaceControls.ts";
+import { formatTokens } from "../../shared/aiUsage.ts";
+import { untilText } from "../../shared/tagflow.ts";
 import { openWebAccount } from "../surface.ts";
 /**
  * The Vibe window's sidebar: one place to start, switch project, and see what needs you.
@@ -94,6 +96,8 @@ export interface VibeSidebarDeps {
   readonly onUnreadNotifications: (listener: (count: number) => void) => void;
   readonly onEarnings: (listener: (label: string) => void) => void;
   readonly onLayoutChange: () => void;
+  /** One click from a new version to installing it, at the right of the tabs row. */
+  readonly updateButton?: HTMLButtonElement;
 }
 
 export interface VibeSidebar {
@@ -490,7 +494,7 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
       historyHost,
       newChat: () => { deps.showPage("chat"); deps.run("ai.newConversation"); },
       leading: [tabToggle],
-      trailing: [tabChanges, tabPreview, workspaceControls.element],
+      trailing: [...(deps.updateButton === undefined ? [] : [deps.updateButton]), tabChanges, tabPreview, workspaceControls.element],
     });
     webTabsTrailing = tabs.element.querySelector(".web-tabs-trailing");
     if (!web) {
@@ -515,7 +519,20 @@ export function createVibeSidebar(deps: VibeSidebarDeps): VibeSidebar {
   async function watchCredits(row: { control: HTMLButtonElement; badge: HTMLElement }): Promise<void> {
     const paint = async (): Promise<void> => {
       const view = await window.adcode.aiUsage.allowance().catch(() => null);
-      if (view?.unlimited) { setBadge(row, "Included AI", "Unlimited", false, "No ADCode usage allowance"); return; }
+      /*
+       * Reported 2026-10-27 ("Ur doing Wrong marketing"): the badge said Unlimited while Heabsy
+       * models stopped at their free weekly tokens. Tagflow is unlimited; Heabsy is not, so with
+       * paid models on, the badge counts what is actually left of the Heabsy week.
+       */
+      const paid = view?.tokens;
+      if (paid?.enabled === true) {
+        const left = Math.max(0, paid.free.remaining) + Math.max(0, paid.purchased);
+        const refill = paid.free.resetsAt === null ? "" : ` Refills in ${untilText(paid.free.resetsAt, Date.now())}.`;
+        setBadge(row, "Included AI", `${formatTokens(left)} left`, left <= 0,
+          `Tagflow AI has no limit. Heabsy models: ${formatTokens(Math.max(0, paid.free.remaining))} of ${formatTokens(paid.free.limit)} free tokens left this week, then ${formatTokens(paid.purchased)} purchased.${refill}`);
+        return;
+      }
+      if (view?.unlimited) { setBadge(row, "Included AI", "Unlimited", false, "Tagflow AI has no ADCode usage limit"); return; }
       const session = view?.credits?.session;
       if (session === undefined) { setBadge(row, "Included AI", "", false, "See your free AI usage"); return; }
       const left = Math.max(0, Math.floor(session.remaining));

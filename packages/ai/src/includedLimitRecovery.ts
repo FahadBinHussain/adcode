@@ -1,4 +1,4 @@
-import type { Provider } from "./types.ts";
+import type { LimitPause, Provider } from "./types.ts";
 
 /** `limit` names the credit window that ran out; older relays send a daily allowance without it. */
 type LimitError = { status?: number; code?: string; retryAfter?: string | null; retryable?: boolean; resetsAt?: number; message?: string; limit?: "session" | "weekly" | "paid"; buyUrl?: string };
@@ -28,8 +28,8 @@ async function waitUntil(at: number, signal: AbortSignal): Promise<void> {
 
 function resetTime(error: LimitError, daily: boolean): number {
   const now = Date.now();
-  // A weekly credit window can refill days away; anything else is within a day.
-  const longest = error.limit === "weekly" ? 8 * 86_400_000 : 86_400_000;
+  // A weekly credit window or the free paid-token week can refill days away; anything else is within a day.
+  const longest = error.limit === "weekly" || error.limit === "paid" ? 8 * 86_400_000 : 86_400_000;
   if (daily && Number.isSafeInteger(error.resetsAt) && error.resetsAt! > now) return Math.min(error.resetsAt!, now + longest);
   const raw = error.retryAfter;
   const seconds = raw == null || raw.trim() === "" ? NaN : Number(raw);
@@ -99,15 +99,21 @@ export function recoverIncludedLimits(provider: Provider): Provider {
           if (error.status !== 429 || error.retryable === false || !["daily-limit", "rate-limit", "upstream-rate-limit"].includes(code ?? "")) throw caught;
           const daily = code === "daily-limit";
           if (error.limit === "paid") {
-            yield { kind: "status", text: `This week's free tokens for this model are used up. Buy tokens or a plan at ${error.buyUrl ?? "https://adcode.bluethenics.com/ai-tokens"}, or switch to Tagflow AI, which stays free. This task checks again every two minutes and carries on by itself once you have tokens. Press Stop to cancel.` };
-            await waitUntil(Math.min(resetTime(error, daily), Date.now() + PAID_RECHECK_MS), signal);
+            const buyUrl = error.buyUrl ?? "https://adcode.bluethenics.com/ai-tokens";
+            const recheckAt = Math.min(resetTime(error, daily), Date.now() + PAID_RECHECK_MS);
+            const limit: LimitPause = { reason: "paid", resumeAt: resetTime(error, daily), recheckAt, buyUrl };
+            yield { kind: "status", limit, text: `This week's free tokens for this model are used up. Buy tokens or a plan at ${buyUrl}, or switch to Tagflow AI, which stays free. This task checks again every two minutes and carries on by itself once you have tokens. Press Stop to cancel.` };
+            await waitUntil(recheckAt, signal);
             continue;
           }
           // A stale/overlong provider Retry-After must not put an unlimited account
           // to sleep for a day. Account limits are also rechecked for admin resets.
           const at = Math.min(resetTime(error, daily), Date.now() + (daily ? ALLOWANCE_RECHECK_MS : RATE_RECHECK_MS));
           const when = new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-          yield { kind: "status", text: error.limit === "weekly"
+          const reason: LimitPause["reason"] = error.limit === "weekly" || error.limit === "session" ? error.limit : daily ? "daily" : code === "upstream-rate-limit" ? "upstream" : "rate";
+          // The card names when the limit lifts, not the sooner re-check that may end it early.
+          const limit: LimitPause = { reason, resumeAt: daily ? resetTime(error, daily) : at, recheckAt: at };
+          yield { kind: "status", limit, text: error.limit === "weekly"
             ? `This week's free AI credits are used up. Checking again after ${when}, including any administrator reset or allowance change. This task resumes automatically once credits are available. Press Stop to cancel.`
             : error.limit === "session"
             ? `This session's free AI credits are used up. Checking again after ${when}, including any administrator reset or allowance change. This task resumes automatically once credits are available. Press Stop to cancel.`

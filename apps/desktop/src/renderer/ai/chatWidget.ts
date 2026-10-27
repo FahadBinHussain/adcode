@@ -109,6 +109,8 @@ import { createQuestionCard } from "./chatQuestionCard.ts";
 import { openUsageDialog } from "./usageDialog.ts";
 import { firstBuildPrompt, looksLikeBuildRequest } from "../../shared/firstBuild.ts";
 import { BUY_TOKENS_URL } from "../../shared/tagflow.ts";
+import { createLimitPauseCard, parseLimitPause } from "./limitPause.ts";
+import { ArrowDown, ArrowRight, CircleAlert, Folder, Maximize2 } from "lucide";
 
 export interface ChatWidget {
   readonly element: HTMLElement;
@@ -822,7 +824,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   async function paintFolderBanner(): Promise<void> {
     const short = currentFolderRoot?.split(/[\\/]/).pop() || "No folder";
-    folderName.textContent = `📁 ${short}`;
+    folderName.replaceChildren(createIcon(Folder), document.createTextNode(short));
     folderName.title = currentFolderRoot ?? "No folder is open — click to open one";
     try {
       const [tasks, sessions] = await Promise.all([
@@ -2481,7 +2483,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   scrollButton.setAttribute("aria-label", "Scroll to latest messages");
   const scrollArrow = document.createElement("span");
   scrollArrow.className = "chat-scroll-bottom-arrow";
-  scrollArrow.textContent = "↓";
+  scrollArrow.append(createIcon(ArrowDown));
   scrollArrow.setAttribute("aria-hidden", "true");
   scrollButtonLabel = document.createElement("span");
   scrollButtonLabel.className = "chat-scroll-bottom-label";
@@ -2511,6 +2513,15 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   working.className = "chat-working";
   working.hidden = true;
   working.setAttribute("role", "status");
+  /*
+   * A task waiting out a usage limit: a card above the "is writing" row, so the wait reads as
+   * what it is - with when it carries on and what ends it sooner - instead of as thinking.
+   */
+  const limitCard = createLimitPauseCard((action, pause) => {
+    if (action === "models") deps.openConnect();
+    else void window.open(action === "buy-tokens" ? pause.buyUrl ?? BUY_TOKENS_URL : `${BUY_TOKENS_URL}#plans`, "_blank", "noopener");
+  });
+  const hideLimitCard = (): void => { if (!limitCard.visible) return; limitCard.hide(); limitCard.element.remove(); };
   const workingText = document.createElement("span");
   workingText.className = "chat-working-text";
   workingText.textContent = "Thinking";
@@ -3269,7 +3280,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
     const icon = document.createElement("span");
     icon.className = "chat-failure-icon";
-    icon.textContent = failure.kind === "sign-in" ? "→" : "!";
+    icon.append(createIcon(failure.kind === "sign-in" ? ArrowRight : CircleAlert));
     icon.setAttribute("aria-hidden", "true");
 
     const body = document.createElement("div");
@@ -4326,6 +4337,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       scrollToEnd();
     } else {
       working.remove();
+      hideLimitCard();
     }
     const wasWorking = card.dataset["working"] === "true";
     card.dataset["working"] = String(mode === "stop");
@@ -4439,6 +4451,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       // The window is in use - reading, typing, running: keep it beside the latest work.
       bringCardsDown();
     }
+    // Anything but a status line means the paused task is moving again.
+    if (event.kind !== "status") hideLimitCard();
     if (event.kind === "tool-draft") {
       const path = typeof event["path"] === "string" ? event["path"] : null;
       const label = path === null ? "Writing a file" : `Writing ${path}`;
@@ -4467,6 +4481,18 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         // Host progress, not model reasoning: "Waiting 21s for Groq's rate limit" is
         // shown live, so a wait never reads as a hang.
         const text = String(event["text"] ?? "");
+        const pause = parseLimitPause(event["limit"]);
+        if (pause !== null) {
+          waitingForIncludedLimit = true;
+          limitCard.show(pause);
+          if (working.isConnected) transcript.insertBefore(limitCard.element, working);
+          else transcript.append(limitCard.element);
+          workingText.textContent = "Paused until the limit resets";
+          ensureTimeline().setStatus("Paused until the limit resets");
+          scrollToEnd();
+          break;
+        }
+        hideLimitCard();
         if (/^(?:Free AI (?:allowance reached|is temporarily limited)|This (?:session|week)'s free AI credits are used up)\./.test(text)) waitingForIncludedLimit = true;
         else if (text === "Checking the limit and resuming this task automatically…") waitingForIncludedLimit = false;
         // A helper's own line ("Helper 2 of 3 · Tests: editing src/a.ts") belongs to its
@@ -5110,7 +5136,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       docked = next;
       externalHistory = next && !!historyHost;
       card.dataset["docked"] = String(next);
-      presentationButton.textContent = next ? "↗" : "Float";
+      presentationButton.replaceChildren(next ? createIcon(Maximize2) : document.createTextNode("Float"));
       presentationButton.title = next ? "Expand assistant workspace" : "Return the assistant to its floating panel";
       presentationButton.setAttribute("aria-label", presentationButton.title);
       resetButton.textContent = next ? "+" : "+ New";

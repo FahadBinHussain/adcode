@@ -156,12 +156,24 @@ export interface ToolRunner {
  * command it ran, what it decided. This is what makes the AI legible instead of magical,
  * and it is what a developer will judge the feature on."
  */
+/**
+ * A task paused on an ADCode usage limit, for the chat to show as a card rather than a status
+ * line. `resumeAt` is when the limit itself lifts; `recheckAt` is when the task asks again,
+ * sooner, so a purchase, an upgrade or an administrator reset ends the wait early.
+ */
+export interface LimitPause {
+  readonly reason: "paid" | "weekly" | "session" | "daily" | "rate" | "upstream";
+  readonly resumeAt: number;
+  readonly recheckAt: number;
+  readonly buyUrl?: string;
+}
+
 export type AgentEvent =
   | { readonly kind: "text"; readonly text: string }
   /** A summary of the model's reasoning, where the provider exposes one. */
   | { readonly kind: "thinking"; readonly text: string }
   /** Transient progress to show, never to keep: "waiting out a rate limit". */
-  | { readonly kind: "status"; readonly text: string }
+  | { readonly kind: "status"; readonly text: string; readonly limit?: LimitPause }
   | { readonly kind: "tool-call"; readonly call: ToolCallBlock }
   /**
    * Code a writing tool is producing, before its call is complete - for a live window, never
@@ -245,7 +257,7 @@ export type ProviderEvent =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "thinking"; readonly text: string }
   /** Host-side progress (the request scheduler waiting), passed through, never recorded. */
-  | { readonly kind: "status"; readonly text: string }
+  | { readonly kind: "status"; readonly text: string; readonly limit?: LimitPause }
   | { readonly kind: "tool-call"; readonly call: ToolCallBlock }
   /** One streamed fragment of a call's JSON arguments, passed through as it arrives. */
   | { readonly kind: "tool-input"; readonly index: number; readonly id: string; readonly name: string; readonly fragment: string }

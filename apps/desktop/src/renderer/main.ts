@@ -205,6 +205,7 @@ import {
 import { createInlineEditor } from "./workbench/inlineEdit.ts";
 import { reconcileTreeChildren } from "./workbench/treeRefresh.ts";
 import { BUY_TOKENS_URL } from "../shared/tagflow.ts";
+import { ChevronRight, CircleArrowDown } from "lucide";
 import type {
   AdcodeApi,
   DirEntry,
@@ -806,7 +807,7 @@ function makeRow(entry: DirEntry, depth: number): HTMLElement {
 
   const twisty = document.createElement("span");
   twisty.className = "tree-twisty";
-  twisty.textContent = entry.isDirectory ? "▶" : "";
+  if (entry.isDirectory) twisty.append(createIcon(ChevronRight));
 
   const icon = entry.isDirectory ? folderIcon(false) : fileIcon(entry.name);
 
@@ -4988,8 +4989,19 @@ window.adcode.rating.onAsk(() => {
  */
 let updatePreparingDialog: HTMLDialogElement | null = null;
 const blockUpdateKeys = (event: KeyboardEvent): void => { event.preventDefault(); event.stopImmediatePropagation(); };
+/*
+ * Updating in one click, from the title bar, the way OpenCode does it: a round arrow that
+ * appears only when there is something to install, fills while it downloads, and installs
+ * on click. Asked for on 2026-10-27, with daily releases on the way.
+ */
+const titleUpdate = document.createElement("button");
+titleUpdate.type = "button";
+titleUpdate.className = "web-tabs-button web-tabs-update";
+titleUpdate.hidden = true;
+titleUpdate.append(createIcon(CircleArrowDown), Object.assign(document.createElement("span"), { className: "web-tabs-update-text" }));
 const updatePrompt = createUpdatePrompt({
   statusItem: el("status-update") as HTMLButtonElement,
+  titleItem: titleUpdate,
   notifications,
   flushDrafts: draftUnsavedTabs,
   recoveryDrafts: () => tabs.flatMap(tab => {
@@ -6690,7 +6702,7 @@ projectContext = createProjectContext({
   run: command => commands.run(command),
 });
 assistantDock = createAssistantDock({
-  chat, workbench: el("workbench"), sidebar: el("sidebar"),
+  chat, workbench: el("workbench"), sidebar: el("sidebar"), updateButton: titleUpdate,
   expandedHost: chatShell.surface,
   openExpanded: () => openPrimaryPopup("chat", chatShell, document.querySelector<HTMLElement>(".project-tools") ?? chatLauncher, "keyboard"),
   closeExpanded: () => { closePrimaryPopup("chat"); chatShell.close({ immediate: true, restoreFocus: false }); },

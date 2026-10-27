@@ -200,7 +200,7 @@ const commandProperties = {
 export const RUN_COMMAND: ToolDefinition = {
   name: "run_command",
   description:
-    "Run a non-interactive command in the workspace (tests, typecheck, lint, build, installs) and return its exit code and output. Prefer this over telling the user what to run. For something that keeps running - a dev server, a watcher - pass background: true; it returns at once with an id, then command_output reads what it prints and stop_command ends it. A command that is plainly a server (npm run dev, vite, python -m http.server) starts in the background even without it.",
+    "Run a non-interactive command in the workspace (tests, typecheck, lint, build, installs) and return its exit code and output. Prefer this over telling the user what to run. For something that keeps running - a dev server, a watcher - pass background: true; it returns at once with an id, then command_output reads what it prints and stop_command ends it. A command that is plainly a server (npm run dev, vite, python -m http.server) starts in the background even without it. On Windows a line runs in cmd.exe, unless it uses PowerShell (cmdlets such as Get-ChildItem or Select-Object, or $env:), which runs in Windows PowerShell; Unix tools such as head, grep or ls -la are not available there.",
   inputSchema: {
     type: "object",
     properties: {

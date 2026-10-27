@@ -29,6 +29,8 @@ import {
   type LiveSignal,
 } from "./liveRoomModel.ts";
 import { createLiveWindow, reducedMotion, type LiveStopAction, type LiveWindowHandle } from "./liveWindow.ts";
+import { TriangleAlert } from "lucide";
+import { createIcon } from "../workbench/icons.ts";
 
 export interface LiveRoomOptions {
   lookFor(identity: LiveAgentIdentity): MascotLook;
@@ -201,7 +203,8 @@ export function createLiveRoom(options: LiveRoomOptions): LiveRoomHandle {
       from.mascot.setGaze(b.x >= a.x ? "right" : "left");
       target.mascot.setGaze(a.x >= b.x ? "right" : "left");
       from.element.dataset["speaking"] = "true";
-      const bubble = make("span", "live-bubble", signal.kind === "overlap" ? `⚠ ${shorten(signal.text, 22)}` : shorten(signal.text, 26));
+      const bubble = make("span", "live-bubble", signal.kind === "overlap" ? shorten(signal.text, 22) : shorten(signal.text, 26));
+      if (signal.kind === "overlap") bubble.prepend(createIcon(TriangleAlert));
       bubble.dataset["kind"] = signal.kind;
       bubble.setAttribute("aria-hidden", "true");
       strip.append(bubble);

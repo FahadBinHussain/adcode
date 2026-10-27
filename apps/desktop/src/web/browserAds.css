@@ -29,3 +29,7 @@
 .browser-sponsored-close { position: absolute; top: 9px; right: 9px; display: grid; place-items: center; width: 25px; height: 25px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--text-secondary, #a09c92); font-size: 18px !important; line-height: 1; }
 .browser-sponsored-close:hover { background: var(--bg-hover, #302d28); color: var(--text-primary, #ebe8e1); }
 .browser-sponsored button:focus-visible { outline: 2px solid var(--text-secondary, #a09c92); outline-offset: 3px; }
+
+/* Lucide icons as masks (2026-10-27: no glyph icons): the arrow after "Learn more", and the close X. */
+.browser-sponsored-visit::after { content: ""; display: inline-block; width: 11px; height: 11px; margin-left: 4px; vertical-align: -1px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7h10v10'/%3E%3Cpath d='M7 17 17 7'/%3E%3C/svg%3E") center / contain no-repeat; }
+.browser-sponsored-close::before { content: ""; width: 14px; height: 14px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E") center / contain no-repeat; }

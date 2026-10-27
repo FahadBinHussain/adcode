@@ -888,3 +888,5 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
   opacity: 0.5;
   cursor: default;
 }
+
+.result-badge svg { width: 22px; height: 22px; stroke-width: 2.5; }

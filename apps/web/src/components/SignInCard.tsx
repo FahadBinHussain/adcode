@@ -5,6 +5,8 @@ import Link from "next/link";
 import { AuthAscii } from "./AuthAscii";
 import { Mark } from "./Mark";
 import { trackWebsiteEvent } from "@/lib/websiteAnalytics";
+import { Icon } from "@/components/Icon";
+import { ArrowRight, ArrowUpRight } from "lucide";
 import {
   authMessage,
   registerEmail,
@@ -141,7 +143,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
           >
             <GithubMark />
             {busy === "github" ? "Opening GitHub..." : "Continue with GitHub"}
-            <span className={busy === "github" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "github" ? "" : "↗"}</span>
+            <span className={busy === "github" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "github" ? null : <Icon node={ArrowUpRight} />}</span>
           </button>
           <button
             type="button"
@@ -151,7 +153,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
           >
             <GoogleMark />
             {busy === "google" ? "Opening Google..." : "Continue with Google"}
-            <span className={busy === "google" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "google" ? "" : "↗"}</span>
+            <span className={busy === "google" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "google" ? null : <Icon node={ArrowUpRight} />}</span>
           </button>
         </div>
 
@@ -207,7 +209,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
             {busy === "email"
               ? mode === "in" ? "Signing in..." : "Creating account..."
               : mode === "in" ? "Sign in" : "Create account"}
-            {busy === null && <span className="auth-submit-arrow" aria-hidden="true">→</span>}
+            {busy === null && <span className="auth-submit-arrow" aria-hidden="true"><Icon node={ArrowRight} /></span>}
           </button>
         </form>
         <p className="sr-only" role="status">{busy === "email" ? mode === "in" ? "Signing in…" : "Creating account…" : busy ? `Opening ${busy === "github" ? "GitHub" : "Google"}…` : ""}</p>

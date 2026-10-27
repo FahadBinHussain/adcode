@@ -2555,3 +2555,6 @@ body[data-resizing] iframe {
      different colour rather than a hover. Dimming keeps it recognisably the same button. */
   background: color-mix(in srgb, var(--accent) 88%, var(--bg-elevated));
 }
+
+.tree-twisty { display: inline-grid; place-items: center; }
+.tree-twisty svg { width: 10px; height: 10px; }

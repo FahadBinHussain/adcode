@@ -156,6 +156,9 @@ export function describeAiFailure(raw: string): AiFailure {
       ["models", "retry"],
     );
   }
+  if (/^Free AI couldn't load its models/i.test(detail)) {
+    return make("network", "Free AI couldn't load", "No API key is needed. ADCode couldn't reach the free AI service to load its models. Check your connection, then try again.", ["retry", "models"]);
+  }
   if (/No API key|No address for the custom endpoint|Connect a model/i.test(detail)) {
     return make("no-key", "No model connected", "Add a provider and key in Connect a model - it takes about a minute.", ["models"]);
   }

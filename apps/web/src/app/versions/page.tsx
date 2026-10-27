@@ -10,6 +10,8 @@ import { breadcrumbs, changelog, faqPage, installHowTo } from "@/lib/schema";
 import { pageMetadata } from "@/lib/seo";
 import { renderMarkdown } from "@/lib/markdown";
 import { PLAN_SUMMARY } from "@/lib/pricing";
+import { Icon } from "@/components/Icon";
+import { ArrowUpRight } from "lucide";
 
 /** Kept rendered, and re-rendered at most once a minute so admin-panel publishing shows up. */
 export const revalidate = 60;
@@ -211,7 +213,7 @@ export default async function VersionsPage() {
         </section>
 
         <section className="release-history">
-          <div className="release-history-head"><span className="glass-kicker">Release history</span><a href={`https://github.com/${GITHUB_REPO}/releases`} rel="noreferrer">View source releases ↗</a></div>
+          <div className="release-history-head"><span className="glass-kicker">Release history</span><a href={`https://github.com/${GITHUB_REPO}/releases`} rel="noreferrer">View source releases <Icon node={ArrowUpRight} /></a></div>
           {releases.length === 0 ? (
             <div className="glass-card release-empty"><h2>No published notes yet</h2><p>The downloads above always fetch the latest published release. Release notes will appear here after they are published.</p></div>
           ) : releases.map((release, index) => (

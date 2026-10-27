@@ -17,6 +17,8 @@ import {
   type StatusView,
 } from "@/lib/status";
 import "./status.css";
+import { Icon } from "@/components/Icon";
+import { ArrowDown } from "lucide";
 
 /**
  * The public status page.
@@ -402,7 +404,7 @@ export default async function StatusPage() {
           <div className="status-hero-actions">
             <a className="status-subscribe-button" href="#subscribe">
               Get email alerts
-              <span aria-hidden="true">↓</span>
+              <Icon node={ArrowDown} />
             </a>
           </div>
         </header>

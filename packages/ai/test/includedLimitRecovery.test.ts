@@ -128,4 +128,17 @@ it("names where to buy tokens on the paid limit, and checks again every two minu
   expect(status&&status.kind==="status"&&status.text).toContain("https://adcode.bluethenics.com/ai-tokens");
   expect(status&&status.kind==="status"&&status.text).toContain("Buy tokens or a plan");
   expect(status&&status.kind==="status"&&status.text).toContain("Tagflow");
+  // The chat draws a card from this: when the free week refills, and when it asks again sooner.
+  expect(status&&status.kind==="status"&&status.limit).toEqual({reason:"paid",resumeAt:3*86_400_000,recheckAt:120_000,buyUrl:"https://adcode.bluethenics.com/ai-tokens"});
+});
+it("tells the chat when a credit limit lifts, separately from the sooner re-check",async()=>{
+  vi.useFakeTimers();vi.setSystemTime(0);let calls=0;
+  const provider:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){if(++calls===1)throw{status:429,code:"daily-limit",retryable:true,limit:"weekly",resetsAt:2*86_400_000};yield{kind:"stop",reason:"end-turn"};}};
+  const result=collect(recoverIncludedLimits(provider));await vi.advanceTimersByTimeAsync(120_000);const events=await result;
+  const status=events.find(event=>event.kind==="status"&&event.limit!==undefined);
+  expect(status&&status.kind==="status"&&status.limit).toEqual({reason:"weekly",resumeAt:2*86_400_000,recheckAt:120_000});
+  calls=0;const rate:Provider={id:"tagflow",displayName:"Included AI",models:[],async *stream(){if(++calls===1)throw{status:429,code:"rate-limit",retryAfter:"30"};yield{kind:"stop",reason:"end-turn"};}};
+  const second=collect(recoverIncludedLimits(rate));await vi.advanceTimersByTimeAsync(30_000);
+  const limited=(await second).find(event=>event.kind==="status"&&event.limit!==undefined);
+  expect(limited&&limited.kind==="status"&&limited.limit).toMatchObject({reason:"rate",resumeAt:limited&&limited.kind==="status"?limited.limit!.recheckAt:0});
 });

@@ -191,8 +191,8 @@ function mountBrowserAdsInternal(session: WebSession): { dispose(): void } {
       const label = document.createElement("p"); label.className = "browser-sponsored-label";
       const heading = document.createElement("p"); heading.className = "browser-sponsored-heading";
       const detail = document.createElement("p"); detail.className = "browser-sponsored-detail";
-      const visit = document.createElement("button"); visit.type = "button"; visit.className = "browser-sponsored-visit"; visit.textContent = "Learn more ↗";
-      const close = document.createElement("button"); close.type = "button"; close.className = "browser-sponsored-close"; close.textContent = "×"; close.setAttribute("aria-label", "Dismiss sponsored card");
+      const visit = document.createElement("button"); visit.type = "button"; visit.className = "browser-sponsored-visit"; visit.textContent = "Learn more";
+      const close = document.createElement("button"); close.type = "button"; close.className = "browser-sponsored-close"; close.setAttribute("aria-label", "Dismiss sponsored card");
       text.append(label, heading, detail, visit); card.append(logo, text, close);
       let notification = initial; let objectUrl: string | null = null; let imageGeneration = 0;
       let timer: ReturnType<typeof setTimeout> | undefined; let remaining = initial.autoDismissMs; let resumedAt = 0;

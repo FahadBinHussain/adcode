@@ -1468,6 +1468,9 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
   if (provider === null) {
     const name = providerIn(catalogue, providerId)?.name ?? providerId;
     // Two different failures, and the fix is different for each.
+    // Free AI needs no key: a null provider means its model list could not be loaded. Reported
+    // 2026-10-27 from Linux as "No API key for tagflow ... CANT FIND FREE MODELS".
+    if (providerId === "tagflow") return "Free AI couldn't load its models just now - no API key is needed. Check your internet connection and try again in a moment.";
     return providerId === "custom" && baseUrlOf("custom") === null
       ? "No address for the custom endpoint. Set one in Connect a model."
       : `No API key for ${name}. Add one in Connect a model.`;

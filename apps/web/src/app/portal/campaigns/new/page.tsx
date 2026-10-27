@@ -17,6 +17,8 @@ import {
 } from "@/lib/api";
 import { signupRefBody } from "@/lib/invite";
 import { ECONOMICS, formatMicros } from "@/lib/site";
+import { Icon } from "@/components/Icon";
+import { Check, Circle } from "lucide";
 
 /**
  * One screen from nothing to a live campaign.
@@ -379,7 +381,7 @@ export function NewCampaignForm() {
 
           <div className="portal-checklist">
             <h3>Ready to create <span>{checklist.filter(item => item.done).length}/{checklist.length}</span></h3>
-            <ul>{checklist.map(item => <li key={item.label} data-complete={item.done}><span aria-hidden="true">{item.done ? "✓" : "○"}</span>{item.label}<span className="sr-only">{item.done ? ": complete" : ": needed"}</span></li>)}</ul>
+            <ul>{checklist.map(item => <li key={item.label} data-complete={item.done}><span aria-hidden="true"><Icon node={item.done ? Check : Circle} /></span>{item.label}<span className="sr-only">{item.done ? ": complete" : ": needed"}</span></li>)}</ul>
           </div>
           <ul className="ios-group ios-group-plain">
             <li>

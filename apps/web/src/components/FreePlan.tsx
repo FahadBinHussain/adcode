@@ -1,3 +1,5 @@
+import { Icon } from "@/components/Icon";
+import { ArrowUpRight } from "lucide";
 import Link from "next/link";
 import { FREE_WEEKLY_TOKENS, PLANS, price, tokenAmount } from "@/lib/pricing";
 
@@ -24,13 +26,13 @@ export function FreePlan() {
         </div>
       </dl>
       <p className="free-plan-limit">Plans raise the weekly Heabsy allowance. Purchased tokens are used after it and never expire. Provider availability, model context limits and shared capacity still apply.</p>
-      <p className="free-plan-foot"><Link href="/pricing" className="home-text-link">Compare plans and token packs <span aria-hidden="true">↗</span></Link></p>
+      <p className="free-plan-foot"><Link href="/pricing" className="home-text-link">Compare plans and token packs <Icon node={ArrowUpRight} /></Link></p>
       <details className="free-plan-details">
         <summary>How the free plan works</summary>
         <div>
           <p>Heabsy&apos;s free allowance refills weekly across your signed-in devices. Tagflow AI has no personal quota from ADCode.</p>
           <p>Idle cloud workspaces sleep automatically and resume with your work saved. Your own provider key follows that provider’s billing.</p>
-          <Link href="/docs/ai-credits">Read about included AI <span aria-hidden="true">↗</span></Link>
+          <Link href="/docs/ai-credits">Read about included AI <Icon node={ArrowUpRight} /></Link>
         </div>
       </details>
     </section>

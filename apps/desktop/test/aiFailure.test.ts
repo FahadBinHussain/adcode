@@ -219,3 +219,10 @@ describe("the paid-token limit", () => {
     expect(failure.explanation).toContain("3 days");
   });
 });
+
+it("never asks for an API key when free AI only failed to load its models", () => {
+  const failure = describeAiFailure("Free AI couldn't load its models just now - no API key is needed. Check your internet connection and try again in a moment.");
+  expect(failure.kind).toBe("network");
+  expect(failure.actions[0]).toBe("retry");
+  expect(failure.explanation).toContain("No API key is needed");
+});
