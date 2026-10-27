@@ -35,7 +35,7 @@ export const WORKBENCH_ENTRIES: readonly HelpEntry[] = [
     title: "All Features",
     plain: "A searchable library of everything ADCode can do, with an Open button and a plain explanation beside every feature.",
     why: "You should not need to know a command's name, shortcut, or menu before you can discover it.",
-    how: "Choose All features at the bottom of the Vibe sidebar, or open the menus - the button beside ADCode - and choose View, All Features. Search by a feature name or describe what you want to do. Choose Open to use it and ? to understand it.",
+    how: "Choose All features at the bottom of the Vibe sidebar, or open the menus - the button beside ADCode - and choose View, All Features. Search by a feature name or describe what you want to do. Choose Open to use it and ? to understand it. Preferences opens Settings, where sections sit in a sidebar - Ads & Earnings, Appearance, Editing and the rest - and one shows at a time; the search box looks through every section and counts the matches in each.",
     group: "workbench",
     settingIds: [],
     related: ["workbench.universalSearch", "workbench.commandPalette"],

@@ -1121,7 +1121,7 @@ export const DOC_SEED: readonly DocSeed[] = [
     section: "The workbench",
     description: "A searchable library of everything ADCode can do, with an Open button and a plain explanation beside every feature.",
     why: "You should not need to know a command's name, shortcut, or menu before you can discover it.",
-    how: "Choose All features at the bottom of the Vibe sidebar, or open the menus - the button beside ADCode - and choose View, All Features. Search by a feature name or describe what you want to do. Choose Open to use it and ? to understand it.",
+    how: "Choose All features at the bottom of the Vibe sidebar, or open the menus - the button beside ADCode - and choose View, All Features. Search by a feature name or describe what you want to do. Choose Open to use it and ? to understand it. Preferences opens Settings, where sections sit in a sidebar - Ads & Earnings, Appearance, Editing and the rest - and one shows at a time; the search box looks through every section and counts the matches in each.",
     keywords: ["All Features", "The workbench", "everything adcode can do", "feature library", "feature guide", "discover"],
     access: ["All Features → All Features", "Open (command:features.open)", "Preferences (command:settings.open)", "Full screen (command:view.fullScreen)", "Toggle side bar (command:view.toggleSidebar)", "Toggle panel (command:view.togglePanel)", "Problems (command:view.problems)", "Output (command:view.output)", "Ports (command:view.ports)", "Feature guide (command:help.guide)", "Developer tools (command:help.devTools)", "About ADCode (command:help.about)"],
     related: ["workbench-universal-search", "workbench-command-palette"],
