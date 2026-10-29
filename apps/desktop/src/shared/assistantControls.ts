@@ -53,6 +53,8 @@ export interface AssistantServerRecord extends AssistantServerInput {
 export interface AssistantServerView extends AssistantServerRecord {
   readonly status: "disconnected" | "connecting" | "connected" | "error";
   readonly error: string | null;
+  /** OAuth: "required" offers Sign in on the card; "signed-in" when requests carry a token. */
+  readonly oauth: "required" | "signed-in" | null;
   /** Which stored values are present, so the card can ask for the missing one. */
   readonly values: readonly { readonly key: string; readonly secret: boolean }[];
   readonly tools: readonly {
@@ -127,7 +129,7 @@ export interface AssistantControlsView {
 export type AssistantControlAction =
   | { readonly kind: "create-skill"; readonly name: string; readonly description: string; readonly instructions: string }
   | { readonly kind: "save-server"; readonly server: unknown; readonly values?: Readonly<Record<string, string>> }
-  | { readonly kind: "connect" | "disconnect" | "remove-server" | "forget-values"; readonly id: string }
+  | { readonly kind: "connect" | "disconnect" | "remove-server" | "forget-values" | "sign-in" | "sign-out"; readonly id: string }
   | { readonly kind: "set-tool"; readonly id: string; readonly tool: string; readonly enabled: boolean }
   | { readonly kind: "set-skill"; readonly id: string; readonly enabled: boolean }
   | { readonly kind: "scan-imports" }

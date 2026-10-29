@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Icon } from "@/components/Icon";
+import { Upload } from "lucide";
 
 /**
  * Drop a logo in, get a square PNG back.
@@ -107,7 +109,7 @@ export function LogoDrop({ label, hint, value, onChange }: LogoDropProps) {
         {value === null ? (
           <>
             <span className="logo-drop-icon" aria-hidden="true">
-              ↑
+              <Icon node={Upload} />
             </span>
             <span className="logo-drop-text">Drop a logo, or</span>
             <button type="button" className="btn btn-outline btn-small" onClick={() => input.current?.click()}>

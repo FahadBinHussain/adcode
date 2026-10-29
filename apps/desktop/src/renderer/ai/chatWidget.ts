@@ -108,7 +108,10 @@ import { openChatAppearanceDialog } from "./chatAppearanceDialog.ts";
 import { createQuestionCard } from "./chatQuestionCard.ts";
 import { openUsageDialog } from "./usageDialog.ts";
 import { firstBuildPrompt, looksLikeBuildRequest } from "../../shared/firstBuild.ts";
+import { BUY_TOKENS_URL } from "../../shared/tagflow.ts";
 import { NO_FOLDER_BLOCKER } from "../../shared/workspaceBlockers.ts";
+import { createLimitPauseCard, parseLimitPause } from "./limitPause.ts";
+import { AppWindow, ArrowDown, ArrowRight, CalendarClock, CircleAlert, Folder, Maximize2, Mic, Users, type IconNode } from "lucide";
 
 export interface ChatWidget {
   readonly element: HTMLElement;
@@ -822,7 +825,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
   async function paintFolderBanner(): Promise<void> {
     const short = currentFolderRoot?.split(/[\\/]/).pop() || "No folder";
-    folderName.textContent = `📁 ${short}`;
+    folderName.replaceChildren(createIcon(Folder), document.createTextNode(short));
     folderName.title = currentFolderRoot ?? "No folder is open — click to open one";
     try {
       const [tasks, sessions] = await Promise.all([
@@ -2209,7 +2212,32 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   livePreviewButton.className = "chat-team-button";
   livePreviewButton.textContent = "Live preview";
   livePreviewButton.addEventListener("click", () => { void chatPreview.start(); });
-  toolsMenu.append(livePreviewButton, manualTeam, scheduleMessage, voiceButton);
+  /*
+   * Each tool as a menu row: icon, name, and what it does. Reported 2026-10-27: the rows
+   * sat at different indents and the voice button was a lone microphone with no name.
+   */
+  const toolRow = (button: HTMLButtonElement, icon: IconNode, label: string, hint: string): HTMLButtonElement => {
+    button.className = button.className.replace("chat-team-button", "composer-tools-item");
+    button.setAttribute("role", "menuitem");
+    const text = document.createElement("span");
+    text.className = "composer-tools-text";
+    const name = document.createElement("span");
+    name.className = "composer-tools-name";
+    name.textContent = label;
+    const detail = document.createElement("span");
+    detail.className = "composer-tools-hint";
+    detail.textContent = hint;
+    text.append(name, detail);
+    button.replaceChildren(createIcon(icon), text);
+    return button;
+  };
+  toolsMenu.setAttribute("role", "menu");
+  toolsMenu.append(
+    toolRow(livePreviewButton, AppWindow, "Live preview", "Run the project and watch it update"),
+    toolRow(manualTeam, Users, "Team", "Split this task across AI roles"),
+    toolRow(scheduleMessage, CalendarClock, "Schedule", "Send this message later"),
+    toolRow(voiceButton, Mic, "Dictate", "Speak instead of typing"),
+  );
   composerTools.append(toolsLabel, toolsMenu);
   toolsMenu.addEventListener("click", () => { composerTools.open = false; });
   document.addEventListener("pointerdown", event => {
@@ -2700,7 +2728,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   scrollButton.setAttribute("aria-label", "Scroll to latest messages");
   const scrollArrow = document.createElement("span");
   scrollArrow.className = "chat-scroll-bottom-arrow";
-  scrollArrow.textContent = "↓";
+  scrollArrow.append(createIcon(ArrowDown));
   scrollArrow.setAttribute("aria-hidden", "true");
   scrollButtonLabel = document.createElement("span");
   scrollButtonLabel.className = "chat-scroll-bottom-label";
@@ -2730,6 +2758,15 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
   working.className = "chat-working";
   working.hidden = true;
   working.setAttribute("role", "status");
+  /*
+   * A task waiting out a usage limit: a card above the "is writing" row, so the wait reads as
+   * what it is - with when it carries on and what ends it sooner - instead of as thinking.
+   */
+  const limitCard = createLimitPauseCard((action, pause) => {
+    if (action === "models") deps.openConnect();
+    else void window.open(action === "buy-tokens" ? pause.buyUrl ?? BUY_TOKENS_URL : `${BUY_TOKENS_URL}#plans`, "_blank", "noopener");
+  });
+  const hideLimitCard = (): void => { if (!limitCard.visible) return; limitCard.hide(); limitCard.element.remove(); };
   const workingText = document.createElement("span");
   workingText.className = "chat-working-text";
   workingText.textContent = "Thinking";
@@ -3546,7 +3583,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
 
     const icon = document.createElement("span");
     icon.className = "chat-failure-icon";
-    icon.textContent = failure.kind === "sign-in" ? "→" : "!";
+    icon.append(createIcon(failure.kind === "sign-in" ? ArrowRight : CircleAlert));
     icon.setAttribute("aria-hidden", "true");
 
     const body = document.createElement("div");
@@ -3576,6 +3613,11 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         retry.disabled = lastUserPrompt.trim().length === 0;
       } else if (kind === "usage") {
         action("View AI usage", () => void openUsageDialog(), primary);
+      } else if (kind === "buy-tokens") {
+        // Paying happens on the website; the paused task resumes by itself once the tokens arrive.
+        action("Buy tokens", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"), primary);
+      } else if (kind === "upgrade-plan") {
+        action("Upgrade plan", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"), primary);
       } else if (kind === "models") {
         action("Switch model", () => deps.openConnect(), primary).title = "Choose another model - the request carries on with it";
       } else if (kind === "new-conversation") {
@@ -4598,6 +4640,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       scrollToEnd();
     } else {
       working.remove();
+      hideLimitCard();
     }
     const wasWorking = card.dataset["working"] === "true";
     card.dataset["working"] = String(mode === "stop");
@@ -4711,6 +4754,8 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       // The window is in use - reading, typing, running: keep it beside the latest work.
       bringCardsDown();
     }
+    // Anything but a status line means the paused task is moving again.
+    if (event.kind !== "status") hideLimitCard();
     if (event.kind === "tool-draft") {
       const path = typeof event["path"] === "string" ? event["path"] : null;
       const label = path === null ? "Writing a file" : `Writing ${path}`;
@@ -4739,6 +4784,18 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
         // Host progress, not model reasoning: "Waiting 21s for Groq's rate limit" is
         // shown live, so a wait never reads as a hang.
         const text = String(event["text"] ?? "");
+        const pause = parseLimitPause(event["limit"]);
+        if (pause !== null) {
+          waitingForIncludedLimit = true;
+          limitCard.show(pause);
+          if (working.isConnected) transcript.insertBefore(limitCard.element, working);
+          else transcript.append(limitCard.element);
+          workingText.textContent = "Paused until the limit resets";
+          ensureTimeline().setStatus("Paused until the limit resets");
+          scrollToEnd();
+          break;
+        }
+        hideLimitCard();
         if (/^(?:Free AI (?:allowance reached|is temporarily limited)|This (?:session|week)'s free AI credits are used up)\./.test(text)) waitingForIncludedLimit = true;
         else if (text === "Checking the limit and resuming this task automatically…") waitingForIncludedLimit = false;
         // A helper's own line ("Helper 2 of 3 · Tests: editing src/a.ts") belongs to its
@@ -5394,7 +5451,7 @@ export function createChatWidget(deps: ChatWidgetDeps): ChatWidget {
       docked = next;
       externalHistory = next && !!historyHost;
       card.dataset["docked"] = String(next);
-      presentationButton.textContent = next ? "↗" : "Float";
+      presentationButton.replaceChildren(next ? createIcon(Maximize2) : document.createTextNode("Float"));
       presentationButton.title = next ? "Expand assistant workspace" : "Return the assistant to its floating panel";
       presentationButton.setAttribute("aria-label", presentationButton.title);
       resetButton.textContent = next ? "+" : "+ New";

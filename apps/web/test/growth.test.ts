@@ -8,6 +8,12 @@ const wire = {
 };
 
 describe("admin growth numbers", () => {
+  it("reads a timestamped previous-day baseline without changing older reports", () => {
+    const previous = { developers: 600, active1d: 20, active7d: 100, active30d: 300, returning7d: 80, adsShown: 180, creditedMicros: "200000", paidOutMicros: "100000" };
+    expect(parseGrowth({ ...wire, dayComparison: { asOf: wire.asOf - 86400000, previous } })?.dayComparison?.previous?.creditedMicros).toBe(200000n);
+    expect(parseGrowth(wire)?.dayComparison).toBeNull();
+    expect(parseGrowth({ ...wire, dayComparison: { asOf: wire.asOf, previous: { ...previous, active1d: -1 } } })?.dayComparison?.previous).toBeNull();
+  });
   it("reads the API's answer, with money as an exact bigint", () => {
     const growth = parseGrowth(wire);
     expect(growth?.developers).toBe(632);

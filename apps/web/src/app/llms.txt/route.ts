@@ -4,6 +4,7 @@ import { docsBySection } from "@/lib/docs";
 import { landingIndex } from "@/lib/landings";
 import { allReleases } from "@/lib/releases";
 import { PARENT, SITE, SOURCE, WEB_VERSION_URL, url } from "@/lib/site";
+import { FREE_WEEKLY_TOKENS, PACK_SUMMARY, PLAN_SUMMARY, tokenAmount } from "@/lib/pricing";
 
 /**
  * `/llms.txt` - a plain-text summary for answer engines and assistants.
@@ -66,17 +67,19 @@ export async function GET(): Promise<Response> {
 > ${SITE.description}
 
 ${SITE.name} is a free, ad-supported AI code editor in your browser and on Windows and Linux (a native macOS desktop build is not published yet). It is
-funded by advertisers rather than subscriptions, and it credits a share of advertising
+funded in part by advertisers, and it credits a share of eligible advertising
 revenue to the developer using it.
 
 ## Key facts
 
-- Cost to the developer: free. No subscription, trial, or paid tier.
+- Pricing: the editor is free with no subscription required. Optional Heabsy plans: ${PLAN_SUMMARY}.
+- One-time Heabsy token packs: ${PACK_SUMMARY}. Purchased tokens never expire and are used after the weekly allowance. Prices are USD before applicable tax.
+- Compare plans, packs and free access: ${url("/pricing")}.
 - Editor: Monaco editing surface, integrated terminals, git, workspace search, plain-English
   compiler errors, live collaboration.
 - AI: agents that edit across files, run tests, and keep going until done; several agents at
   once on an Agents board; Race mode to compare models on one task; Undo for every turn.
-  Included partner models need no API key: unlimited requests. Provider availability and model context limits apply.
+  Tagflow AI has no personal token or request quota from ADCode. Heabsy models include ${tokenAmount(FREE_WEEKLY_TOKENS)} free tokens each week; optional plans raise that allowance. No API key is needed for included models. Provider availability and context limits apply.
   Your own provider key follows that provider's billing; local models run in the desktop app.
 - Browser version: ${WEB_VERSION_URL}. Vibe mode in a private cloud workspace, with no personal cloud time limit. Sign in to start.
 - Ad format: one small sponsored card in the corner of the window.

@@ -46,13 +46,13 @@ export function validConnectorId(id: string): boolean {
   return ID_PATTERN.test(id) && !PROTECTED.has(id);
 }
 
-function filePath(): string {
-  return join(app.getPath("userData"), FILENAME);
+function filePath(name: string): string {
+  return join(app.getPath("userData"), name);
 }
 
-async function readAll(): Promise<Stored> {
+async function readAll(name: string): Promise<Stored> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(filePath(), "utf8"));
+    const parsed: unknown = JSON.parse(await readFile(filePath(name), "utf8"));
     if (typeof parsed !== "object" || parsed === null) return {};
 
     const out: Stored = Object.create(null) as Stored;
@@ -70,8 +70,8 @@ async function readAll(): Promise<Stored> {
   }
 }
 
-async function writeAll(values: Stored): Promise<void> {
-  const target = filePath();
+async function writeAll(name: string, values: Stored): Promise<void> {
+  const target = filePath(name);
   const temporary = `${target}.tmp`;
 
   await mkdir(app.getPath("userData"), { recursive: true });
@@ -95,12 +95,13 @@ function checkEntry(id: string, values: Readonly<Record<string, string>>): void 
   }
 }
 
-export function createConnectorSecrets(): ConnectorSecretStore {
+/** `name` keeps another kind of credential apart in its own file: OAuth sign-ins use one. */
+export function createConnectorSecrets(name = FILENAME): ConnectorSecretStore {
   return {
     async read(id: string): Promise<Readonly<Record<string, string>>> {
       await writes;
       if (!validConnectorId(id)) return {};
-      const stored = (await readAll())[id];
+      const stored = (await readAll(name))[id];
       if (stored === undefined) return {};
       if (!safeStorage.isEncryptionAvailable()) return {};
 
@@ -125,37 +126,37 @@ export function createConnectorSecrets(): ConnectorSecretStore {
           throw new Error("The OS credential store is unavailable, so the connector's values were not saved.");
         }
 
-        const all = await readAll();
+        const all = await readAll(name);
         if (Object.keys(values).length === 0) delete all[id];
         else all[id] = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, safeStorage.encryptString(value).toString("base64")]));
 
         if (Object.keys(all).length === 0) {
           try {
-            await unlink(filePath());
+            await unlink(filePath(name));
           } catch {
             // Nothing to remove.
           }
           return;
         }
-        await writeAll(all);
+        await writeAll(name, all);
       });
     },
 
     async clear(id: string): Promise<void> {
       if (!validConnectorId(id)) return;
       return mutate(async () => {
-        const all = await readAll();
+        const all = await readAll(name);
         if (all[id] === undefined) return;
         delete all[id];
         if (Object.keys(all).length === 0) {
           try {
-            await unlink(filePath());
+            await unlink(filePath(name));
           } catch {
             // Nothing to remove.
           }
           return;
         }
-        await writeAll(all);
+        await writeAll(name, all);
       });
     },
   };

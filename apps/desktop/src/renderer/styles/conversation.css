@@ -1074,3 +1074,41 @@
 :root[data-reduced-motion="true"] .chat-turn[data-state="running"] .chat-turn-lead,
 :root[data-reduced-motion="true"] .chat-turn .chat-step.is-thinking[data-state="running"] .chat-step-label { animation: none; background: none; color: var(--text-primary); }
 :root[data-reduced-motion="true"] .chat-pixel-spinner i { animation: none; opacity: 0.55; }
+
+/* ── The composer's Tools menu as real menu rows (2026-10-27) ──────────────────────────── */
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .composer-tools-menu {
+  min-width: 268px;
+  padding: 6px;
+  gap: 2px;
+  border-radius: 12px;
+}
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .composer-tools-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .composer-tools-item[hidden] { display: none; }
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .composer-tools-item:hover { background: var(--bg-hover); }
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .composer-tools-item:active { transform: scale(0.98); }
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .composer-tools-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+:is(body[data-workspace-mode] .vibe-workspace, html body) .chat-card .chat-toolbar .composer-tools-item > svg { width: 16px; height: 16px; color: var(--text-secondary); fill: none; }
+.composer-tools-text { display: grid; gap: 1px; min-width: 0; }
+.composer-tools-name { font-size: 13px; font-weight: 600; line-height: 1.3; }
+.composer-tools-hint { overflow: hidden; color: var(--text-tertiary); font-size: 11.5px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+/* Dictating: the row's icon becomes the recording dot. */
+.chat-toolbar .composer-tools-item.chat-voice { display: grid; place-items: initial; }
+.chat-toolbar .composer-tools-item.chat-voice[data-recording="true"] > svg { display: block; color: var(--danger); }
+.chat-toolbar .composer-tools-item.chat-voice[data-recording="true"]::after { content: none; }
+@media (prefers-reduced-motion: reduce) { .composer-tools-item:active { transform: none !important; } }

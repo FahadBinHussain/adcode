@@ -12,3 +12,4 @@ export * from "./openaiPlugin.ts";
 export * from "./openapi.ts";
 export * from "./import.ts";
 export * from "./zip.ts";
+export * from "./mcpOAuth.ts";

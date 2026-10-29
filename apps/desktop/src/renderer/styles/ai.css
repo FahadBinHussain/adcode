@@ -3747,6 +3747,44 @@ button.chat-setup-action {
   overflow-wrap: anywhere;
 }
 
+/* ══ A task paused on a usage limit (limitPause.ts) ═════════════════════ */
+
+.chat-limit {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border-hairline));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 8%, var(--bg-elevated));
+  color: var(--text-primary);
+  animation: chat-rise var(--duration-enter) var(--ease-sheet);
+}
+.chat-limit[hidden] { display: none; }
+.chat-limit-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+  color: var(--warning);
+}
+.chat-limit-icon svg { width: 16px; height: 16px; }
+.chat-limit-body { flex: 1; min-width: 0; }
+.chat-limit-title { margin: 0 0 4px; font-size: 15px; font-weight: 650; line-height: 1.4; }
+.chat-limit-text { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.chat-limit-resume {
+  margin: 10px 0 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chat-limit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .chat-limit { animation: none; } }
+
 /* ══ Approval control, mode notes and the undo card ═════════════════════ */
 
 .chat-mode-pill.chat-approval { cursor: pointer; }
@@ -4028,7 +4066,7 @@ button.chat-setup-action {
 input[type="checkbox"] + .chat-question-mark { border-radius: 4px; }
 input:checked + .chat-question-mark { border-color: var(--chat-accent); background: var(--chat-accent); color: var(--bg-app); }
 input[type="radio"]:checked + .chat-question-mark::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--bg-app); }
-input[type="checkbox"]:checked + .chat-question-mark::after { content: "✓"; }
+input[type="checkbox"]:checked + .chat-question-mark::after { content: ""; width: 10px; height: 10px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat; }
 
 .chat-question-option-text { display: grid; gap: 1px; min-width: 0; }
 .chat-question-option-label { color: var(--text-primary); font-size: 13px; font-weight: 550; line-height: 1.35; }
@@ -4366,3 +4404,8 @@ input[type="checkbox"]:checked + .chat-question-mark::after { content: "✓"; }
 }
 
 :root[data-reduced-motion="true"] .chat-history-grip { transition: none; }
+
+/* Lucide icons that replaced text glyphs (2026-10-27): sized to the text they sit beside. */
+.chat-scroll-bottom-arrow svg, .chat-failure-icon svg, .chat-plan-mark svg, .chat-presentation svg { width: 14px; height: 14px; }
+.chat-folder-name { display: inline-flex; align-items: center; gap: 6px; }
+.chat-folder-name svg { flex: none; width: 14px; height: 14px; color: var(--text-tertiary); }

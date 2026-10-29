@@ -1,3 +1,5 @@
+import { Icon } from "@/components/Icon";
+import { ArrowDown, ArrowUpRight } from "lucide";
 import type { Metadata } from "next";
 import { StickyInstall } from "@/components/StickyInstall";
 import { LandingBidBuilder } from "@/components/LandingBidBuilder";
@@ -57,7 +59,7 @@ export default function Home() {
           <p className="marketplace-eyebrow">A FAIRER EXCHANGE</p>
           <h2 id="share-heading">Your attention.<br /><span>Your share.</span></h2>
           <p>An occasional sponsored card keeps ADCode free. You receive half of eligible ad revenue, with a clear record of every credit.</p>
-          <Link className="home-text-link" href="/earn-while-you-code">How earnings work <span aria-hidden="true">↗</span></Link>
+          <Link className="home-text-link" href="/earn-while-you-code">How earnings work <Icon node={ArrowUpRight} /></Link>
         </div>
         <div className="home-share-panel">
           <span className="home-share-caption">BUILT AROUND A SIMPLE SPLIT</span>
@@ -84,9 +86,10 @@ export default function Home() {
         <div className="marketplace-wrap">
           <div className="home-advertiser-intro" data-home-reveal>
             <header><p className="marketplace-eyebrow">Advertise on ADCode</p><h2>Good tools meet<br />the right people.</h2><p>Reach developers as they build. Start from <strong>$1 per 500 verified impressions.</strong></p></header>
-            <Link className="home-link-button" href="/portal">Advertiser portal <span aria-hidden="true">↗</span></Link>
+            <Link className="home-link-button" href="/portal">Start advertising <Icon node={ArrowUpRight} /></Link>
           </div>
-          <details className="home-campaign-details">
+          {/* Open from the start: the bid builder answers "what would it cost me", which is the question that brings an advertiser this far. */}
+          <details className="home-campaign-details" open>
             <summary><span><strong>Create your first campaign</strong><span>Set your bid and preview your ad.</span></span><span className="home-details-toggle" aria-hidden="true">+</span></summary>
             <LandingBidBuilder />
             <section className="marketplace-principles" aria-label="How ADCode advertising works"><div className="marketplace-wrap"><p><span>01</span><strong>Verified attention</strong><small>Only a real, eligible view can bill.</small></p><p><span>02</span><strong>Second-price auction</strong><small>Win at your maximum; often pay less.</small></p><p><span>03</span><strong>Human review</strong><small>Every creative is checked before delivery.</small></p></div></section>
@@ -94,11 +97,11 @@ export default function Home() {
         </div>
       </section>
       <section className="home-resources marketplace-wrap" aria-labelledby="resources-heading">
-        <div className="home-resources-intro"><div><p className="marketplace-eyebrow">WHEN YOU NEED A HAND</p><h2 id="resources-heading">A guide for the next step.</h2></div><Link className="home-text-link" href="/docs">Open the docs <span aria-hidden="true">↗</span></Link></div>
+        <div className="home-resources-intro"><div><p className="marketplace-eyebrow">WHEN YOU NEED A HAND</p><h2 id="resources-heading">A guide for the next step.</h2></div><Link className="home-text-link" href="/docs">Open the docs <Icon node={ArrowUpRight} /></Link></div>
         <details className="home-resource-details"><summary>Explore guides, comparisons, and source code <span className="home-details-toggle" aria-hidden="true">+</span></summary>
           <DocsShowcase />
-          <div className="home-comparisons"><p>Compare your editor</p><nav aria-label="Editor comparisons">{comparisons().map((page) => <Link className="home-text-link" key={page.slug} href={landingPath(page)}>{page.comparison?.subject.replace(/ \(formerly .*\)$/, "")} <span aria-hidden="true">↗</span></Link>)}</nav></div>
-          <div className="home-source-links"><Link className="home-text-link" href="/free-ai-code-editor">Explore the free editor <span aria-hidden="true">↗</span></Link><a className="home-text-link" href={SOURCE.repo} target="_blank" rel="noopener noreferrer">View on GitHub <span aria-hidden="true">↗</span></a></div>
+          <div className="home-comparisons"><p>Compare your editor</p><nav aria-label="Editor comparisons">{comparisons().map((page) => <Link className="home-text-link" key={page.slug} href={landingPath(page)}>{page.comparison?.subject.replace(/ \(formerly .*\)$/, "")} <Icon node={ArrowUpRight} /></Link>)}</nav></div>
+          <div className="home-source-links"><Link className="home-text-link" href="/free-ai-code-editor">Explore the free editor <Icon node={ArrowUpRight} /></Link><a className="home-text-link" href={SOURCE.repo} target="_blank" rel="noopener noreferrer">View on GitHub <Icon node={ArrowUpRight} /></a></div>
         </details>
       </section>
       <StickyInstall webFirst />
@@ -109,8 +112,8 @@ export default function Home() {
 function WebFirstActions() {
   return <div className="hero-install">
     <div className="marketplace-hero-actions">
-      <a href={WEB_VERSION_URL} className="marketplace-primary">Open ADCode in browser <span aria-hidden="true">↗</span></a>
-      <Link href="/versions" className="marketplace-secondary">Get the desktop app <span aria-hidden="true">↓</span></Link>
+      <a href={WEB_VERSION_URL} className="marketplace-primary">Open ADCode in browser <Icon node={ArrowUpRight} /></a>
+      <Link href="/versions" className="marketplace-secondary">Get the desktop app <Icon node={ArrowDown} /></Link>
     </div>
     <p className="hero-install-note">Build online, or use the desktop app for local projects.</p>
   </div>;

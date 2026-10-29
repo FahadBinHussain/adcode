@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { parseIncludedAiView, type IncludedAiModel } from "@/lib/includedAi";
 import { parseStatusView, type StatusView } from "@/lib/statusView";
+import { Icon } from "@/components/Icon";
+import { ArrowRight } from "lucide";
 
 /**
  * The live model control in the public header.
@@ -395,7 +397,7 @@ export function HeaderStatus() {
             <small>{loading && phase !== "loading" ? "Refreshing…" : updated}</small>
             <Link href="/status" className="header-status-link" onClick={() => setOpen(false)}>
               <span>Model status &amp; incidents</span>
-              <span aria-hidden="true">→</span>
+              <Icon node={ArrowRight} />
             </Link>
           </div>
         </div>

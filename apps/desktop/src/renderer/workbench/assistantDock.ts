@@ -13,6 +13,8 @@ import type { VibePage } from "./vibeSidebarModel.ts";
 import { isWebSurface } from "../surface.ts";
 
 interface AssistantDockDeps {
+  /** The title-bar update button (updates/updatePrompt.ts), shown only while an update is out. */
+  readonly updateButton?: HTMLButtonElement;
   readonly chat: ChatWidget;
   readonly workbench: HTMLElement;
   readonly sidebar: HTMLElement;
@@ -227,6 +229,7 @@ export function createAssistantDock(deps: AssistantDockDeps) {
       onUnreadNotifications: deps.onUnreadNotifications,
       onEarnings: deps.onEarnings,
       appMenu: deps.appMenu,
+      ...(deps.updateButton === undefined ? {} : { updateButton: deps.updateButton }),
       onLayoutChange: () => { mountDock(); deps.layoutChanged(); },
     });
     toolbar.append(vibeSidebar.topbar, vibeSidebar.element);

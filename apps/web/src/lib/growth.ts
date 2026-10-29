@@ -65,7 +65,10 @@ export interface Growth {
   creditedMicros: bigint;
   daily: GrowthDay[];
   asOf: number;
+  dayComparison?: { asOf: number; previous: GrowthDayValues | null } | null;
 }
+
+export type GrowthDayValues = Pick<Growth, "developers" | "active1d" | "active7d" | "active30d" | "returning7d" | "adsShown" | "creditedMicros" | "paidOutMicros">;
 
 const COUNT_KEYS = ["developers", "joined7d", "joined30d", "active1d", "active7d", "active30d", "adsShown", "adsShown7d", "adsShown30d", "clicks", "asOf"] as const;
 const isCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -110,6 +113,18 @@ export function parseGrowth(value: unknown): Growth | null {
   }
 
   const counts = Object.fromEntries(COUNT_KEYS.map((key) => [key, data[key] as number])) as Record<(typeof COUNT_KEYS)[number], number>;
+  let dayComparison: Growth["dayComparison"] = null;
+  const comparison = data.dayComparison as { asOf?: unknown; previous?: Record<string, unknown> | null } | undefined;
+  if (comparison && isCount(comparison.asOf)) {
+    const before = comparison.previous;
+    const countKeys = ["developers", "active1d", "active7d", "active30d", "returning7d", "adsShown"] as const;
+    const valid = before != null && countKeys.every(key => isCount(before[key])) && typeof before["creditedMicros"] === "string" && /^\d+$/.test(before["creditedMicros"]) &&
+      (before["paidOutMicros"] === null || typeof before["paidOutMicros"] === "string" && /^\d+$/.test(before["paidOutMicros"]));
+    dayComparison = { asOf: comparison.asOf, previous: valid ? {
+      ...Object.fromEntries(countKeys.map(key => [key, before![key]])) as Pick<GrowthDayValues, (typeof countKeys)[number]>,
+      creditedMicros: BigInt(before!["creditedMicros"] as string), paidOutMicros: before!["paidOutMicros"] === null ? null : BigInt(before!["paidOutMicros"] as string),
+    } : null };
+  }
   return {
     ...counts,
     accounts: isCount(data.accounts) ? data.accounts : null,
@@ -120,6 +135,7 @@ export function parseGrowth(value: unknown): Growth | null {
     creditedMicros: BigInt(data.creditedMicros),
     paidOutMicros: typeof data.paidOutMicros === "string" && /^\d+$/.test(data.paidOutMicros) ? BigInt(data.paidOutMicros) : null,
     daily,
+    dayComparison,
   };
 }
 

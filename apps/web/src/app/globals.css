@@ -5364,3 +5364,6 @@ body { background: var(--surface); }
 .referral-house { display: flex !important; align-items: center; gap: 8px; }
 .invite-panel-progress { display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: rgba(66,216,120,.08); }
 .invite-panel-progress-text { margin: 0; font-size: 14px; }
+
+/* Lucide icons (components/Icon.tsx): sit on the text baseline like the glyphs they replaced. */
+.icon { display: inline-block; flex: none; vertical-align: -0.125em; }

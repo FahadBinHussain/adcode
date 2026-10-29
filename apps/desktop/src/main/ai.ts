@@ -1548,6 +1548,9 @@ async function ensureChatAgent(thread: ChatThread, providerId: string, model: st
   if (provider === null) {
     const name = providerIn(catalogue, providerId)?.name ?? providerId;
     // Two different failures, and the fix is different for each.
+    // Free AI needs no key: a null provider means its model list could not be loaded. Reported
+    // 2026-10-27 from Linux as "No API key for tagflow ... CANT FIND FREE MODELS".
+    if (providerId === "tagflow") return "Free AI couldn't load its models just now - no API key is needed. Check your internet connection and try again in a moment.";
     return providerId === "custom" && baseUrlOf("custom") === null
       ? "No address for the custom endpoint. Set one in Connect a model."
       : `No API key for ${name}. Add one in Connect a model.`;
@@ -1883,7 +1886,12 @@ async function runTurn(
       // Never the prompt, the answer, or a file's contents.
       if (event.kind === "tool-call") toolCalls += 1;
       if (event.kind === "tool-result" && event.isError) recordDebug("warn", "ai:tool", `${event.name} failed: ${event.content.slice(0, 200)}`);
-      if (event.kind === "error") recordDebug("error", "ai", `${providerId} / ${model}: ${event.detail}`);
+      if (event.kind === "error") {
+        recordDebug("error", "ai", `${providerId} / ${model}: ${event.detail}`);
+        // End this run on an account switch, then bind the next user turn to the new
+        // account. A cached provider otherwise rejects every retry in this chat.
+        if (/The signed-in account changed\./.test(event.detail)) thread.rebuild = true;
+      }
       if (activeTaskId !== null) {
         const workspaceService = await readyAiWorkspaceService();
         if (!modelTraceRecorded) {

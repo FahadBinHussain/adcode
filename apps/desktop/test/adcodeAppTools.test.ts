@@ -27,7 +27,7 @@ function harness(options: { confirm?: boolean; connectTo?: "connected" | "error"
         actions.push(action);
         if (action["kind"] === "save-server") {
           const record = parseAssistantServer(action["server"]);
-          servers = [...servers.filter((item) => item.id !== record.id), { ...record, status: "disconnected", error: null, values: [], tools: [] }];
+          servers = [...servers.filter((item) => item.id !== record.id), { ...record, status: "disconnected", error: null, oauth: null, values: [], tools: [] }];
         }
         if (action["kind"] === "connect") {
           servers = servers.map((item) => item.id !== action["id"] ? item : options.connectTo === "error"

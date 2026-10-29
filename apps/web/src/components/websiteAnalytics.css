@@ -21,6 +21,13 @@
 .growth-head h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
 .growth-head .website-analytics-note { margin: 6px 0 0; max-width: 62ch; }
 .growth-tiles { margin-bottom: 0; }
+.admin-tile .analytics-daily-change { display: block; margin: 8px 0 2px; font-size: 12px; line-height: 1.7; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin-tile .analytics-daily-change > span { display: inline; margin: 0; font-size: inherit; font-weight: inherit; }
+.admin-tile .analytics-daily-change-note { font-weight: 400; }
+.analytics-daily-change[data-tone="good"] { color: var(--success, #55c9a2); }
+.analytics-daily-change[data-tone="bad"] { color: var(--danger, #e88b86); }
+.analytics-daily-change[data-tone="neutral"], .analytics-daily-change-note { color: var(--muted, #999); }
+.analytics-daily-change-note { font-weight: 400; }
 .growth-share-picks { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 0; border: 0; }
 .growth-share-picks label { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line, #444); border-radius: 999px; font-size: 13px; cursor: pointer; }
 .growth-share-picks label[data-checked="true"] { border-color: var(--text); background: var(--control); }

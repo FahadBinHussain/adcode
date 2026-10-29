@@ -27,9 +27,9 @@ import { MCP_NODE_REQUIREMENT, mcpNodeNote } from "../../shared/mcpNode.ts";
 import { AGENT_PROFILES_SETTING, parseAgentProfiles, type AgentProfile } from "../ai/agentProfiles.ts";
 import { askThemed } from "../dialogs/confirmDialog.ts";
 import { button, el, field, openFormModal } from "../dialogs/formDialog.ts";
-import { createIcon, ICON } from "../workbench/icons.ts";
+import { createIcon, ICON, iconButton } from "../workbench/icons.ts";
 import { BUILT_IN_TOOLS_INFO, type BuiltInToolGroup } from "./builtInTools.ts";
-import { explainMcpError, matchesQuery, serverSummary, toolUsers } from "./toolsModel.ts";
+import { explainMcpError, freeServerId, matchesQuery, mcpUrlProblem, serverIdFromName, serverSummary, toolUsers } from "./toolsModel.ts";
 import { indexForStagger, markFor } from "../motionFlip.ts";
 import { isWebSurface } from "../surface.ts";
 
@@ -288,9 +288,11 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     const panel = panels.get("servers")!;
     const bar = el("div", "tools-bar");
     bar.append(el("p", "tools-panel-intro", "Connectors give the assistant extra tools: MCP servers, Claude Desktop extensions, Claude Code plugins, and OpenAI-style actions. The chat can use them; each call asks you first."));
+    const custom = button("Add custom connector", "agents-secondary", () => openAddConnector("custom"));
+    custom.prepend(createIcon(ICON.plus));
     const add = button("Add connector", "agents-primary", () => openAddConnector("import"));
     add.prepend(createIcon(ICON.plus));
-    bar.append(add);
+    bar.append(custom, add);
     panel.replaceChildren(bar);
 
     const drafts = (controls?.drafts ?? []).filter((draft) => matchesQuery(query, [draft.name, draft.purpose, draft.source, draft.kind, ...draft.skills, ...draft.servers.map((item) => item.name)]));
@@ -298,7 +300,7 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
 
     const servers = (controls?.servers ?? []).filter((server) => matchesQuery(query, [server.name, server.id, server.endpoint, server.source, KIND_LABEL[server.kind], ...server.tools.map((tool) => tool.name)]));
     if (servers.length === 0) {
-      panel.append(emptyNote(query.trim() ? "No connectors or tools match that search." : "No connectors yet. Import what Claude, Cursor or VS Code already have, add a file, or pick one from the catalogue."));
+      panel.append(emptyNote(query.trim() ? "No connectors or tools match that search." : "No connectors yet. Add a custom connector, import what Claude, Cursor or VS Code already have, add a file, or pick one from the catalogue."));
       return;
     }
     const grid = el("ul", "tools-grid");
@@ -384,11 +386,24 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
       if (server.status === "connected") {
         actions.append(button("Tools", "agent-box-action agent-box-action-primary", () => openServerTools(server.id)));
         actions.append(button("Disconnect", "agent-box-action", () => void act({ kind: "disconnect", id: server.id }, `${server.name} disconnected.`)));
+      } else if (server.oauth === "required") {
+        // The server named an OAuth sign-in: the browser does it, then the card connects.
+        const signIn = button("Sign in", "agent-box-action agent-box-action-primary", () => void (async () => {
+          signIn.disabled = true;
+          signIn.textContent = "Finish in your browser…";
+          say(`Sign in to ${server.name} in your browser. ADCode connects when you are done.`);
+          if (!await act({ kind: "sign-in", id: server.id }, `${server.name} signed in.`)) { signIn.disabled = false; signIn.textContent = "Sign in"; }
+        })());
+        signIn.dataset["action"] = "sign-in";
+        actions.append(signIn);
       } else {
         const label = server.status === "error" ? "Retry" : server.status === "connecting" ? "Connecting…" : "Connect";
         const connect = button(label, "agent-box-action agent-box-action-primary", () => void act({ kind: "connect", id: server.id }));
         connect.disabled = server.status === "connecting";
         actions.append(connect);
+      }
+      if (server.oauth === "signed-in") {
+        actions.append(button("Sign out", "agent-box-action", () => void act({ kind: "sign-out", id: server.id }, `${server.name} signed out.`)));
       }
       if (missingToken(server)) actions.append(button("Add token", "agent-box-action", () => openValues(server, [TOKEN_KEY])));
     }
@@ -574,18 +589,46 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
   /** The four ways in: the catalogue, this computer, a file or link, or by hand. */
   function openAddConnector(start: "catalogue" | "import" | "file" | "custom"): void {
     const web = isWebSurface();
-    const { dialog, card, title, finish } = openFormModal("tools-add-connector", "Add a connector", () => undefined);
-    // Title over one honest line: the four ways in, and when anything actually happens.
+    const { dialog, card, title, finish } = openFormModal("tools-add-connector", start === "custom" ? "Add custom connector" : "Add a connector", () => undefined);
+    // The title, its close button, and one honest line: what this is, and when anything happens.
     const head = el("div", "tools-dialog-head");
-    head.append(title, el("p", "tools-dialog-sub", "Catalogue, import, a file or link, or by hand - nothing is added until you press Add."));
+    const headRow = el("div", "tools-dialog-head-row");
+    const close = iconButton("Close", ICON.close, "icon-button tools-dialog-close");
+    close.addEventListener("click", finish);
+    headRow.append(title, close);
+    const externalLink = (label: string, href: string): HTMLAnchorElement => {
+      const link = el("a", "tools-dialog-link", label);
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noreferrer noopener";
+      return link;
+    };
+    const sub = el("p", "tools-dialog-sub");
+    if (start === "custom") {
+      const prebuilt = button("get started with pre-built ones", "tools-dialog-inline-link", () => {
+        switcher.hidden = false;
+        pick("catalogue");
+      });
+      sub.append(
+        "Connect ADCode to your data and tools. ",
+        externalLink("Learn more about connectors", "https://adcode.bluethenics.com/docs/connectors"),
+        " or ",
+        prebuilt,
+        ".",
+      );
+    } else {
+      sub.textContent = "Catalogue, import, a file or link, or a custom connector - nothing is added until you continue.";
+    }
+    head.append(headRow, sub);
     card.prepend(head);
     const switcher = el("div", "tools-tabs tools-dialog-tabs");
     switcher.setAttribute("role", "tablist");
+    if (start === "custom") switcher.hidden = true;
     const steps = [
       { id: "catalogue" as const, label: "Catalogue" },
       { id: "import" as const, label: "Import" },
       { id: "file" as const, label: web ? "Link or text" : "From a file" },
-      { id: "custom" as const, label: "Custom" },
+      { id: "custom" as const, label: "Custom connector" },
     ];
     const stepButtons = new Map<string, HTMLButtonElement>();
     for (const step of steps) {
@@ -704,56 +747,141 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     })());
     fileStep.append(readField("From a link", link, readLink), readField("Paste a document", pasted, readText));
 
-    /* Custom: the form for a server or an API known by hand. */
+    /* Custom: a name and an MCP server URL, with the technical fields folded away. */
     const form = el("form", "form-dialog-form");
     const name = el("input", "form-input");
     name.required = true;
     name.maxLength = 100;
     name.placeholder = "e.g. Project search";
+    name.autocomplete = "off";
+    name.setAttribute("aria-label", "Connector name");
     const id = el("input", "form-input");
-    id.required = true;
     id.maxLength = 48;
     id.pattern = "[a-z0-9]+(-[a-z0-9]+)*";
     id.placeholder = "project-search";
+    id.autocomplete = "off";
+    id.spellcheck = false;
+    id.setAttribute("aria-label", "Connector ID");
     const transport = el("select", "form-select");
-    for (const [value, label] of [["stdio", "Local command (stdio)"], ["http", "Remote URL (HTTP)"], ["sse", "Remote URL (SSE)"]] as const) {
+    for (const [value, label] of [["http", "Remote URL (HTTP)"], ["sse", "Remote URL (SSE)"], ["stdio", "Local command (stdio)"]] as const) {
       const option = el("option", "", label);
       option.value = value;
       transport.append(option);
     }
+    transport.setAttribute("aria-label", "Connection type");
     const endpoint = el("input", "form-input");
     endpoint.required = true;
-    endpoint.placeholder = "e.g. npx";
+    endpoint.maxLength = 2048;
+    endpoint.type = "url";
+    endpoint.placeholder = "https://mcp.example.com/mcp";
+    endpoint.autocomplete = "off";
+    endpoint.spellcheck = false;
+    endpoint.setAttribute("aria-label", "MCP server URL");
+    const endpointField = field("MCP server URL", endpoint, "The HTTPS address where the server accepts MCP requests, for example https://mcp.example.com/mcp.");
     const args = el("input", "form-input");
     args.value = "[]";
     args.placeholder = '["-y", "your-mcp-server"]';
+    args.setAttribute("aria-label", "Arguments");
+    const argsField = field("Arguments (a JSON list)", args, "Only for a local command.");
     const values = el("textarea", "form-input");
     values.rows = 3;
-    values.placeholder = "API_KEY=… (one NAME=value per line; values go to the OS-encrypted store)";
-    values.setAttribute("aria-label", "Environment variables or headers");
-    transport.addEventListener("change", () => {
-      const remote = transport.value !== "stdio";
-      endpoint.placeholder = transport.value === "stdio" ? "e.g. npx" : "https://example.com/mcp";
-      args.disabled = remote;
-      values.placeholder = transport.value === "stdio" ? "API_KEY=… (one NAME=value per line; values go to the OS-encrypted store)" : "Authorization=Bearer … (one Header=value per line)";
-    });
+    values.placeholder = "Authorization=Bearer … (one Header=value per line)";
+    values.setAttribute("aria-label", "Headers or environment values");
+    const advancedBody = el("div", "tools-dialog-advanced-body");
+    advancedBody.append(
+      field("Connector ID (optional)", id, "Lowercase words joined by hyphens. Left blank, it comes from the name."),
+      field("Connection type", transport),
+      argsField,
+      field("Headers or environment values", values, web ? "Values go to the encrypted store in your private cloud workspace." : "Values go to the OS-encrypted store, never into ADCode's settings."),
+    );
+    const advanced = el("details", "tools-dialog-advanced");
+    advanced.append(el("summary", "", "Advanced"), advancedBody);
+    const fineprint = el("div", "tools-dialog-fineprint");
+    const building = el("p", "tools-dialog-note");
+    building.append("Building an MCP server? ", externalLink("See the documentation", "https://modelcontextprotocol.io"));
+    fineprint.append(
+      el("p", "tools-dialog-note", "Only use connectors from developers you trust. ADCode does not control which tools a developer makes available and cannot verify that they will work as intended or that they won't change."),
+      building,
+    );
     const problem = el("p", "form-notice");
     problem.setAttribute("role", "alert");
     problem.hidden = true;
-    const row = el("div", "form-row");
-    row.append(field("Connector ID", id, "Lowercase words joined by hyphens."), field("Connection", transport));
     const buttons = el("div", "confirm-buttons");
-    const save = el("button", "result-close", "Save connector");
+    const save = el("button", "result-close", "Continue");
     save.type = "submit";
     buttons.append(button("Cancel", "confirm-cancel", finish), save);
-    form.append(field("Name", name), row, field("Command or URL", endpoint), field("Arguments (a JSON list)", args, web ? "Commands run inside your private cloud workspace." : "Local commands run with your account's permissions."), field("Values", values), problem, buttons);
+    form.append(
+      field("Name", name, "Shown in the connector list."),
+      endpointField,
+      advanced,
+      fineprint,
+      problem,
+      buttons,
+    );
+
+    let busy = false;
+    const endpointLabel = endpointField.querySelector(".form-field-label");
+    const endpointHint = endpointField.querySelector(".form-field-hint");
+    function syncCustomForm(): void {
+      const local = transport.value === "stdio";
+      endpoint.type = local ? "text" : "url";
+      endpoint.placeholder = local ? "e.g. npx" : "https://mcp.example.com/mcp";
+      endpoint.setAttribute("aria-label", local ? "Command" : "MCP server URL");
+      if (endpointLabel !== null) endpointLabel.textContent = local ? "Command" : "MCP server URL";
+      if (endpointHint !== null) endpointHint.textContent = local
+        ? (web ? "The program ADCode starts inside your private cloud workspace, for example npx." : "The program ADCode starts, for example npx.")
+        : "The HTTPS address where the server accepts MCP requests, for example https://mcp.example.com/mcp.";
+      values.placeholder = local ? "API_KEY=… (one Environment=value per line)" : "Authorization=Bearer … (one Header=value per line)";
+      argsField.hidden = !local;
+      args.disabled = !local;
+      save.disabled = busy || name.value.trim() === "" || endpoint.value.trim() === "";
+    }
+    name.addEventListener("input", syncCustomForm);
+    endpoint.addEventListener("input", syncCustomForm);
+    transport.addEventListener("change", syncCustomForm);
+    syncCustomForm();
+
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      let parsed: unknown;
-      try { parsed = JSON.parse(args.value || "[]"); } catch { parsed = null; }
-      if (transport.value === "stdio" && (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string"))) {
+      if (busy) return;
+      problem.hidden = true;
+      const nameText = name.value.trim();
+      const endpointText = endpoint.value.trim();
+      if (nameText === "") {
         problem.hidden = false;
-        problem.textContent = 'Arguments must be a JSON list of strings, like ["-y", "server-name"].';
+        problem.textContent = "Give the connector a name.";
+        name.focus();
+        return;
+      }
+      let argsList: string[] = [];
+      if (transport.value === "stdio") {
+        let parsed: unknown;
+        try { parsed = JSON.parse(args.value || "[]"); } catch { parsed = null; }
+        if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
+          problem.hidden = false;
+          problem.textContent = 'Arguments must be a JSON list of strings, like ["-y", "server-name"].';
+          return;
+        }
+        argsList = parsed;
+      } else {
+        const urlProblem = mcpUrlProblem(endpointText);
+        if (urlProblem !== null) {
+          problem.hidden = false;
+          problem.textContent = urlProblem;
+          endpoint.focus();
+          return;
+        }
+      }
+      const typedId = id.value.trim();
+      if (typedId !== "" && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(typedId)) {
+        problem.hidden = false;
+        problem.textContent = "The connector ID must be lowercase letters and digits, joined by hyphens.";
+        return;
+      }
+      const taken = new Set((controls?.servers ?? []).map((server) => server.id));
+      if (typedId !== "" && taken.has(typedId)) {
+        problem.hidden = false;
+        problem.textContent = "That connector ID is already in use. Choose another one or leave it blank.";
         return;
       }
       const entered: Record<string, string> = {};
@@ -768,14 +896,35 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
         }
         entered[trimmed.slice(0, at).trim()] = trimmed.slice(at + 1).trim();
       }
-      const argsList = transport.value === "stdio" ? (parsed as string[]) : [];
-      void act({
-        kind: "save-server",
-        server: { id: id.value.trim(), name: name.value.trim(), transport: transport.value as "stdio" | "http" | "sse", endpoint: endpoint.value.trim(), args: argsList },
-        values: entered,
-      }, `${name.value.trim()} saved. Connect it from its card.`).then((ok) => {
-        if (ok) { finish(); showTab("servers"); }
-      });
+      const serverId = typedId !== "" ? typedId : freeServerId(serverIdFromName(nameText), taken);
+      busy = true;
+      save.disabled = true;
+      save.textContent = "Saving…";
+      void (async () => {
+        const failure = await perform({
+          kind: "save-server",
+          server: { id: serverId, name: nameText, transport: transport.value as "stdio" | "http" | "sse", endpoint: endpointText, args: argsList },
+          values: entered,
+        });
+        if (failure !== null) {
+          busy = false;
+          save.textContent = "Continue";
+          syncCustomForm();
+          problem.hidden = false;
+          problem.textContent = failure;
+          return;
+        }
+        busy = false;
+        finish();
+        showTab("servers");
+        const connectFailure = await perform({ kind: "connect", id: serverId });
+        const saved = controls?.servers.find((server) => server.id === serverId);
+        if (connectFailure !== null) say(`${nameText} saved, but it could not connect. ${connectFailure}`);
+        else if (saved?.status === "error") say(`${nameText} saved, but it could not connect. ${explainMcpError(saved.error) ?? saved.error ?? "Check the address and try again."}`);
+        else if (saved?.status === "connected") say(`${nameText} connected. Open Tools on its card to turn on what the assistant may use.`);
+        else if (saved?.status === "connecting") say(`${nameText} saved. Connecting…`);
+        else say(`${nameText} saved. Connect it from its card.`);
+      })();
     });
 
     /* The drafts, whatever step they came from. */
@@ -817,6 +966,7 @@ export function createToolsPage(deps: ToolsPageDeps): ToolsPage {
     const stepViews: Record<"catalogue" | "import" | "file" | "custom", HTMLElement> = { catalogue, import: importStep, file: fileStep, custom: form };
     let pickedOnce = false;
     function pick(which: "catalogue" | "import" | "file" | "custom"): void {
+      title.textContent = which === "custom" ? "Add custom connector" : "Add a connector";
       for (const [id_, control] of stepButtons) control.setAttribute("aria-selected", String(id_ === which));
       for (const [id_, view] of Object.entries(stepViews)) view.hidden = id_ !== which;
       // The first step arrives with the dialog itself; a later pick rises in on its own.

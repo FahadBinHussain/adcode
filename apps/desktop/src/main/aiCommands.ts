@@ -105,10 +105,21 @@ export function timeoutFrom(value: unknown): number | null {
  * -e "..."` - reached cmd with every quote backslash-escaped, which cmd does not understand,
  * so any command naming a path with a space in it failed.
  */
-export function shellFor(command: string): { file: string; args: string[]; verbatim: boolean } {
-  return process.platform === "win32"
-    ? { file: `${process.env["SystemRoot"] ?? "C:\\Windows"}\\System32\\cmd.exe`, args: ["/d", "/s", "/c", `"${command}"`], verbatim: true }
-    : { file: "/bin/sh", args: ["-c", command], verbatim: false };
+export function shellFor(command: string, platform: NodeJS.Platform = process.platform): { file: string; args: string[]; verbatim: boolean } {
+  if (platform !== "win32") return { file: "/bin/sh", args: ["-c", command], verbatim: false };
+  const system = process.env["SystemRoot"] ?? "C:\\Windows";
+  // Models write PowerShell on Windows as often as cmd. Reported 2026-10-27: "'Get-ChildItem' /
+  // 'ForEach-Object' is not recognized as an internal or external command" ended whole tasks.
+  if (looksLikePowerShell(command)) {
+    return { file: `${system}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`, args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command], verbatim: false };
+  }
+  return { file: `${system}\\System32\\cmd.exe`, args: ["/d", "/s", "/c", `"${command}"`], verbatim: true };
+}
+
+/** A Verb-Noun cmdlet, a PowerShell variable or a PowerShell-only flag: cmd.exe could never run this line. */
+export function looksLikePowerShell(command: string): boolean {
+  return /(?:^|[\s|;(&])(?:Get|Set|New|Remove|Select|Where|ForEach|Invoke|Test|Write|Out|Copy|Move|Rename|Start|Stop|Measure|Sort|Format|Join|Split|Resolve|Expand|Compress|Import|Export|ConvertTo|ConvertFrom|Add|Clear)-[A-Z][A-Za-z]+\b/.test(command)
+    || /\$env:|\$PSScriptRoot|\$_\b|\[System\.|\s-ErrorAction\b/.test(command);
 }
 
 /**

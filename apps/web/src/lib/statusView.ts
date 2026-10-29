@@ -32,6 +32,16 @@ export interface StatusModel {
   avgMs: number | null;
   lastActiveDay: string | null;
   days: StatusDay[];
+  candles?: StatusCandle[];
+}
+
+export interface StatusCandle {
+  startAt: number;
+  endAt: number;
+  level: string;
+  turns: number;
+  errors: number;
+  avgMs: number | null;
 }
 
 export interface StatusIncidentUpdate {
@@ -55,6 +65,7 @@ export interface StatusIncident {
 export interface StatusView {
   asOf: number;
   windowDays: number;
+  liveWindowMinutes?: number;
   overall: { state: string; title: string; activeIncidents: number };
   models: StatusModel[];
   incidents: StatusIncident[];
@@ -127,7 +138,19 @@ function parseModel(raw: unknown): StatusModel | null {
     avgMs: asNumber(raw["avgMs"]),
     lastActiveDay: asString(raw["lastActiveDay"]),
     days,
+    ...(Array.isArray(raw["candles"]) ? { candles: raw["candles"].map(parseCandle).filter((candle): candle is StatusCandle => candle !== null) } : {}),
   };
+}
+
+function parseCandle(raw: unknown): StatusCandle | null {
+  if (!record(raw)) return null;
+  const startAt = asNumber(raw["startAt"]);
+  const endAt = asNumber(raw["endAt"]);
+  const level = asString(raw["level"]);
+  const turns = asNumber(raw["turns"]);
+  const errors = asNumber(raw["errors"]);
+  if (startAt === null || endAt === null || endAt <= startAt || level === null || turns === null || errors === null) return null;
+  return { startAt, endAt, level, turns, errors, avgMs: asNumber(raw["avgMs"]) };
 }
 
 function parseUpdate(raw: unknown): StatusIncidentUpdate | null {
@@ -187,5 +210,6 @@ export function parseStatusView(raw: unknown): StatusView | null {
     ? raw["incidents"].map(parseIncident).filter((incident): incident is StatusIncident => incident !== null)
     : [];
 
-  return { asOf, windowDays, overall: { state, title, activeIncidents }, models, incidents };
+  const liveWindowMinutes = asNumber(raw["liveWindowMinutes"]);
+  return { asOf, windowDays, ...(liveWindowMinutes === null || liveWindowMinutes <= 0 ? {} : { liveWindowMinutes }), overall: { state, title, activeIncidents }, models, incidents };
 }

@@ -9,6 +9,8 @@ import baseStyles from "../../../web/src/app/globals.css?inline";
 import designStyles from "../../../web/src/app/design-system.css?inline";
 import appearanceStyles from "../../../web/src/app/redesign.css?inline";
 import accountStyles from "./accountPanel.css?inline";
+import { Icon } from "../../../web/src/components/Icon";
+import { ArrowUpRight } from "lucide";
 
 const SECTIONS = [
   ["overview", "Overview"], ["earnings", "Earnings"], ["invites", "Invites"],
@@ -82,11 +84,11 @@ function Account({ initial, close, session }: { initial: Section; close: () => v
   return <div className="account-shell">
     <header className="account-heading">
       <div><span className="account-eyebrow">YOUR WORKSPACE</span><h1>Your account</h1><p>{session.email ?? "Manage everything, right here in ADCode."}</p></div>
-      <button type="button" className="account-back" onClick={close}>Back to workspace <span aria-hidden="true">↗</span></button>
+      <button type="button" className="account-back" onClick={close}>Back to workspace <span aria-hidden="true"><Icon node={ArrowUpRight} /></span></button>
     </header>
     <div className="account-layout">
       <nav className="account-nav" aria-label="Account sections">
-        {SECTIONS.map(([id, label]) => <button type="button" key={id} aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>{label}<span aria-hidden="true">{section === id ? "↗" : ""}</span></button>)}
+        {SECTIONS.map(([id, label]) => <button type="button" key={id} aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>{label}<span aria-hidden="true">{section === id && <Icon node={ArrowUpRight} />}</span></button>)}
         <div className="account-nav-foot"><p>Build something.<br />Your earnings come with you.</p><button type="button" disabled={leaving} onClick={() => {
           setLeaving(true); setError("");
           void session.signOut().catch(() => { setLeaving(false); setError("Couldn't sign out. Please try again."); });

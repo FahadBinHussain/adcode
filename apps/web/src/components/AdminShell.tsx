@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { SignInCard } from "./SignInCard";
 import { SideIcon, SidebarGlyph, type SideNavIcon } from "./AppShell";
 import { apiFetch, type AdminOverviewView } from "@/lib/api";
+import { adminPreviewData, type AdminPreviewData } from "@/lib/adminPreview";
+import { parseStatusView, type StatusView } from "@/lib/statusView";
 import { Mark } from "./Mark";
+import "./adminPanel.css";
+import { readCached, writeCached } from "@/lib/adminCache";
 
 /**
  * The admin panel's chrome.
@@ -51,23 +55,42 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     label: "Now",
     items: [
       { href: "/admin", label: "Overview", hint: "Every queue, at a glance", icon: "grid" },
-      { href: "/admin/analytics", label: "Analytics", hint: "Website traffic and conversions", icon: "globe" },
+      { href: "/admin/analytics", label: "Analytics", hint: "People, ads shown, and how the website converts", icon: "globe" },
       { href: "/admin/models", label: "BYOK models", hint: "New models, recommendations and visibility", icon: "list" },
       { href: "/admin/tagflow", label: "Free models", hint: "Server connections, models, allowances and usage", icon: "bubble" },
       { href: "/admin/status", label: "Status page", hint: "Incidents and model health, in public", icon: "chart" },
     ],
   },
   {
-    label: "Queues",
+    /*
+     * Everything about ads in one place: where they come from (networks and their keys),
+     * what is waiting for approval, who pays for them, and a safe test. It used to be spread
+     * over Queues, Money and Tools, so changing a provider key started with a hunt.
+     */
+    label: "Ads",
     items: [
+      { href: "/admin/ad-networks", label: "Ad networks", hint: "Imprezia and other providers: API keys, on and off, per-view and per-click pay", icon: "target" },
       {
         href: "/admin/review",
         label: "Creatives",
         hint: "Ads waiting on a decision",
         tab: "creatives",
-        icon: "target",
+        icon: "doc",
         badge: (c) => c.creativesWaiting,
       },
+      {
+        href: "/admin/money?tab=advertisers",
+        label: "Advertisers",
+        hint: "Funding, campaigns, delivery",
+        tab: "advertisers",
+        icon: "card",
+      },
+      { href: "/admin/tools", label: "Test delivery", hint: "Show a test ad, no money moves", icon: "wrench" },
+    ],
+  },
+  {
+    label: "Queues",
+    items: [
       {
         href: "/admin/review?tab=feedback",
         label: "Feedback",
@@ -90,13 +113,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         badge: (c) => c.withdrawalsPending,
       },
       {
-        href: "/admin/money?tab=advertisers",
-        label: "Advertisers",
-        hint: "Funding, campaigns, delivery",
-        tab: "advertisers",
-        icon: "card",
-      },
-      {
         href: "/admin/money?tab=countries",
         label: "Countries",
         hint: "Where payouts can go",
@@ -108,7 +124,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
   {
     label: "Growth",
     items: [
-      { href: "/admin/growth", label: "Overview", hint: "Setup, and where new people came from", tab: "overview", icon: "chart" },
+      { href: "/admin/growth", label: "Growth overview", hint: "Setup, and where new people came from", tab: "overview", icon: "chart" },
       { href: "/admin/growth?tab=partners", label: "Partners", hint: "Who invites, and what they brought", tab: "partners", icon: "person" },
       { href: "/admin/growth?tab=links", label: "Links", hint: "A link for each post you run", tab: "links", icon: "tag" },
       { href: "/admin/growth?tab=loops", label: "Loops", hint: "Every place ADCode asks people to share", tab: "loops", icon: "send" },
@@ -160,12 +176,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       },
     ],
   },
-  {
-    label: "Tools",
-    items: [
-      { href: "/admin/tools", label: "Delivery", hint: "Test ads, no money moves", icon: "wrench" },
-    ],
-  },
 ];
 
 /**
@@ -211,19 +221,49 @@ export function AdminShell({
 
   const [drawer, setDrawer] = useState(false);
   const [counts, setCounts] = useState<AdminOverviewView | null>(null);
+  const [health, setHealth] = useState<StatusView["overall"] | null>(null);
   const [jump, setJump] = useState("");
+  const jumpRef = useRef<HTMLInputElement>(null);
+  // Development only: made-up data, so the panel can be built without an admin sign-in.
+  const [preview, setPreview] = useState<AdminPreviewData | null>(null);
+  useEffect(() => setPreview(adminPreviewData()), []);
+  const admitted = isAdmin || preview !== null;
 
   const loadCounts = useCallback(async () => {
-    const found = await apiFetch<AdminOverviewView>({
-      path: "/admin/overview",
-      token: await token(),
-    });
+    // The rail's badges draw from the last copy at once, then catch up (lib/adminCache.ts).
+    const cached = readCached<{ counts: AdminOverviewView | null; status: unknown }>("rail");
+    if (cached !== null) {
+      if (cached.value.counts !== null) setCounts(cached.value.counts);
+      if (cached.value.status != null) setHealth(parseStatusView(cached.value.status)?.overall ?? null);
+    }
+    const [found, status] = await Promise.all([
+      apiFetch<AdminOverviewView>({ path: "/admin/overview", token: await token() }),
+      apiFetch<unknown>({ path: "/status", token: await token() }),
+    ]);
     if (found.ok) setCounts(found.value);
+    if (status.ok) setHealth(parseStatusView(status.value)?.overall ?? null);
+    if (found.ok || status.ok) writeCached("rail", { counts: found.ok ? found.value : cached?.value.counts ?? null, status: status.ok ? status.value : cached?.value.status ?? null }, Date.now());
   }, [token]);
 
   useEffect(() => {
-    if (isAdmin) void loadCounts();
-  }, [isAdmin, loadCounts]);
+    if (admitted) void loadCounts();
+  }, [admitted, loadCounts, preview]);
+
+  /*
+   * "/" jumps to the id box from anywhere in the panel, the way search works in most consoles.
+   * Instant, no animation: it is a keyboard action somebody repeats all day.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target !== null && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      event.preventDefault();
+      jumpRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   /* The drawer is navigation: arriving anywhere - a new page or a new tab - closes it. */
   useEffect(() => setDrawer(false), [pathname, tab]);
@@ -241,7 +281,7 @@ export function AdminShell({
     };
   }, [drawer]);
 
-  if (!configured) {
+  if (!configured && preview === null) {
     return (
       <section className="band">
         <div className="wrap">
@@ -254,7 +294,7 @@ export function AdminShell({
   }
 
   // Signed in but not yet answered whether this is an admin: still loading, not a refusal.
-  if (loading || (user !== null && adminLoading && !isAdmin)) {
+  if (preview === null && (loading || (user !== null && adminLoading && !isAdmin))) {
     return (
       <section className="band">
         <div className="wrap">
@@ -266,7 +306,7 @@ export function AdminShell({
     );
   }
 
-  if (user === null) {
+  if (user === null && preview === null) {
     return (
       <section className="auth-screen">
         <div className="wrap">
@@ -284,7 +324,7 @@ export function AdminShell({
    * administrator was shown "Not an admin account" while every admin endpoint would
    * still have accepted her. Offer the question again instead.
    */
-  if (adminError !== null) {
+  if (adminError !== null && preview === null && user !== null) {
     return (
       <section className="band">
         <div className="wrap">
@@ -309,7 +349,7 @@ export function AdminShell({
     );
   }
 
-  if (!isAdmin) {
+  if (!admitted && user !== null) {
     // The likeliest way to see this is to be the right person signed in the wrong way:
     // an administrator is an address in a table, honoured only when the token says the
     // provider verified it. See `AppShell` for the same distinction.
@@ -354,13 +394,16 @@ export function AdminShell({
       }}
     >
       <input
+        ref={jumpRef}
         className="input"
         type="search"
         value={jump}
-        placeholder="Jump to a uid, email or id"
+        placeholder="Jump to an id or email"
         aria-label="Jump to a uid, email or id"
+        aria-keyshortcuts="/"
         onChange={(event) => setJump(event.target.value)}
       />
+      <kbd className="admin-jump-key" aria-hidden="true">/</kbd>
     </form>
   );
 
@@ -395,6 +438,13 @@ export function AdminShell({
           </div>
         ))}
       </nav>
+      {/* The public status, one glance from every page - the thing an outage needs first. */}
+      <Link href="/admin/status" className="admin-rail-status" data-state={health?.state ?? "unknown"} title={health?.title ?? "Status unknown"}>
+        <i aria-hidden="true" />
+        <span>{health === null ? "Status unknown" : health.state === "operational" ? "All systems operational" : health.title}</span>
+      </Link>
+      {/* The website's own nav steps aside on /admin, so the way out lives here. */}
+      <Link href="/" className="admin-rail-exit"><span aria-hidden="true">←</span> Back to the website</Link>
     </>
   );
 
@@ -446,7 +496,31 @@ export function AdminShell({
           {children}
         </div>
       </div>
+      {preview !== null && <PreviewSwitch current={preview} />}
     </section>
+  );
+}
+
+/**
+ * The preview mode's data switch, fixed at the bottom of the window. Development only, plain on
+ * purpose - it is chrome, not part of the design under test - and switching reloads the page so
+ * every section fetches the new dataset.
+ */
+function PreviewSwitch({ current }: { current: AdminPreviewData }) {
+  const options: { id: AdminPreviewData | "off"; label: string }[] = [
+    { id: "demo", label: "Demo data" },
+    { id: "worst", label: "Worst case" },
+    { id: "empty", label: "Empty" },
+    { id: "off", label: "Off" },
+  ];
+  return (
+    <div className="admin-preview-switch" role="group" aria-label="Preview data">
+      {options.map((option) => (
+        <a key={option.id} href={`?preview=${option.id}`} aria-current={option.id === current ? "true" : undefined}>
+          {option.label}
+        </a>
+      ))}
+    </div>
   );
 }
 

@@ -2,6 +2,8 @@
 
 import { useRef, useState, type KeyboardEvent } from "react";
 import { Mark } from "./Mark";
+import { Icon } from "@/components/Icon";
+import { ArrowUp, Check, GitBranch } from "lucide";
 
 /**
  * Vibe and Code, side by side - the two windows ADCode opens on the same project.
@@ -133,13 +135,13 @@ function VibeWindow() {
           <p className="mw-user">Add a streak counter to each habit, and a flame once it passes seven days.</p>
           <div className="mw-worked">
             <span className="mw-worked-head"><Mark size={16} /> Worked for 18s</span>
-            <span className="mw-step"><i>✓</i> Read <code>src/habits.ts</code></span>
-            <span className="mw-step"><i>✓</i> Edited <code>HabitCard.tsx</code> <small>+24 −3</small></span>
-            <span className="mw-step"><i>✓</i> Ran <code>npm test</code> <small>12 passed</small></span>
+            <span className="mw-step"><i><Icon node={Check} /></i> Read <code>src/habits.ts</code></span>
+            <span className="mw-step"><i><Icon node={Check} /></i> Edited <code>HabitCard.tsx</code> <small>+24 −3</small></span>
+            <span className="mw-step"><i><Icon node={Check} /></i> Ran <code>npm test</code> <small>12 passed</small></span>
           </div>
           <p className="mw-reply">Done. Every habit now shows its streak, and a flame appears after seven days in a row. Tests pass.</p>
           <div className="mw-undo"><span>3 files changed <small>+41 −6</small></span><b>Undo</b></div>
-          <div className="mw-composer"><span>Describe what to build or change…</span><span className="mw-pill">Agent</span><span className="mw-send">↑</span></div>
+          <div className="mw-composer"><span>Describe what to build or change…</span><span className="mw-pill">Agent</span><span className="mw-send"><Icon node={ArrowUp} /></span></div>
         </div>
         <div className="mw-sponsor">
           <span className="mw-sponsor-tag">Sponsored</span>
@@ -186,7 +188,7 @@ function CodeWindow() {
               <div key={index} className={index === 4 || index === 5 ? "is-selected" : undefined}><span className="line-number">{index + 1}</span><code>{line}</code></div>
             ))}
           </div>
-          <div className="mw-terminal"><span>Terminal</span><p><span className="syntax-green">❯</span> npm run dev</p><p><span className="syntax-green">✓</span> Ready on localhost:5173</p></div>
+          <div className="mw-terminal"><span>Terminal</span><p><span className="syntax-green">❯</span> npm run dev</p><p><span className="syntax-green"><Icon node={Check} /></span> Ready on localhost:5173</p></div>
           <div className="mw-float">
             <span className="mw-float-head">Assistant <small>Ctrl+I</small></span>
             <span className="mw-chip">HabitCard.tsx · lines 5–6</span>
@@ -195,7 +197,7 @@ function CodeWindow() {
           </div>
         </div>
       </div>
-      <div className="mw-status"><span>⑂ main · ✓ No problems</span><span>TypeScript · UTF-8</span></div>
+      <div className="mw-status"><span><Icon node={GitBranch} /> main · <Icon node={Check} /> No problems</span><span>TypeScript · UTF-8</span></div>
     </div>
   );
 }

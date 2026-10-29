@@ -1,6 +1,8 @@
 import Link from "@/components/IntentLink";
 import { DOC_SEED } from "@/lib/docsSeed";
 import "./docsShowcase.css";
+import { Icon } from "@/components/Icon";
+import { ArrowRight } from "lucide";
 
 /**
  * The docs, last on the homepage.
@@ -27,7 +29,7 @@ export function DocsShowcase() {
         <p className="marketplace-eyebrow"><span /> The manual</p>
         <h2 id="docs-heading">Everything is documented.</h2>
         <p>Every feature has a plain-English guide: what it does, why it helps, and how to use it, step by step.</p>
-        <Link className="docs-showcase-all" href="/docs">Browse every guide <span aria-hidden="true">→</span></Link>
+        <Link className="docs-showcase-all" href="/docs">Browse every guide <Icon node={ArrowRight} /></Link>
       </header>
       <ul className="docs-showcase-grid">
         {guides.map((guide) => (
@@ -36,7 +38,7 @@ export function DocsShowcase() {
               <span className="docs-showcase-section">{guide.section}</span>
               <strong>{guide.title}</strong>
               <span className="docs-showcase-text">{guide.description}</span>
-              <span className="docs-showcase-read" aria-hidden="true">Read the guide →</span>
+              <span className="docs-showcase-read" aria-hidden="true">Read the guide <Icon node={ArrowRight} /></span>
             </Link>
           </li>
         ))}

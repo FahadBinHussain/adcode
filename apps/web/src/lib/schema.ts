@@ -17,6 +17,8 @@ import {
   formatMicros,
   ECONOMICS,
 } from "./site";
+import { FREE_WEEKLY_TOKENS, PACK_SUMMARY, PLANS, PLAN_SUMMARY, tokenAmount } from "./pricing";
+import type { PaidPack } from "@adcode/api/src/paidTokens.ts";
 
 type Node = Record<string, unknown>;
 
@@ -162,6 +164,36 @@ export function webApplication(): Node {
   };
 }
 
+/**
+ * What the pricing page sells, as offers on the same application node (`/#app`) the layout
+ * already declares free. Plans carry their billing unit, so "$9" is never read as one-off.
+ */
+export function pricingOffers(packs: readonly PaidPack[]): Node {
+  const dollars = (cents: number): string => (cents / 100).toFixed(2);
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "@id": url("/#app"),
+    name: SITE.name,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Windows, Linux",
+    offers: [
+      { "@type": "Offer", name: "Free editor", price: "0", priceCurrency: "USD", url: url("/versions"),
+        description: `The editor, Tagflow AI and ${tokenAmount(FREE_WEEKLY_TOKENS)} free Heabsy tokens each week.` },
+      ...PLANS.map((plan) => ({
+        "@type": "Offer", name: `${plan.name} AI plan`, price: dollars(plan.priceCents), priceCurrency: "USD", url: url(`/ai-tokens?plan=${plan.id}`),
+        description: `${tokenAmount(plan.weeklyTokens)} Heabsy tokens each week, billed every ${plan.interval}.`,
+        priceSpecification: { "@type": "UnitPriceSpecification", price: dollars(plan.priceCents), priceCurrency: "USD",
+          referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: plan.interval === "week" ? "WEE" : "MON" } },
+      })),
+      ...packs.map((pack) => ({
+        "@type": "Offer", name: `${tokenAmount(pack.tokens)} token pack`, price: dollars(pack.priceCents), priceCurrency: "USD", url: url("/ai-tokens#packs"),
+        description: "One-time Heabsy tokens that never expire.",
+      })),
+    ],
+  };
+}
+
 export function breadcrumbs(trail: readonly { name: string; path: string }[]): Node {
   return {
     "@context": "https://schema.org",
@@ -288,15 +320,15 @@ export function changelog(
 export const FAQ: readonly { q: string; a: string }[] = [
   {
     q: "What is ADCode?",
-    a: "ADCode is a free, ad-supported code editor. It provides Monaco-based editing, integrated terminals, git, workspace search, and AI assistance. Instead of charging a subscription, it shows an occasional sponsored card in the corner of the editor and credits a share of the advertising revenue to the developer using it.",
+    a: "ADCode is a free, ad-supported code editor with Monaco editing, integrated terminals, git, workspace search and AI agents. Sponsored cards help fund the editor, and a share of eligible advertising revenue goes to the developer. Optional plans and token packs add more Heabsy AI usage.",
   },
   {
     q: "How much does ADCode cost?",
-    a: "ADCode is free. There is no subscription, no trial, and no paid tier. The editor is funded by advertisers, and a share of what they pay goes to the developer rather than only to the vendor.",
+    a: `The editor is free with no subscription required. Optional Heabsy AI plans are ${PLAN_SUMMARY}. One-time token packs are ${PACK_SUMMARY}; purchased tokens never expire. Prices are in USD before applicable tax. Compare the options on the Pricing page.`,
   },
   {
     q: "Is the AI in ADCode free?",
-    a: "Yes. ADCode includes free AI models from its partners, Tagflow AI and Heabsy. Sign in with a verified account and start building - no API key and no bill. Included AI has no personal request, token or credit quota. Provider availability and model context limits still apply. You can also use your own provider key or a model running on your computer.",
+    a: `Tagflow AI has no personal token or request quota from ADCode. Heabsy models include ${tokenAmount(FREE_WEEKLY_TOKENS)} free tokens each week per account; plans raise the allowance, and purchased tokens are used afterward. Sign in with a verified account without setting up an API key. Provider availability and context limits still apply. You can also connect your own provider or local model.`,
   },
   {
     q: "How much can you earn using ADCode?",

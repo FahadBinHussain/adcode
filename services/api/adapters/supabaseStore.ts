@@ -124,7 +124,9 @@ import {
   type SourceFactRow,
 } from "./supabaseRows.ts";
 import { DEFAULT_REFERRAL_CONFIG, type AttributionRecord } from "../src/store.ts";
+import { createAdNetworkStore } from "./adNetworkStore.ts";
 import { createTagflowStore } from "./tagflowStore.ts";
+import { createAiPlanCache } from "./aiPlanCache.ts";
 import { cached, cachedBy, createBreaker } from "./dbGuard.ts";
 import type {
   ActivityDay,
@@ -456,6 +458,15 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
         creditedMicros: toMicros(raw.creditedMicros),
         paidOutMicros: toMicros(raw.paidOutMicros ?? "0"),
         funnel: { ...raw.funnel, journey: raw.funnel?.journey ?? [] },
+      };
+    },
+
+    async growthDayBaseline(at) {
+      const raw = await scalar<Record<string, number | string | null>>("growthDayBaseline", db => db.rpc("read_growth_day_baseline", { p_at: at }));
+      return {
+        developers: Number(raw["developers"]), active1d: Number(raw["active1d"]), active7d: Number(raw["active7d"]),
+        active30d: Number(raw["active30d"]), returning7d: Number(raw["returning7d"]), adsShown: Number(raw["adsShown"]),
+        creditedMicros: toMicros(raw["creditedMicros"]), paidOutMicros: raw["paidOutMicros"] == null ? null : toMicros(raw["paidOutMicros"]),
       };
     },
 
@@ -856,6 +867,14 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
           .order("created_at", { ascending: false }),
       );
       return rows.map(toCreditOrder);
+    },
+
+    async recordReceiptPayment(payment) {
+      await scalar("recordReceiptPayment", (db) => db.rpc("email_record_purchase_payment", {
+        p_payment: payment.paymentId, p_webhook: payment.webhookId, p_subscription: payment.subscriptionId,
+        p_order: payment.orderId, p_customer: payment.customerId, p_amount: payment.amountMinor,
+        p_currency: payment.currency, p_paid_at: payment.paidAt, p_received_at: payment.receivedAt,
+      }));
     },
 
     async applyCreditEvent(event) {
@@ -1276,6 +1295,13 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
       if (error !== null) fail("recordModelOutcomes", error);
     },
 
+    async modelStatusBuckets(from, to) {
+      const { data, error } = await (await lazy()).rpc("read_model_status_buckets", { p_from: from, p_to: to });
+      if (error !== null) fail("modelStatusBuckets", error);
+      if (!Array.isArray(data)) throw new Error("Invalid model status buckets");
+      return data as import("../src/statusTelemetry.ts").StatusBucketRow[];
+    },
+
     async modelOutcomesSince(day) {
       const rows = await many<{ day: string; provider: string; model: string; outcome: string; count: number; total_ms: number | string }>(
         "modelOutcomesSince",
@@ -1296,6 +1322,7 @@ export function createSupabaseStore(options: SupabaseStoreOptions = {}): Store {
      * `parseModelCatalog` before it reached here; jsonb keeps it whole.
      */
     ...createTagflowStore(lazy),
+    adNetworks: createAdNetworkStore(lazy),
     async getModelCatalog() {
       const row = await maybe<{ overrides: unknown; updated_at: number | string; updated_by: string }>("getModelCatalog", (db) =>
         db.from("model_catalog").select("overrides, updated_at, updated_by").eq("id", 1).maybeSingle(),
@@ -1489,6 +1516,18 @@ function withHotCaches(store: Store): Store {
   const stats = cached(() => store.publicStats(Date.now()), { ttlMs: 120_000, staleMs: 24 * 3_600_000 });
   // Every authenticated request reads its user row; a ban or rename applies within 20 s.
   const users = cachedBy((uid) => store.getUser(uid), { ttlMs: 20_000, staleMs: 600_000, max: 5_000 });
+  // Every included-AI request reads the account's AI policy, which only an administrator changes;
+  // a block or new allowance applies here at once and within 30 s in every other isolate.
+  const policies = cachedBy((uid) => store.getTagflowPolicy(uid), { ttlMs: 30_000, staleMs: 600_000, max: 5_000 });
+  // Every ad serve reads the live campaigns for its tags and each one's approved artwork; both
+  // change only when an advertiser or administrator edits them. Spend is never cached, so a
+  // campaign that runs out of budget still stops at once.
+  const campaigns = cachedBy((tags) => store.activeCampaignsFor(JSON.parse(tags) as string[]), { ttlMs: 30_000, staleMs: 600_000, max: 500 });
+  const artwork = cachedBy((campaignId) => store.creativesForCampaign(campaignId), { ttlMs: 30_000, staleMs: 600_000, max: 2_000 });
+  // Every paid-model request reads the account's plan and boost. Plans carry their own end time,
+  // so a cached plan never outlives its period; a new gift or boost applies within 30 s.
+  const planStates = createAiPlanCache((uid, now) => store.getAiPlanState(uid, now));
+  const forgetPlans = (uid: string): void => { if (uid === "*") planStates.clear(); else planStates.forget(uid); };
   return {
     ...store,
     getConfig: () => config.get(),
@@ -1500,6 +1539,19 @@ function withHotCaches(store: Store): Store {
     liveImpressions: () => impressions.get(),
     publicStats: () => stats.get(),
     async putUser(user) { await store.putUser(user); users.forget(user.uid); },
+    getTagflowPolicy: (uid) => policies.get(uid),
+    activeCampaignsFor: (tags) => campaigns.get(JSON.stringify([...tags].sort())),
+    creativesForCampaign: (campaignId) => artwork.get(campaignId),
+    async putCampaign(campaign) { await store.putCampaign(campaign); campaigns.clear(); },
+    async transitionCampaignCommitment(input) { const result = await store.transitionCampaignCommitment(input); campaigns.clear(); return result; },
+    async moveCampaignBudget(input) { const result = await store.moveCampaignBudget(input); campaigns.clear(); return result; },
+    async putCreative(creative) { await store.putCreative(creative); artwork.forget(creative.campaignId); },
+    getAiPlanState: (uid, now) => planStates.get(uid, now),
+    async applySubscriptionEvent(event) { const result = await store.applySubscriptionEvent(event); if (event.uid !== null) forgetPlans(event.uid); return result; },
+    async giftPlan(uid, plan, days, adminUid, note, now) { await store.giftPlan(uid, plan, days, adminUid, note, now); forgetPlans(uid); },
+    async boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now) { await store.boostAllowance(uid, weeklyTokens, endsAt, adminUid, note, now); forgetPlans(uid); },
+    async redeemPromo(code, uid, now) { const result = await store.redeemPromo(code, uid, now); forgetPlans(uid); return result; },
+    async putTagflowPolicy(uid, policy) { await store.putTagflowPolicy(uid, policy); policies.forget(uid); },
     async addAdmin(record) { const added = await store.addAdmin(record); admins.clear(); return added; },
     async removeAdmin(email) { const removed = await store.removeAdmin(email); admins.clear(); return removed; },
   };

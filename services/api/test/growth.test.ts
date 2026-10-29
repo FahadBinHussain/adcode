@@ -271,8 +271,9 @@ describe("what the numbers mean", () => {
 });
 
 describe("the admin growth route", () => {
-  async function setup() {
+  async function setup(withBaseline = false) {
     const store = createMemoryStore();
+    if (withBaseline) store.growthDayBaseline = async () => ({ developers: 10, active1d: 4, active7d: 8, active30d: 10, returning7d: 2, adsShown: 100, creditedMicros: 9007199254740993n, paidOutMicros: 1000000n });
     await store.addAdmin({ email: "owner@site.test", addedBy: "setup", addedAt: 0 });
     await store.putUser({ uid: "private-user", status: "active", createdAt: NOW - DAY });
     const handler = createFetchHandler({
@@ -299,5 +300,10 @@ describe("the admin growth route", () => {
     expect(body).toMatchObject({ accounts: 3, developers: 0, joined7d: 0, creditedMicros: "0", paidOutMicros: "0", asOf: NOW });
     expect(body.daily).toHaveLength(30);
     expect(JSON.stringify(body)).not.toContain("private-user");
+  });
+  it("returns the same-time previous-day baseline with exact money", async () => {
+    const read = await setup(true);
+    const body = await (await read("owner")).json();
+    expect(body).toMatchObject({ dayComparison: { asOf: NOW - DAY, previous: { active1d: 4, creditedMicros: "9007199254740993", paidOutMicros: "1000000" } } });
   });
 });

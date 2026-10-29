@@ -329,6 +329,8 @@ export interface GrowthStats {
   funnel: GrowthFunnel;
 }
 
+export type GrowthDayBaseline = Pick<GrowthStats, "developers" | "active1d" | "active7d" | "active30d" | "returning7d" | "adsShown" | "creditedMicros"> & { paidOutMicros: bigint | null };
+
 /**
  * One campaign's numbers for one UTC day.
  *
@@ -694,6 +696,10 @@ export interface WithdrawalPage {
 }
 
 export interface Store extends TagflowStore {
+  /** Durable signed charge journal for transactional receipts; absent on legacy adapters. */
+  recordReceiptPayment?(payment: import("./purchaseReceiptPayments.ts").ReceiptPayment): Promise<void>;
+  /** External ad demand is optional on legacy persistence adapters. */
+  adNetworks?: import("./adNetworkConfig.ts").AdNetworkStore;
   /**
    * Anonymous lifetime totals, plus accounts created in the seven days before `now`.
    * Excludes zero-cost test receipts; counts active users only; no account data.
@@ -703,6 +709,7 @@ export interface Store extends TagflowStore {
   liveImpressions(): Promise<number>;
   /** Active users, sign-ups and ads shown, in rolling windows ending at `now`. Admin only. */
   growthStats(now: number): Promise<GrowthStats>;
+  growthDayBaseline?(at: number): Promise<GrowthDayBaseline>;
   getUser(uid: string): Promise<UserRecord | null>;
   putUser(user: UserRecord): Promise<void>;
 
@@ -793,7 +800,7 @@ export interface Store extends TagflowStore {
   listCreditOrders(advertiserId: string): Promise<CreditOrderRecord[]>;
   /** Applies provider idempotency, order validation, credit movement, and suspension atomically. */
   applyCreditEvent(
-    event: import("./providerEvents.ts").NormalizedProviderEvent,
+    event: Exclude<import("./providerEvents.ts").NormalizedProviderEvent, { type: "subscription" }>,
   ): Promise<CreditEventResult>;
 
   createReport(report: ReportRecord): Promise<void>;
@@ -882,6 +889,7 @@ export interface Store extends TagflowStore {
   recordModelOutcomes(day: string, items: readonly import("./modelOutcomes.ts").ModelOutcomeItem[]): Promise<void>;
   /** Every day's per-model counts from `day` (YYYY-MM-DD, inclusive) on. */
   modelOutcomesSince(day: string): Promise<import("./modelOutcomes.ts").ModelOutcomeRow[]>;
+  modelStatusBuckets?(from: number, to: number): Promise<import("./statusTelemetry.ts").StatusBucketRow[]>;
 
   /** The admin panel's curation of the model list; null until it is first saved. */
   getModelCatalog(): Promise<ModelCatalogRecord | null>;

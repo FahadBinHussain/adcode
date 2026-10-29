@@ -22,6 +22,7 @@
 import type { Metadata } from "next";
 import { pageMetadata } from "./seo";
 import { ECONOMICS, SITE, formatMicros, perImpressionMicros } from "./site";
+import { FREE_WEEKLY_TOKENS, PLAN_SUMMARY, tokenAmount } from "./pricing";
 
 /** A block of prose under its own heading. `body` paragraphs are plain text, not markdown. */
 export interface LandingSection {
@@ -73,7 +74,7 @@ export interface Landing {
  */
 const perImpression = formatMicros(perImpressionMicros, 3);
 const floorBlock = formatMicros(ECONOMICS.floorBlockMicros, 2);
-const includedAiSummary = `Unlimited included AI requests. No API key required for partner models; your own key or a local desktop model is optional.`;
+const includedAiSummary = `Tagflow AI has no personal token or request quota. Heabsy models include ${tokenAmount(FREE_WEEKLY_TOKENS)} free tokens a week, with optional plans and packs for more. No API key is needed for included models; your own key or local desktop model is optional.`;
 
 /**
  * The comparison pages live under `/compare/`, the rest at the root.
@@ -94,24 +95,24 @@ export const landingPath = (page: Landing): string =>
 export const LANDINGS: readonly Landing[] = [
   {
     slug: "free-ai-code-editor",
-    title: "A free AI code editor with no subscription and no trial",
+    title: "A free AI code editor with optional AI plans - ADCode",
     description:
-      "Use ADCode in your browser or on Windows and Linux. Included AI credits, agents and Git, with no subscription. See the limits and how ads fund it.",
+      "Use ADCode in your browser or on Windows and Linux. Start with free AI, agents and Git, then add a Heabsy plan or token pack when you need more.",
     heading: "A free AI code editor, funded without charging you",
-    lede: `ADCode is a free AI code editor in your browser and on Windows and Linux. Partner models include unlimited included AI, without an API key or credit card. Advertisers fund the editor, and you receive half of eligible ad revenue. This page explains what is included and where the limits apply.`,
-    updated: "2026-10-17",
+    lede: `ADCode is a free AI code editor in your browser and on Windows and Linux. ${includedAiSummary} Sponsored cards help fund the editor, and you receive half of eligible ad revenue. This page explains what is included and where the limits apply.`,
+    updated: "2026-10-27",
     sections: [
       {
         heading: "What 'free' means here, precisely",
         body: [
-          "The editor has no subscription or trial expiry. Included partner AI has a credit allowance, and browser workspaces have a cloud time allowance. Sign in with a verified account to use those services; using your own provider key or a local desktop model follows that provider's or your computer's limits.",
+          `The editor requires no subscription and has no trial expiry. ${includedAiSummary} Sign in with a verified account to use included AI. Browser workspaces have no personal time quota and sleep when idle.`,
           "The funding comes from a sponsored card that appears in the corner of the window at a cadence you control. That is the trade, stated plainly: an occasional advertisement instead of a monthly charge. Half of what the advertiser pays is credited to the developer who saw it, which is the part that makes the arrangement different from simply putting ads in a product.",
         ],
         points: [
-          "No subscription, no trial period, no seat count, no card on file.",
-          `Unlimited included AI requests; provider availability and model context limits still apply.`,
+          "No subscription or card required to start using the editor.",
+          `Tagflow AI has no personal quota; Heabsy models include ${tokenAmount(FREE_WEEKLY_TOKENS)} tokens a week. Provider availability and context limits still apply.`,
           `Browser workspaces have no personal time quota and sleep when idle. Desktop projects run on your computer.`,
-          "No feature reserved for a paid edition, because there is no paid edition.",
+          `Optional Heabsy plans: ${PLAN_SUMMARY}. One-time token packs never expire.`,
           "Ads can be reduced or switched off entirely in settings; the earnings stop with them.",
         ],
       },
@@ -155,11 +156,11 @@ export const LANDINGS: readonly Landing[] = [
     faq: [
       {
         q: "Is ADCode actually free, or free for a limited time?",
-        a: "ADCode is free permanently. There is no trial period, no paid tier, and no feature held back for one. The editor is funded by advertisers rather than by subscriptions, which is why there is nothing to upgrade to.",
+        a: `The editor is free with no subscription or trial expiry. Sponsored cards help fund it. Optional Heabsy plans (${PLAN_SUMMARY}) and token packs add more AI usage; they are not required to use the editor.`,
       },
       {
         q: "Do I need to pay for the AI features in ADCode?",
-        a: `ADCode includes unlimited included AI, using partner models without an API key. There is no ADCode usage allowance. Your own provider key is billed by that provider, and local desktop models use your computer.`,
+        a: `${includedAiSummary} Your own provider key is billed by that provider, and local desktop models use your computer.`,
       },
       {
         q: "What is the catch with a free AI code editor?",
@@ -180,7 +181,7 @@ export const LANDINGS: readonly Landing[] = [
     heading: "An online AI code editor, with nothing to install",
     lede:
       "ADCode runs in your browser at web.bluethenics.com. Describe what you want to build and AI agents work in a private cloud workspace, run commands and show a preview. Sign in to start with included partner models, without a download, API key or credit card.",
-    updated: "2026-10-17",
+    updated: "2026-10-27",
     sections: [
       {
         heading: "From an idea to a running project",
@@ -192,7 +193,7 @@ export const LANDINGS: readonly Landing[] = [
       {
         heading: "The included AI and cloud time",
         body: [
-          `The default free plan includes unlimited included AI. There are no daily or weekly usage quotas. A verified account is required to use included AI.`,
+          `${includedAiSummary} A verified account is required to use included AI.`,
           `Browser workspaces have no personal time quota. Workspaces sleep when idle, and shared service capacity can affect availability.`,
           "An occasional sponsored card helps fund the tools. Half of eligible ad revenue is credited to your account; earnings depend on eligible views and advertiser demand.",
         ],
@@ -219,7 +220,7 @@ export const LANDINGS: readonly Landing[] = [
       },
       {
         q: "Do I need an API key for the online AI code editor?",
-        a: `No API key is needed for included partner models. A verified account receives unlimited included AI. You can also connect your own provider key, which follows that provider's billing.`,
+        a: `${includedAiSummary} A verified account is required. Your own provider key follows that provider's billing.`,
       },
       {
         q: "How long can I use the free browser workspace?",
@@ -395,11 +396,11 @@ export const LANDINGS: readonly Landing[] = [
   },
   {
     slug: "cursor",
-    title: "ADCode vs Cursor: a free Cursor alternative, no subscription",
+    title: "A free Cursor alternative with optional AI plans - ADCode",
     description:
       "Compare Cursor with ADCode's included AI credits, optional provider keys and ad revenue share. See the costs, model choices and where Cursor wins.",
     heading: "ADCode vs Cursor",
-    lede: `Cursor is an AI-first editor with a limited free plan and a monthly subscription that bundles a model allowance. ADCode has no subscription and shares eligible ad revenue with you. ${includedAiSummary} This page explains the tradeoffs.`,
+    lede: `Cursor is an AI-first editor with a limited free plan and a monthly subscription that bundles a model allowance. ADCode's editor is free, with optional Heabsy plans, and shares eligible ad revenue with you. ${includedAiSummary} This page explains the tradeoffs.`,
     updated: "2026-10-17",
     comparison: {
       subject: "Cursor",
@@ -407,7 +408,7 @@ export const LANDINGS: readonly Landing[] = [
         {
           aspect: "Price",
           them: "A free Hobby plan with limited usage, then a monthly subscription; teams pay per seat.",
-          us: "Free. No subscription and no paid tier.",
+          us: `Free editor; optional Heabsy plans: ${PLAN_SUMMARY}.`,
         },
         {
           aspect: "AI billing",
@@ -474,7 +475,7 @@ export const LANDINGS: readonly Landing[] = [
     faq: [
       {
         q: "Is there a free alternative to Cursor?",
-        a: `ADCode is a free AI code editor with agents that edit files, run tests and work in parallel. ${includedAiSummary} It has no subscription and shares eligible ad revenue with you.`,
+        a: `ADCode is a free AI code editor with agents that edit files, run tests and work in parallel. ${includedAiSummary} It shares eligible ad revenue with you.`,
       },
       {
         q: "Does ADCode support the same models as Cursor?",
@@ -575,7 +576,7 @@ export const LANDINGS: readonly Landing[] = [
     description:
       "Compare Windsurf, now Devin Desktop, with ADCode: included AI credits, optional provider keys and an ad-funded editor that shares revenue with you.",
     heading: "ADCode vs Windsurf, now Devin Desktop",
-    lede: `Windsurf is now Devin Desktop. Cognition, which bought Windsurf in 2025, renamed the editor in June 2026: the IDE carries on, compatible with Windsurf and VS Code extensions, with an Agent Command Center in front of it and Devin Local in place of the Cascade agent. It is sold on plans with a usage allowance. ADCode has no subscription and shares eligible ad revenue with you. ${includedAiSummary} This page says when each one is the right choice.`,
+    lede: `Windsurf is now Devin Desktop. Cognition, which bought Windsurf in 2025, renamed the editor in June 2026: the IDE carries on, compatible with Windsurf and VS Code extensions, with an Agent Command Center in front of it and Devin Local in place of the Cascade agent. It is sold on plans with a usage allowance. ADCode's editor is free with optional Heabsy plans, and shares eligible ad revenue with you. ${includedAiSummary} This page says when each one is the right choice.`,
     updated: "2026-10-17",
     comparison: {
       subject: "Devin Desktop (formerly Windsurf)",
@@ -583,7 +584,7 @@ export const LANDINGS: readonly Landing[] = [
         {
           aspect: "Price",
           them: "A free plan with a light quota, and paid plans with a larger usage allowance.",
-          us: "Free, with unlimited included AI and no personal cloud time allowance. No subscription or paid tier.",
+          us: `Free editor with no personal cloud time quota; optional Heabsy plans: ${PLAN_SUMMARY}.`,
         },
         {
           aspect: "AI billing",
@@ -655,7 +656,7 @@ export const LANDINGS: readonly Landing[] = [
       },
       {
         q: "Is there a free alternative to Windsurf?",
-        a: `ADCode is a free AI code editor with agents that edit files, run tests and work in parallel. ${includedAiSummary} There is no subscription, and each turn that changes files can be undone.`,
+        a: `ADCode is a free AI code editor with agents that edit files, run tests and work in parallel. ${includedAiSummary} Each turn that changes files can be undone.`,
       },
       {
         q: "Can I use my own API key instead of a Windsurf or Devin plan?",
@@ -672,9 +673,9 @@ export const LANDINGS: readonly Landing[] = [
     slug: "copilot",
     title: "ADCode vs GitHub Copilot: a free Copilot alternative",
     description:
-      "Compare GitHub Copilot with ADCode: an editor with included AI credits, optional provider keys and a share of eligible ad revenue, without a subscription.",
+      "Compare GitHub Copilot with ADCode: a free editor with included AI, optional Heabsy plans and provider keys, plus a share of eligible ad revenue.",
     heading: "ADCode vs GitHub Copilot",
-    lede: `GitHub Copilot is an AI assistant you add to an editor you already use, with a free tier that has monthly limits and paid plans above it. ADCode is the editor itself, with no subscription and a share of eligible ad revenue credited to you. ${includedAiSummary} The first keeps your existing editor; the second offers an integrated alternative.`,
+    lede: `GitHub Copilot is an AI assistant you add to an editor you already use, with a free tier that has monthly limits and paid plans above it. ADCode is a free editor with optional Heabsy plans and a share of eligible ad revenue credited to you. ${includedAiSummary} The first keeps your existing editor; the second offers an integrated alternative.`,
     updated: "2026-10-17",
     comparison: {
       subject: "GitHub Copilot",
@@ -687,7 +688,7 @@ export const LANDINGS: readonly Landing[] = [
         {
           aspect: "Price",
           them: "A free tier with monthly limits, and paid individual and business plans above it.",
-          us: "Free. No subscription and no paid tier.",
+          us: `Free editor; optional Heabsy plans: ${PLAN_SUMMARY}.`,
         },
         {
           aspect: "AI billing",
@@ -742,7 +743,7 @@ export const LANDINGS: readonly Landing[] = [
     faq: [
       {
         q: "Is there a free alternative to GitHub Copilot?",
-        a: `Copilot has a limited free tier. ADCode is a free editor with AI agents built in and no subscription. ${includedAiSummary} The editor also credits you a share of eligible ad revenue.`,
+        a: `Copilot has a limited free tier. ADCode is a free editor with AI agents built in and optional Heabsy plans. ${includedAiSummary} The editor also credits you a share of eligible ad revenue.`,
       },
       {
         q: "Can I use GitHub Copilot inside ADCode?",

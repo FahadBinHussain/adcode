@@ -1,3 +1,5 @@
+import { Icon } from "@/components/Icon";
+import { ArrowUpRight, Check, Circle } from "lucide";
 const files = ["src", "  app", "    routes.ts", "    ledger.ts", "  components", "package.json"];
 
 /** A compact, static product preview for marketing pages. */
@@ -7,7 +9,7 @@ export function DesktopMockup({ className = "" }: { className?: string }) {
       <header className="desktop-mockup__titlebar">
         <span className="desktop-mockup__traffic" aria-hidden="true"><i /><i /><i /></span>
         <span className="desktop-mockup__workspace">adcode / revenue-ledger</span>
-        <span className="desktop-mockup__status">● Connected</span>
+        <span className="desktop-mockup__status"><Icon node={Circle} /> Connected</span>
       </header>
 
       <div className="desktop-mockup__shell">
@@ -37,13 +39,13 @@ export function DesktopMockup({ className = "" }: { className?: string }) {
             <span>Sponsored · FLY.IO</span>
             <b>Deploy close to your users.</b>
             <small>Run apps in 30 regions from one command.</small>
-            <button type="button">View offer <span aria-hidden="true">↗</span></button>
+            <button type="button">View offer <Icon node={ArrowUpRight} /></button>
           </aside>
 
           <section className="desktop-mockup__terminal" aria-label="Terminal">
             <span className="desktop-mockup__terminal-title">Terminal <i>bash</i></span>
             <p><b>~</b> <span>adcode ledger --watch</span></p>
-            <p className="desktop-mockup__terminal-result">✓ verified impression · +$0.004200</p>
+            <p className="desktop-mockup__terminal-result"><Icon node={Check} /> verified impression · +$0.004200</p>
           </section>
         </main>
 

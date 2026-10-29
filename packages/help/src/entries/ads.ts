@@ -9,6 +9,16 @@ import type { HelpEntry } from "../types.ts";
 
 export const ADS_ENTRIES: readonly HelpEntry[] = [
   {
+    id: "ads.networks",
+    title: "Ad network connections",
+    plain: "Administrators can connect an ad provider and choose what users earn for verified views or clicks.",
+    why: "Provider inventory can fill an empty sponsored slot while keeping the existing ad controls and direct campaigns.",
+    how: "Open Ad network settings on the website and sign in as an administrator. Add a Generic JSON API connection with the provider's documented serve and event-verification endpoints and field mappings. Save it disabled, save its API key, test the preview, then enable delivery. Choose Pay users per View, Click, or View and click, and set the dollar amount; the other event pays nothing. Keys are encrypted and never shown again. An API key alone is not enough: each provider must support the configured delivery and verification contract. Imprezia Chat Ads works with just the publisher API key from Imprezia's API Keys page: Add Imprezia Chat Ads, paste the key, test, then enable delivery. Its ads fill the sponsored card when no direct campaign does, and only the project's language tags are sent. A sandbox key (api_pub_sandbox_) delivers Imprezia's test ads and never pays users. Imprezia's Exchange preview, with an app bundle or domain, stays test-only. The beehiiv connection previews newsletter offer content only; it cannot deliver desktop ads or generate earnings. Users keep control over sponsored messages and frequency.",
+    group: "ads",
+    settingIds: [],
+    related: ["adcode.ads.enabled", "adcode.ads.frequency", "account.earnings"],
+  },
+  {
     id: "adcode.ads.enabled",
     title: "Sponsored messages",
     plain:

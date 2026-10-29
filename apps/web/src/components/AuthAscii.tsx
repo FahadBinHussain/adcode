@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "@/components/Icon";
+import { Pause, Play } from "lucide";
 
 /** The ADCode ribbon mark in ASCII, with a slow sweep of light across its characters. */
 export function AuthAscii() {
@@ -108,7 +110,7 @@ export function AuthAscii() {
     <canvas ref={canvasRef} className="auth-ascii" aria-hidden="true" />
     <div className="auth-art-bottom"><span><i aria-hidden="true" /> ASCII / {paused || reduced ? "STILL" : "LIVE"}</span>
       <button type="button" onClick={() => setPaused(value => !value)} disabled={reduced} aria-label={paused ? "Play ASCII animation" : "Pause ASCII animation"} aria-pressed={paused || reduced}>
-        {reduced ? "Motion reduced" : paused ? "Play ↗" : "Pause Ⅱ"}
+        {reduced ? "Motion reduced" : paused ? <>Play <Icon node={Play} /></> : <>Pause <Icon node={Pause} /></>}
       </button>
     </div>
   </div>;

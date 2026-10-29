@@ -38,6 +38,10 @@ Cron run history after its next scheduled execution.
 
 ## What the reports mean
 
+- All headline boxes in both Analytics tabs show the relative change from the same value 24 hours earlier. Rolling activity windows keep their length; lifetime developer, ad and money totals are compared at the two cutoffs. An earlier zero reads **New**, two measured zeros read **0.0%**, and missing history reads **No comparison**. Errors increasing are marked as worse, while errors falling are marked as better.
+- Website comparisons shift the selected calendar window back one day and stop at the same time of day, so today's partial day is compared fairly. Install intent compares conversion rates as relative growth, rather than percentage points. Truncated reports and 90-day selections that reach beyond retained history have no comparison. Money remains in integer micros through the percentage calculation. Legacy paid withdrawals without a decision timestamp have no paid-out baseline. Activity uses recorded first/latest sightings and currently active account status, so retrospective activity is limited by the stored observation coverage.
+- Apply `20261024180421_analytics_day_comparisons.sql` before deploying this feature. It adds a service-role-only timestamped baseline RPC. It does not change public counters or require browser access to private tables.
+
 - Periods include today in UTC. 7, 30, and 90 days are available, with aggregate JSON export.
 - Only consenting traffic is measured. Do Not Track and Global Privacy Control override an accepted preference. No historical backfill is possible.
 - Session IDs are per browser tab, reused across refreshes using session storage, and rotate after 30 minutes with nobody scrolling, clicking, typing or recording an action. A session that resumes after that starts with its own page view, so an install or campaign that ends it still counts in the funnels. Engagement and Web Vitals never start a session; they belong to the visit they measured. Sessions are not user counts and do not link desktop activity or account identities.

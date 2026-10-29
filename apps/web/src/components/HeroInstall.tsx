@@ -7,6 +7,8 @@ import { installLinkFor, SEND_SUBJECT, SEND_TEXT, sendInstallLink } from "@/lib/
 import { GITHUB_REPO, SITE } from "@/lib/site";
 import { trackWebsiteEvent } from "@/lib/websiteAnalytics";
 import { inviteLine } from "@/lib/invite";
+import { Icon } from "@/components/Icon";
+import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUpRight, Check, Copy } from "lucide";
 
 /**
  * Puts the invite on the clipboard as the download starts, where the editor's welcome
@@ -56,11 +58,11 @@ export function HeroInstall({ source = "hero", advertise = true, tour, invite, s
    * button, and the advertiser pill is labelled for its audience and drawn in the money
    * colour, so each reader sees which one is theirs.
    */
-  const secondary = secondaryLink !== undefined ? (<a href={secondaryLink.href} className="marketplace-secondary">{secondaryLink.label} <span aria-hidden="true">↗</span></a>) : tour !== undefined ? (
+  const secondary = secondaryLink !== undefined ? (<a href={secondaryLink.href} className="marketplace-secondary">{secondaryLink.label} <Icon node={ArrowUpRight} /></a>) : tour !== undefined ? (
     <a href={tour} className="marketplace-secondary">See how it works</a>
   ) : advertise ? (
     <a href="/#advertise" className="marketplace-secondary" data-tracked onClick={trackAdvertise}>
-      Advertise to developers <span aria-hidden="true">↘</span>
+      Advertise to developers <Icon node={ArrowDownRight} />
     </a>
   ) : null;
   const advertiseNote = advertise && tour !== undefined ? <AdvertisePill onClick={trackAdvertise} /> : null;
@@ -89,7 +91,7 @@ export function HeroInstall({ source = "hero", advertise = true, tour, invite, s
     <div className="hero-install">
       <div className="marketplace-hero-actions">
         <Link href="/versions" className="marketplace-primary install-cta">
-          Download ADCode <span aria-hidden="true">↓</span>
+          Download ADCode <Icon node={ArrowDown} />
         </Link>
         {secondary}
       </div>
@@ -104,7 +106,7 @@ function AdvertisePill({ onClick }: { onClick: () => void }) {
     <a href="/#advertise" className="hero-advertise" data-tracked onClick={onClick}>
       <span className="hero-advertise-label">For advertisers</span>
       <span className="hero-advertise-text">Reach developers while they build</span>
-      <span className="hero-advertise-cta">Start a campaign from $1 <span aria-hidden="true">→</span></span>
+      <span className="hero-advertise-cta">Start a campaign from $1 <Icon node={ArrowRight} /></span>
     </a>
   );
 }
@@ -267,7 +269,7 @@ function TerminalCommand({ platform, source }: { platform: "windows" | "linux"; 
           <span className="hero-install-prompt" aria-hidden="true">{isWindows ? "PS>" : "$"}</span>
           <code>{command}</code>
           <button type="button" onClick={() => void copy()} aria-label={`Copy ${isWindows ? "PowerShell" : "terminal"} install command`} aria-live="polite" data-copied={copied}>
-            <span aria-hidden="true" className="hero-install-copy-icon">{copied ? "✓" : "⧉"}</span>
+            <span aria-hidden="true" className="hero-install-copy-icon"><Icon node={copied ? Check : Copy} /></span>
             {copied ? "Copied" : "Copy"}
           </button>
         </div>

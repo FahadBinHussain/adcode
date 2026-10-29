@@ -1,4 +1,6 @@
 import { PARTNERS, type Partner } from "@/lib/partners";
+import { Icon } from "@/components/Icon";
+import { ArrowUpRight } from "lucide";
 
 function PartnerMark({ partner }: { partner: Partner }) {
   const { logo, logoDark, wordmark } = partner;
@@ -29,7 +31,7 @@ export function Partners() {
           <span className="partner-top">
             <PartnerMark partner={partner} />
             <span className={partner.wordmark && partner.logo ? "partner-name partner-name-hidden" : "partner-name"}>{partner.name}</span>
-            <span className="partner-arrow" aria-hidden="true">↗</span>
+            <span className="partner-arrow" aria-hidden="true"><Icon node={ArrowUpRight} /></span>
           </span>
           <span className="partner-role">{partner.role}</span>
         </a>

@@ -11,17 +11,20 @@ import {
   LEVEL_LABELS,
   readStatus,
   type StatusDay,
+  type StatusCandle,
   type StatusIncident,
   type StatusModel,
   type StatusView,
 } from "@/lib/status";
 import "./status.css";
+import { Icon } from "@/components/Icon";
+import { ArrowDown } from "lucide";
 
 /**
  * The public status page.
  *
- * Two sources with one voice. Model health is computed by the API from the daily outcome
- * counts every editor already reports - nothing hand-entered, so the bars cannot be
+ * Two sources with one voice. Model health is computed by the API from timestamped relay
+ * requests - nothing hand-entered, so the bars cannot be
  * flattering. Incidents are hand-written, because a red bar tells a reader that something
  * is wrong and never whether anybody knows.
  *
@@ -39,7 +42,7 @@ export const metadata: Metadata = {
     title: "Status",
     socialTitle: "ADCode status — included AI, live",
     description:
-      "Live operational status for the AI models included with ADCode: uptime over the past 90 days, error rates, and the incident log with updates as they happen.",
+      "Live status for the AI models included with ADCode: two-hour candles, request success rates, and incident updates.",
   }),
   alternates: {
     canonical: url("/status"),
@@ -106,10 +109,20 @@ const dayTip = (day: StatusDay): string => {
   }`;
 };
 
+const candleTip = (candle: StatusCandle): string => {
+  const format = (at: number) => new Date(at).toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC",
+  });
+  const range = `${format(candle.startAt)} – ${format(candle.endAt)} UTC`;
+  if (candle.turns === 0) return `${range}: no requests`;
+  const average = speed(candle.avgMs);
+  return `${range}: ${count(candle.turns)} requests, ${count(candle.errors)} errors${average === null ? "" : `, ${average} average`}`;
+};
+
 const OVERALL_NOTES: Record<string, string> = {
-  operational: "No open incident. Every included model with traffic is answering normally.",
-  degraded: "No incident is open, but some models are above their usual error rate.",
-  outage: "No incident note is posted yet, but some models are failing requests.",
+  operational: "No open incident or elevated error rate in the latest measurements. Models without recent requests show no recent traffic.",
+  degraded: "Some models have elevated error rates in the latest measurements. See each model below.",
+  outage: "Some models are failing requests in the latest measurements. See each model below.",
   maintenance: "Maintenance is scheduled or in progress.",
 };
 
@@ -164,9 +177,13 @@ function IncidentBanner({ incident }: { incident: StatusIncident }) {
   );
 }
 
-function ModelRow({ model, index }: { model: StatusModel; index: number }) {
+function ModelRow({ model, index, windowDays, liveWindowMinutes }: { model: StatusModel; index: number; windowDays: number; liveWindowMinutes: number }) {
   const average = speed(model.avgMs);
   const uptime = model.uptimePct === null ? "No data" : `${model.uptimePct.toFixed(2)}%`;
+  const candles = model.candles;
+  const bars = candles === undefined
+    ? model.days.map(day => ({ key: day.day, level: day.level, tip: dayTip(day) }))
+    : candles.map(candle => ({ key: String(candle.startAt), level: candle.level, tip: candleTip(candle) }));
 
   return (
     <article className="status-row" data-state={model.state} style={{ animationDelay: `${String(index * 70)}ms` }}>
@@ -175,12 +192,12 @@ function ModelRow({ model, index }: { model: StatusModel; index: number }) {
           <strong>{model.name}</strong>
           <span className="status-row-meta">
             <span className="status-row-provider">{model.providerName}</span>
-            {` · ${count(model.turns)} turns · ${
+            {` · ${count(model.turns)} requests over ${String(windowDays)} days · ${
               model.errorPct === null ? "error rate unknown" : `${model.errorPct.toFixed(2)}% errors`
             }${average === null ? "" : ` · ${average} average`}`}
           </span>
         </div>
-        <span className="status-state" data-state={model.state}>
+        <span className="status-state" data-state={model.state} title={candles === undefined ? "Latest day with requests" : `Measured from requests in the last ${String(liveWindowMinutes)} minutes`}>
           <i className="status-state-dot" aria-hidden="true" />
           {LEVEL_LABELS[model.state] ?? model.state}
         </span>
@@ -188,27 +205,37 @@ function ModelRow({ model, index }: { model: StatusModel; index: number }) {
       <div
         className="status-bars"
         role="img"
-        aria-label={`Uptime over the past ${String(model.days.length)} days for ${model.name}: ${uptime}.`}
+        aria-label={`${candles === undefined ? "Daily bars" : "Two-hour candles"} over the past ${String(windowDays)} days for ${model.name}: ${uptime} successful requests.`}
       >
-        {model.days.map((day, dayIndex) => (
+        {bars.map((bar, dayIndex) => (
           <span
-            key={day.day}
+            key={bar.key}
             className="status-day"
-            data-level={day.level}
-            title={dayTip(day)}
+            data-level={bar.level}
+            title={bar.tip}
             style={{ animationDelay: `${String(Math.min(dayIndex * 6, 540))}ms` }}
           >
-            <span className="status-day-tip">{dayTip(day)}</span>
+            <span className="status-day-tip">{bar.tip}</span>
           </span>
         ))}
       </div>
       <div className="status-row-foot">
-        <span>{`${String(model.days.length)} days ago`}</span>
+        <span>{`${String(windowDays)} days ago${candles === undefined ? "" : " · 2h each"}`}</span>
         <span className="status-uptime">
-          <strong>{uptime}</strong> <em>uptime</em>
+          <strong>{uptime}</strong> <em>success rate</em>
         </span>
-        <span>Today</span>
+        <span>{candles === undefined ? "Today" : "Now"}</span>
       </div>
+      {candles !== undefined && (
+        <details className="status-candle-details">
+          <summary>Read the last 24 hours<span className="sr-only"> for {model.name}</span></summary>
+          <ol>
+            {candles.slice(-12).reverse().map(candle => (
+              <li key={candle.startAt}>{candleTip(candle)}</li>
+            ))}
+          </ol>
+        </details>
+      )}
     </article>
   );
 }
@@ -272,23 +299,79 @@ function incidentGroups(
   }));
 }
 
+/**
+ * Email alerts, with no account: a plain form that posts to the API and lands on
+ * /status/subscription, so it works with the page's no-script rule. Both lists start ticked
+ * because that is what almost everyone arriving here wants; the address is confirmed by one
+ * email before anything else is sent.
+ */
 function Subscribe({ copy }: { copy: string }) {
   return (
     <section className="status-subscribe" id="subscribe" aria-labelledby="status-subscribe-heading">
       <div className="status-subscribe-copy">
-        <strong id="status-subscribe-heading">Subscribe to updates</strong>
+        <span className="status-subscribe-kicker">Email alerts</span>
+        <strong id="status-subscribe-heading">Know the moment a model has trouble</strong>
         <p>
-          Incident updates publish to an RSS feed. Add it to a feed reader, Slack or Discord — no
-          account needed, and nothing else is ever sent on it.
-        </p>
-        <p>
-          Prefer email? With an ADCode account you can choose outage emails, a note when a new free
-          model arrives, and a report on how the models have been performing.{" "}
-          <a href="/dashboard#email-preferences">Choose your emails</a>
+          We email you when an included model starts failing requests, and again when it is back to
+          normal - measured automatically, every 15 minutes. No account needed: confirm your address
+          once and you are set.
         </p>
       </div>
-      <CopyField label="Status feed" value={STATUS_FEED} />
-      <small>{copy}</small>
+
+      <form className="status-subscribe-form" method="post" action="/v1/status/subscribe">
+        <div className="status-subscribe-row">
+          <label className="sr-only" htmlFor="status-email">Email address</label>
+          <input
+            id="status-email"
+            className="status-subscribe-input"
+            type="email"
+            name="email"
+            required
+            maxLength={254}
+            autoComplete="email"
+            inputMode="email"
+            spellCheck={false}
+            placeholder="you@example.com"
+          />
+          <button type="submit" className="status-subscribe-submit">Get alerts</button>
+        </div>
+        <fieldset className="status-topics">
+          <legend className="sr-only">What to email you about</legend>
+          <label className="status-topic">
+            <input type="checkbox" name="models" defaultChecked />
+            <span>
+              <b>Model health</b>
+              <small>Degraded, outage, and back to normal</small>
+            </span>
+          </label>
+          <label className="status-topic">
+            <input type="checkbox" name="incidents" defaultChecked />
+            <span>
+              <b>Incident updates</b>
+              <small>What we know, as we post it</small>
+            </span>
+          </label>
+        </fieldset>
+        {/* Never seen by a person; a bot that fills every field fills this one too. */}
+        <input className="status-subscribe-trap" type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" />
+        <p className="status-subscribe-fine">
+          From noreply@bluethenics.com. Every email has a one-click unsubscribe, and the address is
+          used for nothing else. <a href="/privacy">Privacy</a>
+        </p>
+      </form>
+
+      <div className="status-subscribe-more">
+        <div>
+          <strong>Prefer a feed?</strong>
+          <p>
+            Incident updates also publish to RSS - add it to a feed reader, Slack or Discord. With an ADCode
+            account you can also get a note when a new free model arrives.{" "}
+            <a href="/dashboard#email-preferences">Account emails</a>
+          </p>
+        </div>
+        <CopyField label="Status feed" value={STATUS_FEED} />
+        <small>{copy}</small>
+      </div>
     </section>
   );
 }
@@ -313,15 +396,15 @@ export default async function StatusPage() {
           <span className="glass-kicker">Live service health</span>
           <h1>ADCode status</h1>
           <p>
-            Uptime and error rates for the AI models included with ADCode, measured from the assistant turns
-            people actually ran. A turn counts against a model only when the service failed it - not when
-            someone was signed out, out of credit, offline, or stopped it. Incidents are posted here by hand,
-            with updates as they happen.
+            Each candle covers two hours of real requests to ADCode’s included AI models. Live badges
+            reflect the last {String(status?.liveWindowMinutes ?? 15)} minutes, so earlier errors stay in the history as models recover.
+            Service failures and capacity limits count; signed-out, invalid, cancelled, and out-of-credit
+            requests do not. Times are shown in UTC. Incident updates are posted by the team.
           </p>
           <div className="status-hero-actions">
             <a className="status-subscribe-button" href="#subscribe">
-              Subscribe to updates
-              <span aria-hidden="true">↓</span>
+              Get email alerts
+              <Icon node={ArrowDown} />
             </a>
           </div>
         </header>
@@ -350,7 +433,7 @@ export default async function StatusPage() {
             <section className="status-section" id="models" aria-labelledby="status-models-heading">
               <div className="status-section-head">
                 <h2 id="status-models-heading">Models</h2>
-                <span className="status-window">{`Uptime over the past ${String(status.windowDays)} days`}</span>
+                <span className="status-window">{`Past ${String(status.windowDays)} days · ${status.models.some(model => model.candles !== undefined) ? `2-hour candles · live status: last ${String(status.liveWindowMinutes ?? 120)} minutes` : "daily bars"}`}</span>
               </div>
               {status.models.length === 0 ? (
                 <p className="status-none">
@@ -359,7 +442,7 @@ export default async function StatusPage() {
               ) : (
                 <div className="status-rows">
                   {status.models.map((model, index) => (
-                    <ModelRow key={`${model.provider}:${model.model}`} model={model} index={index} />
+                    <ModelRow key={`${model.provider}:${model.model}`} model={model} index={index} windowDays={status.windowDays} liveWindowMinutes={status.liveWindowMinutes ?? 120} />
                   ))}
                 </div>
               )}

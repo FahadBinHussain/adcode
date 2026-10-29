@@ -1,8 +1,20 @@
 /** Production assembly; only the API and scheduled Worker import this file. */
 import { createSupabaseMailingStore } from "@adcode/api/adapters/supabaseMailingStore.ts";
 import { runAnnouncementBatch, runMailingBatch, sendReportReply } from "@adcode/api/src/mailingDelivery.ts";
+import { createSupabaseStatusAlertStore } from "@adcode/api/adapters/supabaseStatusAlertStore.ts";
+import { createSupabaseStore } from "@adcode/api/adapters/supabaseStore.ts";
+import { runStatusAlertBatch, runStatusWatch, sendStatusConfirmation } from "@adcode/api/src/statusAlerts.ts";
+import { createSupabaseAdvertiserWelcomeStore } from "@adcode/api/adapters/supabaseAdvertiserWelcomeStore.ts";
+import { runAdvertiserWelcomeBatch } from "@adcode/api/src/advertiserWelcome.ts";
+import { createSupabasePurchaseReceiptStore } from "@adcode/api/adapters/supabasePurchaseReceiptStore.ts";
+import { runPurchaseReceiptBatch } from "@adcode/api/src/purchaseReceipts.ts";
 
 export const mailingStore = createSupabaseMailingStore();
+export const statusAlertStore = createSupabaseStatusAlertStore();
+const advertiserWelcomeStore = createSupabaseAdvertiserWelcomeStore();
+const purchaseReceiptStore = createSupabasePurchaseReceiptStore();
+// The watcher reads the same model counts as /status; its own client, created on first use.
+const statusReadStore = createSupabaseStore();
 const siteOrigin = (): string => process.env["NEXT_PUBLIC_SITE_ORIGIN"] ?? "https://adcode.bluethenics.com";
 const keys = () => ({
   ...(process.env["RESEND_API_KEY"] ? { apiKey: process.env["RESEND_API_KEY"] } : {}),
@@ -32,4 +44,38 @@ export async function sendReportReplyEmail(input: { replyId: string; to: string;
   const mail = await (await import("@/emails/ReportReply")).renderReportReply({ reportTitle: input.reportTitle, reportedAt: input.reportedAt, message: input.message });
   const settings = await mailingStore.settings();
   return sendReportReply({ ...keys(), senderVerified: settings.senderVerified }, { replyId: input.replyId, to: input.to, mail });
+}
+
+/**
+ * The status page's quarter-hourly job: welcome new advertisers, send purchase
+ * receipts, judge every included model on the turns since the last check, queue an
+ * alert for each change, then send what is due. Each part fails on its own.
+ */
+export async function runScheduledStatus(now = Date.now()) {
+  const advertiserWelcomes = await runAdvertiserWelcomeBatch({
+    store: advertiserWelcomeStore, settings: () => mailingStore.settings(), ...keys(), siteOrigin: siteOrigin(),
+    render: async (...args) => (await import("@/emails/AdvertiserWelcome")).renderAdvertiserWelcome(...args),
+  }).catch((error: unknown) => ({ error: error instanceof Error ? error.message : "welcome failed" }));
+  const purchaseReceipts = await runPurchaseReceiptBatch({
+    store: purchaseReceiptStore, settings: () => mailingStore.settings(), ...keys(), siteOrigin: siteOrigin(),
+    render: async (...args) => (await import("@/emails/PurchaseReceipt")).renderPurchaseReceipt(...args),
+  }).catch((error: unknown) => ({ error: error instanceof Error ? error.message : "receipts failed" }));
+  const watch = await runStatusWatch({ store: statusReadStore, alerts: statusAlertStore, siteOrigin: siteOrigin(), now })
+    .catch((error: unknown) => ({ error: error instanceof Error ? error.message : "watch failed" }));
+  const alerts = await runStatusAlertBatch({
+    alerts: statusAlertStore,
+    settings: () => mailingStore.settings(),
+    ...keys(),
+    siteOrigin: siteOrigin(),
+    render: async (...args) => (await import("@/emails/StatusAlert")).renderStatusAlert(...args),
+  }).catch((error: unknown) => ({ error: error instanceof Error ? error.message : "send failed" }));
+  return { watch, alerts, advertiserWelcomes, purchaseReceipts };
+}
+
+/** The one email an unconfirmed address can get, sent at once from noreply@. */
+export async function sendStatusConfirmationEmail(input: { email: string; confirmToken: string; models: boolean; incidents: boolean }) {
+  const settings = await mailingStore.settings();
+  const confirmUrl = siteOrigin() + "/status/subscription?confirm=" + encodeURIComponent(input.confirmToken);
+  const mail = await (await import("@/emails/StatusAlert")).renderStatusConfirm({ confirmUrl, models: input.models, incidents: input.incidents, postalAddress: settings.postalAddress });
+  return sendStatusConfirmation({ ...keys(), senderVerified: settings.senderVerified }, { email: input.email, confirmToken: input.confirmToken, mail });
 }

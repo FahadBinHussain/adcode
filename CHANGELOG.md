@@ -3,6 +3,129 @@
 All notable changes to ADCode. Dates are the date the version was prepared; a version is
 only public once its installers are attached to a GitHub release.
 
+## 2.4.4 — 2026-10-28
+
+- Check the installed update in the profile ADCode actually uses.
+- A full-window admin with an Ads group, and an advertiser sign-up that says the price.
+- Run enabled tools without asking, and sign in to OAuth MCP servers.
+- Show what is left of an allowance as a percentage.
+- Tools menu rows, Tagflow/Heabsy usage split, plan in the account panel.
+- Give Settings room - bigger window, grouped rows, no hover on rows.
+- Settings in sections, and an admin panel that opens instantly.
+- Type the restarted stream's read without the DOM lib; record the 27 October report triage.
+- Limit card, one-click update in the title bar, Lucide icons, and report fixes.
+- Ask the provider again when a stream fails before its first token.
+- Deliver Imprezia Chat Ads, and let the admin choose pay per view or per click.
+- Purchase receipts, advertiser welcomes, live status candles and day-over-day analytics.
+- Add a custom connector by name and URL, and publish the October feature docs.
+- Publish clear AI pricing and plan discovery.
+- Separate command results from Windows initialization diagnostics.
+- Use the supported Next 16.4 Cloudflare adapter.
+- Keep unpublished improvements in the next release notes.
+- Reuse the assisted launch function without duplicate macro state.
+- Provision Electron once before parallel GUI verification.
+- Check the Changes badge correctly in clean release checkouts.
+- Update release dependencies to audited patched versions.
+- Prepare repeatable daily releases and verify installed upgrades.
+- Show installation progress and reopen after explicit updates.
+- Include reviewed account and recovery report fixes.
+- Finish cancelled requests and preserve valid AI stream endings.
+- Announce new updates and protect every window before installing.
+- Finish interrupted AI streams without breaking the response bridge.
+- Recover settings saves in virtualized Windows folders.
+- Complete AI plans, provider connections and report recovery fixes.
+- Subscribers get their plan's weekly allowance; views publish plans.
+- AI plans - subscriptions, gifts, boosts, promo codes, invites.
+- Store contract for AI plans, promos and invites, with the memory store.
+- AI plan rules - weekly, monthly, pro and the effective weekly allowance.
+- /ai-tokens has its heading and share card in the server-rendered page.
+- The paid tokens migration gives up after 5 s rather than queue live AI requests.
+- A task paused on the paid-token limit names the buy page and resumes soon after a purchase.
+- The AI tokens page says a payment arrived only once its order is paid.
+- Lock order, free-model fallback, webhook checks, disputes, quiet usage reads.
+- Buy AI tokens in the desktop and the docs - limit card, command, meter, help, guide.
+- Buy AI tokens page; admin paid-token switch, grants and sales.
+- Buy AI tokens through Dodo; the webhook credits them once; admin grants and sales.
+- Charge Heabsy models from the free week, then purchased tokens.
+- Paid AI tokens - balances, orders, ledger, reserve/settle in one transaction.
+- Store contract for paid tokens, with the memory store.
+- Included-AI config carries paid tokens; the public config marks paid models.
+- Paid AI token rules - free weekly allowance, then purchased tokens.
+- Fewer database trips per request; public reads from the edge cache.
+- A busy included model hands off on its first 429.
+
+## 2.4.3 — 2026-10-27
+
+- A full-window admin with an Ads group, and an advertiser sign-up that says the price.
+- Run enabled tools without asking, and sign in to OAuth MCP servers.
+- Show what is left of an allowance as a percentage.
+- Tools menu rows, Tagflow/Heabsy usage split, plan in the account panel.
+- Give Settings room - bigger window, grouped rows, no hover on rows.
+- Settings in sections, and an admin panel that opens instantly.
+- Type the restarted stream's read without the DOM lib; record the 27 October report triage.
+- Limit card, one-click update in the title bar, Lucide icons, and report fixes.
+- Ask the provider again when a stream fails before its first token.
+- Deliver Imprezia Chat Ads, and let the admin choose pay per view or per click.
+- Purchase receipts, advertiser welcomes, live status candles and day-over-day analytics.
+- Add a custom connector by name and URL, and publish the October feature docs.
+- Publish clear AI pricing and plan discovery.
+- Separate command results from Windows initialization diagnostics.
+- Use the supported Next 16.4 Cloudflare adapter.
+- Keep unpublished improvements in the next release notes.
+- Reuse the assisted launch function without duplicate macro state.
+- Provision Electron once before parallel GUI verification.
+- Check the Changes badge correctly in clean release checkouts.
+- Update release dependencies to audited patched versions.
+- Prepare repeatable daily releases and verify installed upgrades.
+- Show installation progress and reopen after explicit updates.
+- Include reviewed account and recovery report fixes.
+- Finish cancelled requests and preserve valid AI stream endings.
+- Announce new updates and protect every window before installing.
+- Finish interrupted AI streams without breaking the response bridge.
+- Recover settings saves in virtualized Windows folders.
+- Complete AI plans, provider connections and report recovery fixes.
+- Subscribers get their plan's weekly allowance; views publish plans.
+- AI plans - subscriptions, gifts, boosts, promo codes, invites.
+- Store contract for AI plans, promos and invites, with the memory store.
+- AI plan rules - weekly, monthly, pro and the effective weekly allowance.
+- /ai-tokens has its heading and share card in the server-rendered page.
+- The paid tokens migration gives up after 5 s rather than queue live AI requests.
+- A task paused on the paid-token limit names the buy page and resumes soon after a purchase.
+- The AI tokens page says a payment arrived only once its order is paid.
+- Lock order, free-model fallback, webhook checks, disputes, quiet usage reads.
+- Buy AI tokens in the desktop and the docs - limit card, command, meter, help, guide.
+- Buy AI tokens page; admin paid-token switch, grants and sales.
+- Buy AI tokens through Dodo; the webhook credits them once; admin grants and sales.
+- Charge Heabsy models from the free week, then purchased tokens.
+- Paid AI tokens - balances, orders, ledger, reserve/settle in one transaction.
+- Store contract for paid tokens, with the memory store.
+- Included-AI config carries paid tokens; the public config marks paid models.
+- Paid AI token rules - free weekly allowance, then purchased tokens.
+- Fewer database trips per request; public reads from the edge cache.
+- A busy included model hands off on its first 429.
+
+## 2.4.2 — 2026-10-27
+
+- **Update now.** A new-version notice offers Update now or Later, with background download progress. On Windows, an explicit update protects unsaved work in every window, closes ADCode, shows installation progress and opens the updated app automatically. Store and portable users get the appropriate update destination.
+- **AI plans and tokens.** Heabsy models include 10M free tokens each week. Weekly ($3/week) and Monthly ($9/month) raise that to 60M/week; Pro ($19/month) gives 150M/week. One-time packs never expire and are used after the weekly allowance. The composer meter, AI usage and Upgrade Plan action make the balance and next step clear. Tagflow AI keeps its existing free access.
+- **Codes and invitations.** Redeem promo codes for tokens or plan days. A Pro subscriber can invite two friends; each friend's first eligible subscription rewards both accounts with 4M tokens while the inviter's Pro plan is active. Administrators can gift plans, boost allowances and reset eligible weeks, including bounded batches with retry.
+- **Provider connections.** Administrators can connect compatible documented ad-serving and event-verification APIs with encrypted keys and per-network payout rules. Imprezia and beehiiv have clearly marked previews; these previews do not bill desktop impressions or promise earnings.
+- Busy included models hand off to an available fallback promptly. Interrupted or cancelled answers finish cleanly with a readable error, and valid final answer data is preserved. A task paused by an account allowance rechecks soon after the allowance changes; real provider throttling remains distinct.
+- Account changes during a task are explained, temporary failures use bounded retries, and settings and automation schedules recover from redirected Windows folders. File watching falls back when a native watcher fails. Checklist compatibility and repeated-tool-failure recovery are improved.
+- Scroll overflowing chat tabs with the mouse wheel. Update preparation can be retried safely after a window refuses to close.
+- Updated Electron, Next.js, DOMPurify and affected dependencies to patched versions. Release preparation supports fresh daily patch versions, and release checks verify installer metadata and the installed Windows upgrade before producing a draft.
+
+## 2.4.1 — 2026-10-26 (build withheld)
+
+- **Update now.** A new-version notice offers Update now or Later, with background download progress. On Windows, an explicit update protects unsaved work in every window, closes ADCode, shows installation progress and opens the updated app automatically. Store and portable users get the appropriate update destination.
+- **AI plans and tokens.** Heabsy models include 10M free tokens each week. Weekly ($3/week) and Monthly ($9/month) raise that to 60M/week; Pro ($19/month) gives 150M/week. One-time packs never expire and are used after the weekly allowance. The composer meter, AI usage and Upgrade Plan action make the balance and next step clear. Tagflow AI keeps its existing free access.
+- **Codes and invitations.** Redeem promo codes for tokens or plan days. A Pro subscriber can invite two friends; each friend's first eligible subscription rewards both accounts with 4M tokens while the inviter's Pro plan is active. Administrators can gift plans, boost allowances and reset eligible weeks, including bounded batches with retry.
+- **Provider connections.** Administrators can connect compatible documented ad-serving and event-verification APIs with encrypted keys and per-network payout rules. Imprezia and beehiiv have clearly marked previews; these previews do not bill desktop impressions or promise earnings.
+- Busy included models hand off to an available fallback promptly. Interrupted or cancelled answers finish cleanly with a readable error, and valid final answer data is preserved. A task paused by an account allowance rechecks soon after the allowance changes; real provider throttling remains distinct.
+- Account changes during a task are explained, temporary failures use bounded retries, and settings and automation schedules recover from redirected Windows folders. File watching falls back when a native watcher fails. Checklist compatibility and repeated-tool-failure recovery are improved.
+- Scroll overflowing chat tabs with the mouse wheel. Update preparation can be retried safely after a window refuses to close.
+- Updated Electron, Next.js, DOMPurify and affected dependencies to patched versions. Release preparation supports fresh daily patch versions, and release checks verify installer metadata and the installed Windows upgrade before producing a draft.
+
 ## 2.4.0 — 2026-10-21
 
 - **The assistant uses ADCode for you.** Ask it to connect a tool such as Roblox Studio, change a setting or open a view, and it does it instead of telling you where to click. It looks ADCode's own features up before it answers, and asks first for anything that changes ads, updates or what runs as a command. Roblox Studio is in the Connectors catalogue.

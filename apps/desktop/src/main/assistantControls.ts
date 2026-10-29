@@ -13,11 +13,14 @@ import { createConnectorSecrets } from "./connectorSecrets.ts";
 import { createConnectorSources, type PendingDraft } from "./connectorImport.ts";
 import { extensionRoot, installArchive, installFolder, pluginRoot, removeInstalled } from "./connectorInstall.ts";
 import { confirmInWindow } from "./themedConfirm.ts";
+import { forgetMcpSignIn, signInToMcp } from "./mcpOAuth.ts";
 import { setFeatureSurface } from "@adcode/help";
 import { ADCODE_APP_TOOLS, createAdcodeAppTools } from "./adcodeAppTools.ts";
 import { currentSettings, writeSetting } from "./settings.ts";
 
 export { ASSISTANT_EXTENSION_TOOLS, ADCODE_APP_TOOLS };
+/** The "Ask before connector tools" setting, read fresh so a change applies to the next call. */
+export const askBeforeConnectorTools = (): boolean => currentSettings()["adcode.ai.askBeforeConnectorTools"] === true;
 let service: ReturnType<typeof createAssistantControlsService> | null = null;
 function announce(): void {
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(CHANNELS.aiControlsChanged);
@@ -56,6 +59,12 @@ export function assistantControls() {
       // An external tool call waits for the user's yes, asked in the app's themed dialog.
       confirm: (message, detail, signal) =>
         confirmInWindow(BrowserWindow.getFocusedWindow(), { title: message, body: detail, confirmLabel: "Allow once", cancelLabel: "Cancel" }, signal),
+      // Off by default: enabled connector tools run without a dialog on every call.
+      askBeforeCalls: askBeforeConnectorTools,
+      oauth: {
+        signIn: (request) => signInToMcp(request.server.id, request.server.endpoint, request.values),
+        forget: forgetMcpSignIn,
+      },
       secrets: createConnectorSecrets(),
       sources: createConnectorSources({ home: homedir(), appData: app.getPath("appData"), workspace }),
       install,
@@ -74,6 +83,7 @@ let appTools: ToolRunner | null = null;
 function adcodeAppTools(): ToolRunner {
   appTools ??= createAdcodeAppTools({
     controls: assistantControls(),
+    askBeforeConnectorTools,
     confirm: (title, detail, signal) =>
       confirmInWindow(BrowserWindow.getFocusedWindow(), { title, body: detail, confirmLabel: "Allow", cancelLabel: "Cancel" }, signal),
     platform: onWeb ? "linux" : process.platform,

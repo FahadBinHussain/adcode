@@ -1062,3 +1062,36 @@
 :root[data-frame="web"] body[data-workspace-mode="vibe"][data-vibe-rail="docked"] .notification-inbox {
   left: calc(var(--vibe-rail-width, 272px) + var(--web-rail) + var(--web-gap) + 12px);
 }
+
+/* ── One-click update in the title bar (main.ts titleUpdate, updatePrompt.ts) ──────────── */
+.web-tabs-update[hidden] { display: none; }
+.web-tabs-update {
+  position: relative;
+  color: var(--accent);
+  animation: web-update-in 260ms var(--web-ease-out) both;
+}
+.web-tabs-update::before {
+  /* The download as a ring around the arrow: empty, then filling, then full when ready. */
+  content: "";
+  position: absolute;
+  inset: 5px auto 5px 5px;
+  width: 22px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--update-progress, 0) * 1%), transparent 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.web-tabs-update[data-state="downloading"]::before { opacity: 1; }
+.web-tabs-update[data-state="ready"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.web-tabs-update[data-state="ready"] svg { animation: web-update-nudge 1.6s var(--web-ease-out) 400ms 2; }
+.web-tabs-update[data-state="restarting"] svg { animation: web-update-spin 900ms linear infinite; }
+.web-tabs-update-text:empty { display: none; }
+.web-tabs-update-text { font-variant-numeric: tabular-nums; }
+@keyframes web-update-in { from { opacity: 0; scale: 0.92; } to { opacity: 1; scale: 1; } }
+@keyframes web-update-nudge { 0%, 100% { translate: 0 0; } 30% { translate: 0 2px; } 60% { translate: 0 -1px; } }
+@keyframes web-update-spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .web-tabs-update, .web-tabs-update svg { animation: none !important; }
+}
+:root[data-reduced-motion="true"] .web-tabs-update, :root[data-reduced-motion="true"] .web-tabs-update svg { animation: none !important; }

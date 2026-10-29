@@ -1,9 +1,10 @@
 /**
  * The public status page: per-model health and the human-written incident log.
  *
- * Two questions, one page. "Are the models working?" is answered from the same daily
- * outcome counts the admin panel's Models page reads (`model_outcomes`, recorded by every
- * editor, no account attached). "What is anyone doing about it?" is answered by incidents
+ * Two questions, one page. "Are the models working?" is answered from
+ * timestamped request aggregates measured by the included-AI relay. Legacy stores and
+ * monthly performance reports use editor daily outcome counts. "What is anyone doing
+ * about it?" is answered by incidents
  * an administrator writes here - investigating, identified, monitoring, resolved -
  * because a bar turning yellow tells nobody whether a person knows.
  *
@@ -11,7 +12,7 @@
  * panel reads the same assembly so both sides describe one incident the same way. Nothing
  * here ever leaves a prompt, a reply, a file or an account attached to a number.
  *
- * The wire is deliberately pre-chewed: day states and percentages are computed once, in
+ * The wire is deliberately pre-chewed: interval states and percentages are computed once, in
  * one place, so the page, the feed and any future client cannot disagree about what
  * "degraded" means.
  */
@@ -20,6 +21,7 @@ import type { ModelOutcomeRow } from "./modelOutcomes.ts";
 import { includedProvider, modelProvider } from "./includedProviders.ts";
 import { parseTagflowConfig } from "./tagflowConfig.ts";
 import type { TagflowConfigRecord } from "./tagflowTypes.ts";
+import { STATUS_CANDLE_COUNT, STATUS_CANDLE_DAYS, STATUS_CANDLE_MS, STATUS_LIVE_WINDOW_MINUTES, type StatusBucketRow, type StatusCandle } from "./statusTelemetry.ts";
 
 export const STATUS_WINDOW_DAYS = 90;
 
@@ -234,7 +236,7 @@ export interface StatusModelView {
   providerName: string;
   model: string;
   name: string;
-  /** The newest day with traffic - a quiet morning is not an outage. */
+  /** Rolling 15-minute health; legacy daily stores use their newest day with traffic. */
   state: StatusLevel;
   turns: number;
   ok: number;
@@ -245,6 +247,8 @@ export interface StatusModelView {
   avgMs: number | null;
   lastActiveDay: string | null;
   days: StatusDayView[];
+  /** Timestamped request history, when the relay supports two-hour measurement. */
+  candles?: StatusCandle[];
 }
 
 export interface StatusUpdateView {
@@ -275,12 +279,13 @@ export interface StatusOverall {
 export interface StatusView {
   asOf: number;
   windowDays: number;
+  liveWindowMinutes?: number;
   overall: StatusOverall;
   models: StatusModelView[];
   incidents: StatusIncidentView[];
 }
 
-/** How one day of one model reads. Thresholds are the whole vocabulary, in one place. */
+/** How one measured interval reads. Thresholds are the whole vocabulary, in one place. */
 export function levelFor(errorPct: number, turns: number): StatusLevel {
   if (turns === 0) return "quiet";
   if (errorPct < 5) return "operational";
@@ -311,10 +316,75 @@ function blankDay(): DayTally {
   return { turns: 0, errors: 0, okMs: 0, ok: 0 };
 }
 
-/**
- * One pure function so the public page, the admin list and the tests cannot disagree.
- * Every input is already stored; nothing here reaches a store.
- */
+/** A live outage means almost no requests are working, not merely an elevated error rate. */
+export function liveLevelFor(errorPct: number, turns: number): StatusLevel {
+  if (turns === 0) return "quiet";
+  if (errorPct < 5) return "operational";
+  return errorPct >= 90 && turns >= STATUS_MIN_SAMPLE ? "outage" : "degraded";
+}
+
+/** Two-hour history and a rolling 15-minute live state, independent of earlier failures. */
+export function telemetryModels(now: number, rows: readonly StatusBucketRow[], catalog: StatusCatalog): StatusModelView[] {
+  const latest = Math.floor(now / STATUS_CANDLE_MS) * STATUS_CANDLE_MS;
+  const first = latest - (STATUS_CANDLE_COUNT - 1) * STATUS_CANDLE_MS;
+  const ids = catalog === null ? new Set(rows.map(row => row.model)) : new Set(catalog.keys());
+  const grouped = new Map<string, StatusBucketRow[]>();
+  for (const row of rows) {
+    if (!ids.has(row.model) || row.startAt < first || row.startAt > latest) continue;
+    const list = grouped.get(row.model) ?? [];
+    list.push(row);
+    grouped.set(row.model, list);
+  }
+  return [...ids].map(model => {
+    const own = catalog?.get(model);
+    const byTime = new Map<number, { turns: number; errors: number; okMs: number }>();
+    let recentTurns = 0;
+    let recentErrors = 0;
+    let turns = 0;
+    let ok = 0;
+    let okMs = 0;
+    let lastActiveDay: string | null = null;
+    for (const row of grouped.get(model) ?? []) {
+      const tally = byTime.get(row.startAt) ?? { turns: 0, errors: 0, okMs: 0 };
+      tally.turns += row.count;
+      turns += row.count;
+      recentTurns += row.recentCount;
+      if (row.outcome === "error") {
+        tally.errors += row.count;
+        recentErrors += row.recentCount;
+      } else {
+        tally.okMs += row.totalMs;
+        ok += row.count;
+        okMs += row.totalMs;
+      }
+      byTime.set(row.startAt, tally);
+    }
+    const candles: StatusCandle[] = Array.from({ length: STATUS_CANDLE_COUNT }, (_, index) => {
+      const startAt = first + index * STATUS_CANDLE_MS;
+      const tally = byTime.get(startAt) ?? { turns: 0, errors: 0, okMs: 0 };
+      if (tally.turns > 0) lastActiveDay = new Date(startAt).toISOString().slice(0, 10);
+      const successes = tally.turns - tally.errors;
+      return {
+        startAt, endAt: startAt + STATUS_CANDLE_MS,
+        level: levelFor(tally.turns === 0 ? 0 : tally.errors / tally.turns * 100, tally.turns),
+        turns: tally.turns, errors: tally.errors,
+        avgMs: successes > 0 ? Math.round(tally.okMs / successes) : null,
+      };
+    });
+    const round2 = (value: number) => Math.round(value * 100) / 100;
+    return {
+      provider: "tagflow", providerName: own?.providerName ?? providerDisplayName("tagflow"),
+      model, name: own?.name ?? modelDisplayName(model),
+      state: liveLevelFor(recentTurns === 0 ? 0 : recentErrors / recentTurns * 100, recentTurns),
+      turns, ok, uptimePct: turns > 0 ? round2(ok / turns * 100) : null,
+      errorPct: turns > 0 ? round2((turns - ok) / turns * 100) : null,
+      avgMs: ok > 0 ? Math.round(okMs / ok) : null,
+      lastActiveDay, days: [], candles,
+    };
+  }).sort((a, b) => b.turns - a.turns || a.name.localeCompare(b.name));
+}
+
+/** Shared pure assembly for the public page, incident feed and tests. */
 export function assembleStatusView(args: {
   now: number;
   days: number;
@@ -323,6 +393,7 @@ export function assembleStatusView(args: {
   updates: readonly StatusIncidentUpdateRecord[];
   /** Included models' own names and upstreams, so a row reads as the model picker does. */
   catalog?: StatusCatalog;
+  telemetry?: readonly StatusBucketRow[];
 }): StatusView {
   const windowDays = Math.min(STATUS_WINDOW_DAYS, Math.max(7, Math.floor(args.days)));
   const dayKeys: string[] = [];
@@ -349,7 +420,7 @@ export function assembleStatusView(args: {
     series.set(key, entry);
   }
 
-  const models: StatusModelView[] = [];
+  let models: StatusModelView[] = [];
   for (const entry of series.values()) {
     let turns = 0;
     let ok = 0;
@@ -402,6 +473,8 @@ export function assembleStatusView(args: {
     (a, b) => b.turns - a.turns || a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name),
   );
 
+  if (args.telemetry !== undefined) models = telemetryModels(args.now, args.telemetry, args.catalog ?? null);
+
   const incidents = buildIncidentViews(
     args.incidents.filter(
       (incident) => incident.status !== "resolved" || incident.createdAt >= windowStart,
@@ -428,7 +501,7 @@ export function assembleStatusView(args: {
     overall = { state, title: worst.title, activeIncidents: active.length };
   } else if (modelOutages > 0) {
     overall = {
-      state: "outage",
+      state: modelOutages === models.length ? "outage" : "degraded",
       title: modelOutages === 1 ? "One model is failing requests" : `${String(modelOutages)} models are failing requests`,
       activeIncidents: 0,
     };
@@ -442,7 +515,8 @@ export function assembleStatusView(args: {
     overall = { state: "operational", title: "All systems operational", activeIncidents: 0 };
   }
 
-  return { asOf: args.now, windowDays, overall, models, incidents };
+  return { asOf: args.now, windowDays: args.telemetry === undefined ? windowDays : STATUS_CANDLE_DAYS,
+    ...(args.telemetry === undefined ? {} : { liveWindowMinutes: STATUS_LIVE_WINDOW_MINUTES }), overall, models, incidents };
 }
 
 /** Newest first, with each incident's updates newest first. Shared by the public view and the admin list. */
@@ -477,6 +551,7 @@ export function buildIncidentViews(
 /** The part of the store this module needs - the same minimal-port style as modelOutcomes. */
 export interface StatusStore {
   modelOutcomesSince(day: string): Promise<ModelOutcomeRow[]>;
+  modelStatusBuckets?(from: number, to: number): Promise<StatusBucketRow[]>;
   /** The included-AI catalog, for which models this page reports and what they are called. */
   getTagflowConfig?(): Promise<TagflowConfigRecord | null>;
   listStatusIncidents(): Promise<StatusIncidentRecord[]>;
@@ -490,17 +565,25 @@ export interface StatusStore {
 export async function readStatusView(
   deps: { store: StatusStore; clock: { now(): number } },
   days: number = STATUS_WINDOW_DAYS,
+  options: { daily?: boolean } = {},
 ): Promise<StatusView> {
   const now = deps.clock.now();
   const windowDays = Math.min(STATUS_WINDOW_DAYS, Math.max(7, Math.floor(days)));
-  const [outcomes, incidents, updates, catalog] = await Promise.all([
-    deps.store.modelOutcomesSince(utcDayBefore(now, windowDays - 1)),
+  const firstCandle = Math.floor(now / STATUS_CANDLE_MS) * STATUS_CANDLE_MS - (STATUS_CANDLE_COUNT - 1) * STATUS_CANDLE_MS;
+  const useTelemetry = !options.daily && deps.store.modelStatusBuckets !== undefined;
+  const daily = () => deps.store.modelOutcomesSince(utcDayBefore(now, windowDays - 1));
+  const [measured, incidents, updates, catalog, telemetry] = await Promise.all([
+    useTelemetry ? Promise.resolve(null) : daily(),
     deps.store.listStatusIncidents(),
     deps.store.listStatusIncidentUpdates(),
     // The catalog only names and narrows; without it the page still reports by provider.
     deps.store.getTagflowConfig?.().then(statusCatalog, () => null) ?? Promise.resolve(null),
+    // Relay candles need their migration; until it exists (or if the read fails) the page
+    // falls back to the daily summaries rather than reporting the database as down.
+    useTelemetry ? deps.store.modelStatusBuckets!(firstCandle, now).catch(() => undefined) : Promise.resolve(undefined),
   ]);
-  return assembleStatusView({ now, days: windowDays, outcomes: includedOutcomes(outcomes, catalog), incidents, updates, catalog });
+  const outcomes = measured ?? (telemetry === undefined ? await daily() : []);
+  return assembleStatusView({ now, days: windowDays, outcomes: includedOutcomes(outcomes, catalog), incidents, updates, catalog, ...(telemetry === undefined ? {} : { telemetry }) });
 }
 
 /**

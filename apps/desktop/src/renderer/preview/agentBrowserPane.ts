@@ -3,6 +3,7 @@ import { setWorkspaceBrowserOpener } from "../workbench/workspacePanels.ts";
 import { createFloatingPanel } from "../workbench/floatingPanel.ts";
 import { reconcileTabs, tabMotionAllowed, updateTabStrip } from "../workbench/tabMotion.ts";
 import { ICON, createIcon } from "../workbench/icons.ts";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, RotateCw, type IconNode } from "lucide";
 
 /** The same Chromium session agents drive, rendered safely as snapshots instead of privileged web content. */
 export function createAgentBrowserPane() {
@@ -36,12 +37,12 @@ export function createAgentBrowserPane() {
   let following = true;
   let ownRequest = false;
   let request = 0;
-  const button = (label: string, symbol: string, run: (event: MouseEvent) => void) => {
-    const b = document.createElement("button"); b.type = "button"; b.textContent = symbol; b.title = label; b.setAttribute("aria-label", label); b.addEventListener("click", run); return b;
+  const button = (label: string, symbol: string | IconNode, run: (event: MouseEvent) => void) => {
+    const b = document.createElement("button"); b.type = "button"; if (typeof symbol === "string") b.textContent = symbol; else b.append(createIcon(symbol)); b.title = label; b.setAttribute("aria-label", label); b.addEventListener("click", run); return b;
   };
-  const back = button("Back", "←", () => history(-1));
-  const forward = button("Forward", "→", () => history(1));
-  const reload = button("Reload page", "↻", () => { if (active.url) void navigate(active.url, false); });
+  const back = button("Back", ArrowLeft, () => history(-1));
+  const forward = button("Forward", ArrowRight, () => history(1));
+  const reload = button("Reload page", RotateCw, () => { if (active.url) void navigate(active.url, false); });
   const follow = button("Follow agent browser", "Follow agent", () => { following = !following; follow.setAttribute("aria-pressed", String(following)); if (following) void window.adcode.browser.read().then(v => { if (v) receive(v); }); });
   follow.className = "agent-browser-follow"; follow.setAttribute("aria-pressed", "true");
   toolbar.append(back, forward, reload, address, follow);
@@ -156,8 +157,8 @@ export function createAgentBrowserPane() {
   });
   image.addEventListener("keydown", event => { if (["Enter", "Tab", "Escape", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Backspace"].includes(event.key)) { event.preventDefault(); void perform({ actions: [{ type: "press", key: event.key }] }, true); } });
   inputBar.addEventListener("submit", event => { event.preventDefault(); if (!typing.value) return; const value = typing.value; typing.value = ""; void perform({ actions: [{ type: "type", value }] }); });
-  const down = button("Scroll page down", "↓", () => void perform({ actions: [{ type: "eval", expression: "window.scrollBy(0, 600)" }] }));
-  const up = button("Scroll page up", "↑", () => void perform({ actions: [{ type: "eval", expression: "window.scrollBy(0, -600)" }] }));
+  const down = button("Scroll page down", ArrowDown, () => void perform({ actions: [{ type: "eval", expression: "window.scrollBy(0, 600)" }] }));
+  const up = button("Scroll page up", ArrowUp, () => void perform({ actions: [{ type: "eval", expression: "window.scrollBy(0, -600)" }] }));
   inputBar.append(up, down);
   addTab();
   window.adcode.browser.onChanged(receive);

@@ -8,6 +8,8 @@ import { JsonLd } from "@/components/JsonLd";
 import { docsBySection, recentDocs } from "@/lib/docs";
 import { breadcrumbs } from "@/lib/schema";
 import { pageMetadata } from "@/lib/seo";
+import { Icon } from "@/components/Icon";
+import { ArrowDown, ArrowRight } from "lucide";
 
 export const metadata: Metadata = pageMetadata({
   path: "/docs",
@@ -120,8 +122,8 @@ export default async function DocsIndex({ searchParams }: Props) {
                     <code>adcode open .</code>
                   </p>
                   <div className="docs-start-actions">
-                    <Link className="btn btn-primary" href="/versions">Install ADCode <span aria-hidden="true">↓</span></Link>
-                    <Link href="/docs/installing-adcode">Read the installation guide <span aria-hidden="true">→</span></Link>
+                    <Link className="btn btn-primary" href="/versions">Install ADCode <Icon node={ArrowDown} /></Link>
+                    <Link href="/docs/installing-adcode">Read the installation guide <Icon node={ArrowRight} /></Link>
                   </div>
                 </div>
               </header>

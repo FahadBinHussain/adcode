@@ -50,6 +50,17 @@ const good = () => ({
 });
 
 describe("parseStatusView", () => {
+  it("keeps the live measurement window separate from historical candles", () => {
+    expect(parseStatusView({ ...good(), liveWindowMinutes: 15 })?.liveWindowMinutes).toBe(15);
+    expect(parseStatusView(good())?.liveWindowMinutes).toBeUndefined();
+  });
+  it("reads two-hour candles and drops malformed intervals without inventing data", () => {
+    const raw = good();
+    const candle = { startAt: 1_790_000_000_000, endAt: 1_790_007_200_000, level: "operational", turns: 10, errors: 0, avgMs: 1_200 };
+    const view = parseStatusView({ ...raw, models: [{ ...raw.models[0], candles: [candle, { ...candle, endAt: 1 }, null] }] });
+    expect(view?.models[0]?.candles).toEqual([candle]);
+    expect(parseStatusView(raw)?.models[0]?.candles).toBeUndefined();
+  });
   it("reads a well-formed answer whole", () => {
     const view = parseStatusView(good());
     expect(view?.windowDays).toBe(90);

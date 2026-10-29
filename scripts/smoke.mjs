@@ -272,6 +272,10 @@ for (let attempt = 0; attempt < 80; attempt++) {
   if (painted === true) break;
   await sleep(100);
 }
+// A release checkout can be clean. Compare the badge with the actual repository
+// instead of requiring unrelated uncommitted work to make navigation pass.
+const navigationGit = await evaluate("window.adcode.git.status()");
+const navigationHasChanges = navigationGit?.isRepo === true && navigationGit.entries.length > 0;
 const vibeNavigation = await evaluate(`(() => {
   const visible = selector => {
     const element = document.querySelector(selector);
@@ -331,7 +335,10 @@ const vibeNavigation = await evaluate(`(() => {
       document.querySelector('[data-rail="chat"]')?.getAttribute('aria-current') === 'page',
     tools: visible('.project-tools'),
     noTasksRow: document.querySelector('.vibe-tasks-button') === null,
-    changes: visible('[data-rail="changes"]') && !!changesBadge && !changesBadge.hidden && (changesBadge.textContent ?? '') !== '',
+    changes: visible('[data-rail="changes"]') && !!changesBadge && ${navigationGit?.isRepo === true} &&
+      (${navigationHasChanges}
+        ? !changesBadge.hidden && (changesBadge.textContent ?? '') !== ''
+        : changesBadge.hidden && (changesBadge.textContent ?? '') === ''),
     // Edits land as the assistant works unless the user chose Review.
     approvalAuto: document.querySelector('.chat-approval')?.textContent === 'Auto',
     noReviewNag: !(document.querySelector('.chat-disclaimer')?.textContent ?? '').includes('Review'),
@@ -3105,7 +3112,7 @@ checks.fileIcons = await evaluate(
 checks.tabStripStaysUsable = await evaluate(
   `(async () => {
      const files = [...document.querySelectorAll('.tree-row')]
-       .filter((r) => r.querySelector('.tree-twisty')?.textContent === '');
+       .filter((r) => r.querySelector('.tree-twisty svg') === null);
      for (const row of files.slice(0, 14)) {
        row.click();
        await new Promise((r) => setTimeout(r, 180));
@@ -4501,7 +4508,7 @@ try {
            matchedByName: badge?.classList.contains('peek-badge-matched') === true,
            showsSource: (peek.querySelector('.peek-code')?.textContent ?? '').includes('alpha'),
            // Name matching can return another declaration; its source must still be named.
-           namesTheFile: /[^\\\\/]+\\.ts:\\d+$/.test(peek.querySelector('.peek-title')?.textContent ?? ''),
+           namesTheFile: /[^\\\\/]+\\.[cm]?[jt]sx?:\\d+$/.test(peek.querySelector('.peek-title')?.textContent ?? ''),
          };
        })()`,
     );
@@ -6607,6 +6614,7 @@ async function openSettingsSheet() {
  */
 checks.themePickerRecordsAChoice = await (async () => {
   if ((await openSettingsSheet()) !== true) return "settings would not open";
+  await evaluate(`document.querySelector('.settings-nav-item[data-group="appearance"]')?.click(); true`);
 
   const shape = await evaluate(
     `(() => {
@@ -6678,6 +6686,7 @@ checks.themePickerRecordsAChoice = await (async () => {
  */
 checks.settingsMcpCardStatesNode = await (async () => {
   if ((await openSettingsSheet()) !== true) return "settings would not open";
+  await evaluate(`document.querySelector('.settings-nav-item[data-group="ai"]')?.click(); true`);
   // The command arrives asynchronously, after a `node --version` on Windows.
   await sleep(1500);
 
@@ -6788,7 +6797,12 @@ checks.midnightThemeRepaints = await (async () => {
 
 checks.everySettingHasAQuestionMark = await evaluate(
   `(() => {
-     const rows = [...document.querySelectorAll('.settings-row[data-setting-id]')];
+     // Walk every section: the screen shows one at a time.
+     const rows = [];
+     for (const item of document.querySelectorAll('.settings-nav-item')) {
+       item.click();
+       rows.push(...document.querySelectorAll('.settings-row[data-setting-id]'));
+     }
      if (rows.length < 40) return false;
      const without = rows.filter((r) => r.querySelector('.help-button') === null);
      return { rows: rows.length > 40, allExplained: without.length === 0 };
@@ -6818,6 +6832,10 @@ checks.helpPopoverOpensAndCloses = await (async () => {
     );
     await sleep(500);
   }
+
+  // Settings shows one section at a time (8a9dc466): the minimap row exists only under Editing.
+  await evaluate(`(document.querySelector('.settings-nav-item[data-group="editing"]')?.click(), true)`);
+  await sleep(200);
 
   const opened = await evaluate(
     `(() => {

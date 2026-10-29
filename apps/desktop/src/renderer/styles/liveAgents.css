@@ -339,3 +339,5 @@
   from { opacity: 0; translate: 0 6px; }
   to { opacity: 1; translate: 0 0; }
 }
+
+.live-bubble svg { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; }

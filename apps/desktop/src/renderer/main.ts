@@ -204,6 +204,8 @@ import {
 } from "./workbench/contextMenu.ts";
 import { createInlineEditor } from "./workbench/inlineEdit.ts";
 import { reconcileTreeChildren } from "./workbench/treeRefresh.ts";
+import { BUY_TOKENS_URL } from "../shared/tagflow.ts";
+import { ChevronRight, CircleArrowDown } from "lucide";
 import type {
   AdcodeApi,
   DirEntry,
@@ -805,7 +807,7 @@ function makeRow(entry: DirEntry, depth: number): HTMLElement {
 
   const twisty = document.createElement("span");
   twisty.className = "tree-twisty";
-  twisty.textContent = entry.isDirectory ? "▶" : "";
+  if (entry.isDirectory) twisty.append(createIcon(ChevronRight));
 
   const icon = entry.isDirectory ? folderIcon(false) : fileIcon(entry.name);
 
@@ -3185,8 +3187,12 @@ function updateMessage(
   switch (status.state) {
     case "idle":
       return "The update check has not run yet.";
+    case "available":
+      return status.source === "store" ? `ADCode ${status.version} is out. Click Update available to check Microsoft Store.` : `ADCode ${status.version} is out. Click Update available to download it.`;
     case "ready":
-      return `Version ${status.version} is ready - choose Restart to update in the status bar, or it installs when you close ADCode.`;
+      return status.restartable === true
+        ? `Version ${status.version} is ready - choose Restart to update in the status bar, or it installs when you close ADCode.`
+        : `Version ${status.version} is ready - choose Close to update in the status bar, or close ADCode when you are ready.`;
     case "downloading":
       return status.percent === undefined
         ? "Downloading an update…"
@@ -4981,10 +4987,52 @@ window.adcode.rating.onAsk(() => {
  * The update the window can see: "Updating 42%", then "Restart to update" in the status
  * bar, and one quiet card per version. See updates/updatePrompt.ts.
  */
+let updatePreparingDialog: HTMLDialogElement | null = null;
+const blockUpdateKeys = (event: KeyboardEvent): void => { event.preventDefault(); event.stopImmediatePropagation(); };
+/*
+ * Updating in one click, from the title bar, the way OpenCode does it: a round arrow that
+ * appears only when there is something to install, fills while it downloads, and installs
+ * on click. Asked for on 2026-10-27, with daily releases on the way.
+ */
+const titleUpdate = document.createElement("button");
+titleUpdate.type = "button";
+titleUpdate.className = "web-tabs-button web-tabs-update";
+titleUpdate.hidden = true;
+titleUpdate.append(createIcon(CircleArrowDown), Object.assign(document.createElement("span"), { className: "web-tabs-update-text" }));
 const updatePrompt = createUpdatePrompt({
   statusItem: el("status-update") as HTMLButtonElement,
+  titleItem: titleUpdate,
   notifications,
   flushDrafts: draftUnsavedTabs,
+  recoveryDrafts: () => tabs.flatMap(tab => {
+    if (editorHost.isReadOnly(tab.path) || !editorHost.isDirty(tab.path)) return [];
+    const text = editorHost.text(tab.path);
+    return text === null ? [] : [{ path: tab.path, text }];
+  }),
+  onEditorChanged: listener => { editorHost.onDirtyChange(() => listener()); },
+  setPreparing: preparing => {
+    if (!preparing) {
+      updatePreparingDialog?.remove(); updatePreparingDialog = null;
+      window.removeEventListener("keydown", blockUpdateKeys, true);
+      return;
+    }
+    if (updatePreparingDialog !== null) return;
+    const dialog = document.createElement("dialog");
+    dialog.className = "result-dialog confirm-dialog";
+    dialog.setAttribute("aria-label", "Preparing to update ADCode");
+    const card = document.createElement("div");
+    card.className = "result-card";
+    const title = document.createElement("h2");
+    title.className = "result-title"; title.textContent = "Preparing to update ADCode";
+    const body = document.createElement("p");
+    body.className = "result-summary"; body.textContent = "Protecting unsaved work in every window…";
+    card.append(title, body); dialog.append(card);
+    dialog.addEventListener("cancel", event => event.preventDefault());
+    document.body.append(dialog);
+    dialog.showModal();
+    updatePreparingDialog = dialog;
+    window.addEventListener("keydown", blockUpdateKeys, true);
+  },
   unsavedWithoutRecovery: () =>
     settingsValues["adcode.session.crashRecovery"] === false
       ? tabs.filter((tab) => !editorHost.isReadOnly(tab.path) && editorHost.isDirty(tab.path)).length
@@ -5882,6 +5930,9 @@ function registerCommands(): void {
   add("ai.compactConversation", "AI: Compact Conversation", () => chat.compactConversation());
   add("ai.showUsage", "AI: Show Usage", () => void openUsageDialog());
   add("ai.showCredits", "AI: Show Free AI Credits", () => void openUsageDialog());
+  add("ai.buyTokens", "AI: Buy AI Tokens", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"));
+  add("ai.upgradePlan", "AI: Upgrade Plan", () => void window.open(BUY_TOKENS_URL, "_blank", "noopener"));
+  add("ads.openNetworks", "Ads: Open Network Settings", () => void window.open("https://adcode.bluethenics.com/admin/ad-networks", "_blank", "noopener"));
   add("ai.showCacheSavings", "AI: Show Prompt Cache Savings", () => void openUsageDialog());
   add("ai.delegate", "AI: Split a Task Across Helpers", () => { showChatSurface(); chat.draft("/helpers "); });
   add("ai.initInstructions", "AI: Write Project Instructions (AGENTS.md)", () => { showChatSurface(); chat.ask("/init"); });
@@ -5929,6 +5980,8 @@ function registerCommands(): void {
   add("workspace.openIde", "Open IDE in a Separate Window", () => void window.adcode.window.openIde());
   // The web version: from the desktop, open it; on the web, its Cloud workspace panel (src/web/cloudPanel.ts).
   add("help.openWebVersion", "Open ADCode on the Web", () => void window.open("https://web.bluethenics.com", "_blank", "noopener"));
+  // Email alerts when an included model degrades or recovers: the status page's own form, no account needed.
+  add("help.statusAlerts", "Get Status Alerts by Email", () => void window.open("https://adcode.bluethenics.com/status#subscribe", "_blank", "noopener"));
   add("cloud.workspace", "Cloud Workspace", () => {
     if (isWebSurface()) document.dispatchEvent(new CustomEvent("adcode:open-cloud-workspace"));
     else void window.open("https://web.bluethenics.com", "_blank", "noopener");
@@ -5955,6 +6008,16 @@ function registerCommands(): void {
   add("tools.servers", "Tools: Connectors", () => openTools("servers"));
   add("tools.skills", "Tools: Skills", () => openTools("skills"));
   add("tools.addServer", "Tools: Add a Connector", () => { openTools("servers"); toolsPage.addServer(); });
+  // The connector waiting on a sign-in, its Sign in button focused; none waiting, add one.
+  add("tools.signInConnector", "Tools: Sign In to a Connector", () => {
+    openTools("servers");
+    requestAnimationFrame(() => {
+      const waiting = document.querySelector<HTMLButtonElement>('.tool-server [data-action="sign-in"]');
+      if (waiting === null) { toolsPage.addServer(); return; }
+      waiting.scrollIntoView({ block: "center" });
+      waiting.focus();
+    });
+  });
   add("tools.memory", "Tools: Project Memory", () => openTools("memory"));
   add("tools.builtIn", "Tools: The Assistant's Built-in Tools", () => openTools("built-in"));
   add("workspace.browser", "Open Browser", () => agentBrowserPane.open());
@@ -6213,8 +6276,8 @@ function registerCommands(): void {
     setStatus(updateMessage(status, info?.version ?? null), 6000);
   });
 
-  add("updates.restart", "Restart to Update", async () => {
-    if (!(await updatePrompt.restart()))
+  add("updates.restart", "Update ADCode", async () => {
+    if (!(await updatePrompt.update()))
       setStatus("No update is waiting. Help → Check for Updates looks for one.", 5000);
   });
 
@@ -6649,7 +6712,7 @@ projectContext = createProjectContext({
   run: command => commands.run(command),
 });
 assistantDock = createAssistantDock({
-  chat, workbench: el("workbench"), sidebar: el("sidebar"),
+  chat, workbench: el("workbench"), sidebar: el("sidebar"), updateButton: titleUpdate,
   expandedHost: chatShell.surface,
   openExpanded: () => openPrimaryPopup("chat", chatShell, document.querySelector<HTMLElement>(".project-tools") ?? chatLauncher, "keyboard"),
   closeExpanded: () => { closePrimaryPopup("chat"); chatShell.close({ immediate: true, restoreFocus: false }); },

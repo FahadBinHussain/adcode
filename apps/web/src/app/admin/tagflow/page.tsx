@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AdminShell } from "@/components/AdminShell";
 import { AdminModelTabs } from "@/components/AdminModelTabs";
@@ -10,6 +10,8 @@ import { MAX_CUSTOM_PROVIDERS, allowanceAccount, customProviderId, modelProvider
 import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE } from "@adcode/api/src/tagflowConfig.ts";
 import { DEFAULT_CREDIT_PLAN, MAX_CREDITS, MAX_CREDIT_RATE, modelCreditRate, type CreditPlan, type CreditsView } from "@adcode/api/src/credits.ts";
 import { CustomProviderEditor } from "@/components/CustomProviderEditor";
+import { PaidTokensActivity, PaidTokensSettings } from "@/components/PaidTokensAdmin";
+import { PlansAdmin } from "@/components/PlansAdmin";
 import "@/components/adminModels.css";
 import "@/components/adminTagflow.css";
 
@@ -18,7 +20,7 @@ interface UserView { policy: TagflowUserPolicy | null; limits: TagflowLimits; us
 const money = (micros: number): string => `$${(micros / 1_000_000).toFixed(4)}`;
 
 export default function TagflowPage() {
-  return <AdminShell title="Free models" subtitle="Offer models without a user API key, choose the default, and control each person's allowance."><AdminModelTabs active="free" /><TagflowEditor /></AdminShell>;
+  return <AdminShell title="Free models" subtitle="Offer models without a user API key, choose the default, and control each person's allowance."><AdminModelTabs active="free" /><SectionBar /><TagflowEditor /></AdminShell>;
 }
 
 /** Tokens are no longer a limit - credits are - so a day keeps only its request and spending ceilings. */
@@ -76,14 +78,17 @@ function TagflowEditor() {
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyNotice, setKeyNotice] = useState("");
 
-  async function call<T>(path: string, body?: unknown): Promise<T> {
+  const call = useCallback(async <T,>(path: string, body?: unknown): Promise<T> => {
     const idToken = await token();
     if (idToken === null) throw new Error("Sign in again to manage included AI.");
     const response = await fetch(`/v1${path}`, { method: body === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json", ...(path === "/ai/tagflow/chat/completions" ? { "x-adcode-ai-source": "admin-test" } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json() as T & { error?: { message?: string } };
-    if (!response.ok) throw new Error(result.error?.message ?? "Could not load or save. Check the server setup and try again.");
+    const result = await response.json() as T & { error?: { message?: string } | string; result?: string };
+    if (!response.ok) {
+      const messages: Record<string, string> = { "code-exists": "That promo code already exists. Choose a different code.", "bad-promo": "Check the promo code, reward, redemption limit and future expiry date.", "bad-boost": "Choose a whole number of tokens and a future end date.", "bad-gift": "Choose a valid plan and between 1 and 366 gift days." };
+      throw new Error(result.result === "busy" ? "This account has an AI request in progress. Try resetting its week again in a minute." : typeof result.error === "string" ? messages[result.error] ?? "Could not load or save. Check the server setup and try again." : result.error?.message ?? "Could not load or save. Check the server setup and try again.");
+    }
     return result;
-  }
+  }, [token]);
   useEffect(() => {
     let active = true;
     void call<Saved>("/admin/tagflow").then((value) => { if (active) { setSaved(value); setDraft(value.config); } }).catch(() => { if (active) setLoadError(true); });
@@ -179,7 +184,7 @@ function TagflowEditor() {
     <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="admin-models">
       <div className="admin-toolbar admin-models-toolbar"><label className="admin-models-check"><input type="checkbox" checked={draft.enabled} onChange={(event) => change({ enabled: event.target.checked })} /> Enable included AI</label><div className="admin-models-actions"><button type="button" className="btn" disabled={!dirty || busy} onClick={() => setDraft(saved.config)}>Discard changes</button><button className="btn btn-primary" disabled={!dirty || busy}>{busy ? "Saving…" : "Save settings"}</button></div></div>
       {notice && <p className="notice" role="status">{notice}</p>}
-      <section className="admin-models-provider"><h3>Server connections</h3><p className="row-sub">Free to your users means you supply the connection. You cover any provider charges. Add the named encrypted secret in Cloudflare → Workers → adcode → Settings → Variables and Secrets. Keys stay on your server.</p><div className="admin-models-scroll"><table className="admin-models-table"><thead><tr><th scope="col">Provider</th><th scope="col">Server key</th><th scope="col">Cloudflare secret name</th></tr></thead><tbody>{providerConnections(customProviders).map((provider) => <tr key={provider.id}><td>{provider.docs ? <a href={provider.docs} target="_blank" rel="noreferrer">{provider.name}</a> : <>{provider.name || "New provider"} <small>(custom)</small></>}</td><td>{keyStatus(provider.id) === undefined ? "Save to check" : keyStatus(provider.id) ? "Configured" : "Not configured"}</td><td><code>{provider.secretName}</code>{provider.id === "tagflow" && <small> (your existing tagflow-api is also accepted)</small>}</td></tr>)}</tbody></table></div><p className="row-sub">Models with a missing server key are hidden from users. Reload this page after adding a key. The default must have a configured key before you save an enabled catalog.</p>
+      <section id="free-connections" className="admin-models-provider"><h3>Server connections</h3><p className="row-sub">Free to your users means you supply the connection. You cover any provider charges. Add the named encrypted secret in Cloudflare → Workers → adcode → Settings → Variables and Secrets. Keys stay on your server.</p><div className="admin-models-scroll"><table className="admin-models-table"><thead><tr><th scope="col">Provider</th><th scope="col">Server key</th><th scope="col">Cloudflare secret name</th></tr></thead><tbody>{providerConnections(customProviders).map((provider) => <tr key={provider.id}><td>{provider.docs ? <a href={provider.docs} target="_blank" rel="noreferrer">{provider.name}</a> : <>{provider.name || "New provider"} <small>(custom)</small></>}</td><td>{keyStatus(provider.id) === undefined ? "Save to check" : keyStatus(provider.id) ? "Configured" : "Not configured"}</td><td><code>{provider.secretName}</code>{provider.id === "tagflow" && <small> (your existing tagflow-api is also accepted)</small>}</td></tr>)}</tbody></table></div><p className="row-sub">Models with a missing server key are hidden from users. Reload this page after adding a key. The default must have a configured key before you save an enabled catalog.</p>
         <div className="tagflow-key">
           <h4>Add or replace a key</h4>
           {saved.keysManageable ? <>
@@ -200,9 +205,10 @@ function TagflowEditor() {
         <label className="tagflow-field"><span>API base URL supplied by Tagflow (including /v1 when required)</span><input className="input" type="url" maxLength={500} value={draft.baseUrl} placeholder="https://your-deployment.tagflow-ai.com/v1" onChange={(event) => change({ baseUrl: event.target.value })} /></label>
         <p className="row-sub">Only HTTPS addresses on tagflow-ai.com or its subdomains are accepted. Get your exact deployment URL and model IDs from Tagflow.</p>
       </section>
-      <section className="admin-models-provider"><h3>Free AI credits per person</h3><p className="row-sub">One balance for every free model, as in a Claude Max plan. A session window opens with a person's first request and refills when it ends; the weekly window works the same over seven days. A request starts while any credit is left and is charged what it really used. A credit is about 1,000 tokens on a model with rate 1; set each model's rate below. Zero credits blocks free AI.</p><CreditFields value={draft.credits ?? DEFAULT_CREDIT_PLAN} onChange={(credits) => change({ credits })} /></section>
+      <section id="free-limits" className="admin-models-provider"><h3>Free AI credits per person</h3><p className="row-sub">One balance for every free model, as in a Claude Max plan. A session window opens with a person's first request and refills when it ends; the weekly window works the same over seven days. A request starts while any credit is left and is charged what it really used. A credit is about 1,000 tokens on a model with rate 1; set each model's rate below. Zero credits blocks free AI.</p><CreditFields value={draft.credits ?? DEFAULT_CREDIT_PLAN} onChange={(credits) => change({ credits })} /></section>
+      <section className="admin-models-provider"><h3>Paid tokens</h3><p className="row-sub">Models from the paid providers include a free weekly allowance per person; after it they draw on tokens the person buys at /ai-tokens. Free models from other providers are not affected.</p><PaidTokensSettings value={draft.paid} onChange={(paid) => change({ paid })} /><PaidTokensActivity call={call} /></section>
       <section className="admin-models-provider"><h3>Daily safety ceilings per person</h3><p className="row-sub">Behind the credits: what ADCode will spend on one account in a UTC day, and how many requests it may send. Requests are unlimited when the controls below are checked. Zero blocks that type of usage.</p><LimitFields value={draft.limits} onChange={(limits) => change({ limits })} /><div className="tagflow-fields"><NumberField label="Maximum input tokens per request" min={1} max={1_000_000} value={draft.maxInputTokens} onChange={(maxInputTokens) => change({ maxInputTokens })} /><NumberField label="Maximum output tokens per request" min={1} max={65_536} value={draft.maxOutputTokens} onChange={(maxOutputTokens) => change({ maxOutputTokens })} /></div><p className="row-sub">A request reserves its maximum response before it starts. Without provider token counts, usage is estimated conservatively. Spending uses the prices you enter below.</p></section>
-      <section className="admin-models-provider"><header className="admin-card-head"><h3>Models offered to users</h3><button type="button" className="btn" disabled={draft.models.length >= 50} onClick={() => change({ models: [...draft.models, { id: "", name: "", contextWindow: 32_768, maxOutput: 4096, inputPrice: 0, outputPrice: 0 }] })}>Add model</button></header>
+      <section id="free-models" className="admin-models-provider"><header className="admin-card-head"><h3>Models offered to users</h3><button type="button" className="btn" disabled={draft.models.length >= 50} onClick={() => change({ models: [...draft.models, { id: "", name: "", contextWindow: 32_768, maxOutput: 4096, inputPrice: 0, outputPrice: 0 }] })}>Add model</button></header>
         <label className="tagflow-field"><span>Default model</span><select className="select" value={draft.defaultModel} onChange={(event) => change({ defaultModel: event.target.value })}><option value="">Choose a model</option>{draft.models.filter((model) => model.id && model.enabled !== false).map((model, index) => <option key={index} value={model.id}>{model.name || model.id}</option>)}</select></label>
         {draft.models.map((model, index) => <fieldset className="tagflow-model" key={index}>
           <legend>{model.name || `Model ${index + 1}`}</legend>
@@ -225,12 +231,48 @@ function TagflowEditor() {
         <p className="row-sub">Save changes before using Test model. Each test asks for a short “ok” reply and uses a few of your account's credits.</p>
       </section>
     </form>
-    <section className="admin-models-provider"><h3>Individual allowance</h3><form className="admin-toolbar" onSubmit={(event) => { event.preventDefault(); void loadUser(); }}><label className="tagflow-field"><span>User ID from People</span><input className="input" required maxLength={128} value={uid} onChange={(event) => setUid(event.target.value)} /></label><button className="btn" disabled={userBusy}>Load user</button></form>
+    <div id="free-plans"><PlansAdmin call={call} /></div>
+    <section id="free-person" className="admin-models-provider"><h3>Individual allowance</h3><form className="admin-toolbar" onSubmit={(event) => { event.preventDefault(); void loadUser(); }}><label className="tagflow-field"><span>User ID from People</span><input className="input" required maxLength={128} value={uid} onChange={(event) => setUid(event.target.value)} /></label><button className="btn" disabled={userBusy}>Load user</button></form>
       {userNotice && <p role="status" className="notice">{userNotice}</p>}
       {user !== null && userLimits !== null && <form onSubmit={(event) => { event.preventDefault(); void saveUser(); }}><p className="row-sub">Account: {loadedUid}. Today: {user.usage.requests} requests, {(user.usage.inputTokens + user.usage.outputTokens).toLocaleString()} tokens, {money(user.usage.costMicros)} estimated spend.</p>{user.credits && <><p className="row-sub">{windowLine("Session", user.credits.session)}</p><p className="row-sub">{windowLine("Week", user.credits.weekly)}</p></>}<div className="tagflow-checks"><label><input type="checkbox" checked={blocked} onChange={(event) => setBlocked(event.target.checked)} /> Block included AI for this person</label><label><input type="checkbox" checked={inheritCredits} onChange={(event) => setInheritCredits(event.target.checked)} /> Default credits</label><label><input type="checkbox" checked={inherit} onChange={(event) => setInherit(event.target.checked)} /> Default daily ceilings</label></div><CreditFields value={inheritCredits ? saved.config.credits ?? DEFAULT_CREDIT_PLAN : userCredits} disabled={inheritCredits} onChange={setUserCredits} /><LimitFields value={inherit ? saved.config.limits : userLimits} disabled={inherit} onChange={setUserLimits} /><button className="btn btn-primary" disabled={userBusy}>{userBusy ? "Saving…" : "Save user allowance"}</button></form>}
     </section>
-    <section className="admin-models-provider"><header className="admin-card-head"><div><h3>Usage by account</h3><p className="row-sub">Up to 200 accounts with the highest spend on this UTC date. Only counts are stored; prompts and responses are never stored in these tables.</p></div><div className="admin-models-actions"><input className="input" type="date" value={day} aria-label="Usage date (UTC)" onChange={(event) => { if (event.target.value) setDay(event.target.value); }} /><button className="btn" type="button" onClick={() => void refreshUsage()}>Refresh</button></div></header>
-      {usageError && <p className="notice" role="alert">{usageError}</p>}<div className="admin-models-scroll"><table className="admin-models-table"><thead><tr><th scope="col">Account</th><th scope="col">Requests</th><th scope="col">Tokens in / out</th><th scope="col">Estimated spend</th><th scope="col">Reserved tokens / spend</th><th scope="col">Estimated requests</th></tr></thead><tbody>{rows.map((row) => { const { uid: account, pool } = allowanceAccount(row.uid); return <tr key={row.uid}><td><button className="btn" onClick={() => void loadUser(account)}>{account}</button>{pool !== null && <small> · {providerConnections(customProviders).find((provider) => provider.id === pool)?.name ?? pool} allowance</small>}</td><td>{row.requests}</td><td>{row.inputTokens.toLocaleString()} / {row.outputTokens.toLocaleString()}</td><td>{money(row.costMicros)}</td><td>{row.reservedTokens.toLocaleString()} / {money(row.reservedCostMicros)}</td><td>{row.estimatedRequests}</td></tr>; })}</tbody></table></div>{rows.length === 0 && !usageError && <p className="row-sub">No included AI usage on this date.</p>}
+    <section id="free-usage" className="admin-models-provider"><header className="admin-card-head"><div><h3>Usage by account</h3><p className="row-sub">Up to 200 accounts with the highest spend on this UTC date. Only counts are stored; prompts and responses are never stored in these tables.</p></div><div className="admin-models-actions"><input className="input" type="date" value={day} aria-label="Usage date (UTC)" onChange={(event) => { if (event.target.value) setDay(event.target.value); }} /><button className="btn" type="button" onClick={() => void refreshUsage()}>Refresh</button></div></header>
+      {usageError && <p className="notice" role="alert">{usageError}</p>}<div className="admin-models-scroll"><table className="admin-models-table"><thead><tr><th scope="col">Account</th><th scope="col">Requests</th><th scope="col">Tokens in / out</th><th scope="col">Estimated spend</th><th scope="col">Reserved tokens / spend</th><th scope="col">Estimated requests</th><th scope="col">Quick actions</th></tr></thead><tbody>{rows.map((row) => { const { uid: account, pool } = allowanceAccount(row.uid); return <tr key={row.uid}><td><button className="btn" onClick={() => void loadUser(account)}>{account}</button>{pool !== null && <small> · {providerConnections(customProviders).find((provider) => provider.id === pool)?.name ?? pool} allowance</small>}</td><td>{row.requests}</td><td>{row.inputTokens.toLocaleString()} / {row.outputTokens.toLocaleString()}</td><td>{money(row.costMicros)}</td><td>{row.reservedTokens.toLocaleString()} / {money(row.reservedCostMicros)}</td><td>{row.estimatedRequests}</td><td><RowActions uid={account} call={call} /></td></tr>; })}</tbody></table></div>{rows.length === 0 && !usageError && <p className="row-sub">No included AI usage on this date.</p>}
     </section>
+  </div>;
+}
+
+/**
+ * One click to any part of this long page (2026-10-27: "reduce the clicks"). Sticky, and it
+ * marks the part on screen as you scroll.
+ */
+const SECTIONS = [["free-usage", "Usage"], ["free-person", "One person"], ["free-plans", "Plans & promos"], ["free-limits", "Limits"], ["free-models", "Models"], ["free-connections", "Connections"]] as const;
+function SectionBar() {
+  const [current, setCurrent] = useState<string>(SECTIONS[0][0]);
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (visible !== undefined) setCurrent(visible.target.id);
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    const watch = () => SECTIONS.forEach(([id]) => { const element = document.getElementById(id); if (element !== null) observer.observe(element); });
+    watch(); const late = window.setTimeout(watch, 1500);
+    return () => { observer.disconnect(); window.clearTimeout(late); };
+  }, []);
+  return <nav className="admin-section-bar" aria-label="Free models sections">{SECTIONS.map(([id, label]) => <a key={id} href={`#${id}`} aria-current={current === id ? "location" : undefined} onClick={(event) => { event.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); setCurrent(id); }}>{label}</a>)}</nav>;
+}
+
+/** Reset this person's week, or gift them a week of Pro, straight from their usage row. */
+function RowActions({ uid, call }: { uid: string; call: <T>(path: string, body?: unknown) => Promise<T> }) {
+  const [state, setState] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
+  const run = async (label: string, path: string, body: unknown): Promise<void> => {
+    if (state.busy) return;
+    setState({ busy: true, note: null });
+    try { await call(path, body); setState({ busy: false, note: label }); }
+    catch (error) { setState({ busy: false, note: error instanceof Error ? error.message : "That did not work. Try again." }); }
+  };
+  return <div className="admin-row-actions">
+    <button type="button" className="btn btn-small" disabled={state.busy} onClick={() => void run("Week reset", "/admin/ai-plans/reset", { uid })}>Reset week</button>
+    <button type="button" className="btn btn-small" disabled={state.busy} onClick={() => void run("Pro for 7 days gifted", "/admin/ai-plans/gift", { uid, plan: "pro", days: 7, note: "admin quick gift" })}>Gift Pro 7d</button>
+    {state.note !== null && <small role="status" className="admin-row-note">{state.note}</small>}
   </div>;
 }

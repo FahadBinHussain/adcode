@@ -18,6 +18,8 @@ import { bindBackdropDismissal } from "./backdropDismissal.ts";
  */
 
 import { brandMark } from "../workbench/brandMark.ts";
+import { Check, CircleAlert } from "lucide";
+import { createIcon } from "../workbench/icons.ts";
 
 export interface GitResult {
   /** What was attempted, in the user's words: "Push", "Pull", "Commit". */
@@ -77,7 +79,7 @@ export function createResultDialog(host: HTMLElement): ResultDialog {
     show(result) {
       dialog.dataset["ok"] = String(result.ok);
       // `replaceChildren` rather than assigning text: About leaves the mark in here.
-      badge.replaceChildren(result.ok ? "✓" : "!");
+      badge.replaceChildren(createIcon(result.ok ? Check : CircleAlert));
       badge.setAttribute("aria-hidden", "true");
 
       title.textContent = result.ok ? `${result.action} succeeded` : `${result.action} failed`;

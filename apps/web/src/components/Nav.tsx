@@ -1,4 +1,6 @@
 "use client";
+import { Icon } from "@/components/Icon";
+import { ArrowUpRight } from "lucide";
 
 import Link from "@/components/IntentLink";
 import { usePathname } from "next/navigation";
@@ -81,6 +83,7 @@ export function Nav() {
   const desktopLinks = (
     <>
       <Link href="/#product" className="glass-nav-link">Product</Link>
+      <Link href="/pricing" className="glass-nav-link" aria-current={pathname === "/pricing" ? "page" : undefined}>Pricing</Link>
       <Link
         href="/compare"
         className="glass-nav-link"
@@ -103,6 +106,7 @@ export function Nav() {
   const mobileLinks = (
     <>
       <Link href="/#product" className="glass-nav-link">Product</Link>
+      <Link href="/pricing" className="glass-nav-link" aria-current={pathname === "/pricing" ? "page" : undefined}>Pricing</Link>
       <a href="/#about" className="glass-nav-link">About us</a>
       <Link href="/portal" className="glass-nav-link">Advertise</Link>
       <Link
@@ -120,7 +124,7 @@ export function Nav() {
         Compare
       </Link>
       <Link href="/support" className="glass-nav-link" aria-current={pathname === "/support" ? "page" : undefined}>Support</Link>
-      <a href={TEAM.bookingUrl} className="glass-nav-link nav-team" target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a>
+      <a href={TEAM.bookingUrl} className="glass-nav-link nav-team" target="_blank" rel="noopener noreferrer">Talk to the team <Icon node={ArrowUpRight} /></a>
       {/* The desktop bar has its own Download button; a second "Download" beside it split one action in two. Phones hide that button, so the sheet keeps this. */}
       <Link href="/versions" className="glass-nav-link" aria-current={pathname === "/versions" ? "page" : undefined}>Download</Link>
       {adminLink}
@@ -136,7 +140,7 @@ export function Nav() {
           <span className="glass-nav-secondary">{desktopLinks}</span>
           <HeaderStatus />
           <ThemePicker />
-          <a href={TEAM.bookingUrl} className="glass-nav-link nav-team nav-team-action" target="_blank" rel="noopener noreferrer">Talk to the team <span aria-hidden="true">↗</span></a>
+          <a href={TEAM.bookingUrl} className="glass-nav-link nav-team nav-team-action" target="_blank" rel="noopener noreferrer">Talk to the team <Icon node={ArrowUpRight} /></a>
           <PortalActions />
           {/* The primary action on every page: most visitors came to get the editor. */}
           <a href={WEB_VERSION_URL} className="nav-download">

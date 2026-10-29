@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { summarizeUsage } from "../src/shared/aiUsage.ts";
-import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE, type TagflowAllowanceView } from "../src/shared/tagflow.ts";
+import { UNLIMITED_DAILY_REQUESTS, UNLIMITED_REQUESTS_PER_MINUTE, paidTokensSummary, type TagflowAllowanceView } from "../src/shared/tagflow.ts";
 import { composerUsageModels } from "../src/renderer/ai/composerUsage.ts";
 
 const allowance = (extra: Partial<TagflowAllowanceView> = {}): TagflowAllowanceView => ({
@@ -21,11 +21,11 @@ describe("composer usage meters", () => {
       rates: { "tagflow-code-27b": 1, "heabsy-qwen38": 0.2 },
     } });
     const [session, weekly] = composerUsageModels(null, view, true, "heabsy-qwen38");
-    expect(session).toMatchObject({ label: "Session", percent: 81, value: "81%", detail: "379 left", tone: "warn" });
+    expect(session).toMatchObject({ label: "Session", percent: 81, value: "81%", detail: "18% left", tone: "warn" });
     expect(session.tooltip).toContain("379 of 2,000 left, 120 held by replies in progress");
     expect(session.tooltip).toContain("Refills in 4 hr");
     expect(session.tooltip).toContain("This model uses 0.2 credits per 1,000 tokens.");
-    expect(weekly).toMatchObject({ label: "Weekly", percent: 0, detail: "20,000 left", tone: "ok" });
+    expect(weekly).toMatchObject({ label: "Weekly", percent: 0, detail: "100% left", tone: "ok" });
     expect(weekly.tooltip).toContain("A 7-day window starts with your next request.");
     const spent = composerUsageModels(null, allowance({ credits: { ...view.credits!, session: { ...view.credits!.session, used: 2000, held: 0, remaining: 0 } } }), true)[0];
     expect(spent).toMatchObject({ percent: 100, tone: "full", detail: "Back in 4 hr" });
@@ -34,11 +34,11 @@ describe("composer usage meters", () => {
     const base = allowance();
     const view = allowance({ pools: [{ provider: "custom-heabsy", name: "Heabsy", models: ["heabsy-qwen38"], limits: { ...base.limits, dailyTokens: 10_000_000 }, usage: { ...base.usage, inputTokens: 1_000_000, outputTokens: 0, reservedTokens: 0 } }] });
     const [partner] = composerUsageModels(null, view, true, "heabsy-qwen38");
-    expect(partner).toMatchObject({ percent: 10, detail: "9M left" });
+    expect(partner).toMatchObject({ percent: 10, detail: "90% left" });
     expect(partner.tooltip).toContain("Heabsy models have their own daily allowance");
     expect(partner.tooltip).toContain("out of 10,000,000");
     const [main] = composerUsageModels(null, view, true, "tagflow-code-27b");
-    expect(main).toMatchObject({ detail: "980k left" });
+    expect(main).toMatchObject({ detail: "98% left" });
     expect(main.tooltip).not.toContain("Heabsy");
   });
   it("shows unlimited requests even when recorded counts exceed the wire encoding", () => {
@@ -47,11 +47,11 @@ describe("composer usage meters", () => {
     expect(requests).toMatchObject({ percent: null, value: "∞", detail: "Unlimited", tone: "ok" });
     expect(requests.tooltip).toContain("1,000,001 included AI requests used today");
     expect(requests.tooltip).toContain("daily token allowance");
-    expect(tokens.detail).toBe("980k left");
+    expect(tokens.detail).toBe("98% left");
   });
   it("includes active reservations in the shared allowance and shows requests separately", () => {
     const [usage, requests] = composerUsageModels(null, allowance(), true);
-    expect(usage).toMatchObject({ percent: 2, value: "2%", detail: "980k left", tone: "ok" });
+    expect(usage).toMatchObject({ percent: 2, value: "2%", detail: "98% left", tone: "ok" });
     expect(requests).toMatchObject({ percent: 20, detail: "40 left" });
     expect(usage.tooltip).toContain("Shared across devices");
     expect(usage.tooltip).toContain("active replies temporarily hold 4k tokens");
@@ -63,18 +63,18 @@ describe("composer usage meters", () => {
   it("warns about the service budget without changing what the token ring measures", () => {
     const base = allowance();
     const [usage] = composerUsageModels(null, allowance({ usage: { ...base.usage, costMicros: 800_000, reservedCostMicros: 50_000 } }), true);
-    expect(usage).toMatchObject({ percent: 2, detail: "980k left", tone: "warn" });
+    expect(usage).toMatchObject({ percent: 2, detail: "98% left", tone: "warn" });
     expect(usage.tooltip).toContain("Service budget: $0.15 left of $1.00");
     const [exhausted] = composerUsageModels(null, allowance({ usage: { ...base.usage, costMicros: 1_000_000, reservedCostMicros: 0 } }), true);
     expect(exhausted).toMatchObject({ percent: 2, detail: "Budget reached", tone: "full" });
     const [nearly] = composerUsageModels(null, allowance({ usage: { ...base.usage, costMicros: 999_000, reservedCostMicros: 0 } }), true);
-    expect(nearly).toMatchObject({ percent: 2, detail: "980k left", tone: "warn" });
+    expect(nearly).toMatchObject({ percent: 2, detail: "98% left", tone: "warn" });
   });
 
   it("clamps exhausted quotas without negative remaining amounts", () => {
     const base = allowance();
     const [usage, requests] = composerUsageModels(null, allowance({ usage: { ...base.usage, inputTokens: 1_300_000, requests: 80 } }), true);
-    expect(usage).toMatchObject({ percent: 100, value: "100%", detail: "0 left", tone: "full" });
+    expect(usage).toMatchObject({ percent: 100, value: "100%", detail: "0% left", tone: "full" });
     expect(requests).toMatchObject({ percent: 100, detail: "0 left", tone: "full" });
   });
 
@@ -109,5 +109,55 @@ describe("free AI sign-in token failures", () => {
     }
     expect((includedTokenError("getaddrinfo ENOTFOUND securetoken.googleapis.com").cause as { code?: string }).code).toBe("ENOTFOUND");
     expect(includedTokenError("token refresh failed: TOKEN_EXPIRED").message).toBe("Sign in in Account to use included AI.");
+  });
+});
+
+describe("the composer meter on a paid model", () => {
+  const tokens = { enabled: true, free: { limit: 10_000_000, used: 4_000_000, held: 0, remaining: 6_000_000, resetsAt: Date.now() + 3 * 86_400_000 }, purchased: 48_000_000, paidModels: ["heabsy-glm53-flash-unc"] };
+
+  it("shows the free week and purchased tokens on a paid model", () => {
+    const [free, purchased] = composerUsageModels(null, allowance({ unlimited: true, tokens }), true, "heabsy-glm53-flash-unc");
+    expect(free).toMatchObject({ label: "Free this week", value: "60%", detail: "60% free left" });
+    expect(free.tooltip).toContain("48M purchased");
+    expect(purchased).toMatchObject({ label: "Purchased", value: "48M", detail: "48M purchased" });
+  });
+
+  it.each([["weekly", "Weekly", "subscription"], ["monthly", "Monthly", "gift"], ["pro", "Pro", "subscription"]] as const)("names the %s plan in the weekly meter and usage summary", (id, name, source) => {
+    const now = Date.now();
+    const planned = { ...tokens, plan: { id, source, endsAt: now + 86_400_000 }, free: { ...tokens.free, limit: id === "pro" ? 150_000_000 : 60_000_000 } };
+    const [weekly] = composerUsageModels(null, allowance({ unlimited: true, tokens: planned }), true, "heabsy-glm53-flash-unc");
+    expect(weekly.label).toBe(`${name} this week`);
+    expect(weekly.tooltip).toContain(`${name} plan`);
+    expect(weekly.detail).toContain("included");
+    expect(paidTokensSummary(planned, now)).toContain(`${name} plan`);
+  });
+
+  it("keeps the free label for an expired or unrecognised plan", () => {
+    for (const plan of [{ id: "pro", endsAt: Date.now() - 1, source: "subscription" }, { id: "future-plan", endsAt: Date.now() + 86_400_000, source: "gift" }]) {
+      const [weekly] = composerUsageModels(null, allowance({ tokens: { ...tokens, plan } }), true, "heabsy-glm53-flash-unc");
+      expect(weekly.label).toBe("Free this week");
+    }
+  });
+
+  it("warns when the free week and purchased tokens are both gone", () => {
+    const [free] = composerUsageModels(null, allowance({ unlimited: true, tokens: { ...tokens, free: { ...tokens.free, used: 10_000_000, remaining: 0 }, purchased: 0 } }), true, "heabsy-glm53-flash-unc");
+    expect(free.tone).toBe("full");
+    expect(free.tooltip).toContain("Buy tokens");
+  });
+
+  it("keeps the unlimited meter for a model that is not paid", () => {
+    const [free] = composerUsageModels(null, allowance({ unlimited: true, tokens }), true, "tagflow-code-27b");
+    expect(free).toMatchObject({ value: "∞", detail: "Unlimited" });
+  });
+});
+
+describe("the usage dialog's paid-token line", () => {
+  it("says what is left of the free week and what was bought", async () => {
+    const { paidTokensSummary } = await import("../src/shared/tagflow.ts");
+    const now = Date.parse("2026-10-21T00:00:00Z");
+    expect(paidTokensSummary({ enabled: true, free: { limit: 10_000_000, used: 4_000_000, held: 0, remaining: 6_000_000, resetsAt: now + 3 * 86_400_000 }, purchased: 48_000_000 }, now))
+      .toBe("Heabsy models: 60% of your free tokens left this week (refill in 3 days), then 48M purchased tokens. Tagflow AI stays unlimited.");
+    expect(paidTokensSummary({ enabled: true, free: { limit: 10_000_000, used: 0, held: 0, remaining: 10_000_000, resetsAt: null }, purchased: 0 }, now))
+      .toBe("Heabsy models: 10M free tokens a week, starting with your first request on them. Tagflow AI stays unlimited.");
   });
 });

@@ -1,17 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AdminShell } from "@/components/AdminShell";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { AdminShell, AdminTabs } from "@/components/AdminShell";
 import { GrowthPanel } from "@/components/GrowthPanel";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { TimeChart } from "@/components/charts/TimeChart";
+import { DailyChange } from "@/components/DailyChange";
 import { apiFetch } from "@/lib/api";
+import { useCachedResource } from "@/lib/adminCache";
+import { RefreshStamp } from "@/components/RefreshStamp";
 import { browserExcluded, setBrowserExcluded, type Ranking, type WebsiteAnalyticsReport } from "@/lib/websiteAnalytics";
 import "@/components/websiteAnalytics.css";
 
+/*
+ * Two questions that used to share one 5,000-pixel page: how many people use the editor (and a
+ * post to share it), and how the website converts. Each is a tab with its own URL now, so the
+ * one you came for is at the top.
+ */
+const TABS = [
+  { id: "people", label: "People and ads" },
+  { id: "website", label: "Website" },
+];
+
+function AnalyticsBody() {
+  const tab = useSearchParams().get("tab") === "website" ? "website" : "people";
+  return (
+    <AdminShell
+      title="Analytics"
+      subtitle={tab === "website" ? "How the website converts: traffic, install intent, top pages and page speed." : "Who uses ADCode and how many ads it showed, with a post to share the numbers."}
+    >
+      <AdminTabs base="/admin/analytics" active={tab} tabs={TABS} />
+      {tab === "website" ? <Reports /> : <><GrowthPanel /><SourcesMoved /></>}
+    </AdminShell>
+  );
+}
+
 export default function AnalyticsPage() {
-  return <AdminShell title="Analytics" subtitle="Who uses ADCode, where they came from, what it showed them, and how the website converts."><GrowthPanel /><SourcesMoved /><h2 className="growth-website-heading">Website</h2><Reports /></AdminShell>;
+  return <Suspense fallback={null}><AnalyticsBody /></Suspense>;
 }
 /** Sources, campaign links and partners have their own section now; this is the way there. */
 function SourcesMoved() {
@@ -74,23 +101,18 @@ function ThisBrowser() {
 function Reports() {
   const { token } = useAuth();
   const [days, setDays] = useState(30);
-  const [refresh, setRefresh] = useState(0);
-  const [report, setReport] = useState<WebsiteAnalyticsReport | null>(null);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    setLoading(true); setError(false); setReport(null);
-    void (async () => {
-      try {
-        const result = await apiFetch<WebsiteAnalyticsReport>({ path: `/admin/website-analytics?days=${days}`, token: await token() });
-        if (!active) return;
-        if (result.ok) setReport(result.value); else setError(true);
-      } catch { if (active) setError(true); }
-      finally { if (active) setLoading(false); }
-    })();
-    return () => { active = false; };
-  }, [days, refresh, token]);
+  // The last report for this period shows at once; a fresh one replaces it (lib/adminCache.ts).
+  const load = useCallback(async (): Promise<WebsiteAnalyticsReport | null> => {
+    try {
+      const result = await apiFetch<WebsiteAnalyticsReport>({ path: `/admin/website-analytics?days=${days}`, token: await token() });
+      setError(!result.ok);
+      return result.ok ? result.value : null;
+    } catch { setError(true); return null; }
+  }, [days, token]);
+  const cached = useCachedResource(`analytics:${days}`, load);
+  const report = cached.value;
+  const loading = cached.refreshing && report === null;
   const exportReport = () => {
     if (!report) return;
     const link = document.createElement("a");
@@ -100,18 +122,21 @@ function Reports() {
   };
   return <>
     <ThisBrowser />
-    <div className="website-analytics-controls"><label>Period <select value={days} onChange={e => setDays(Number(e.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label><button type="button" className="btn btn-small" disabled={loading} onClick={() => setRefresh(n => n + 1)}>Refresh</button><button type="button" className="btn btn-small" disabled={!report} onClick={exportReport}>Export report</button></div>
+    <div className="website-analytics-controls"><label>Period <select value={days} onChange={e => setDays(Number(e.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label><RefreshStamp asOf={cached.asOf} refreshing={cached.refreshing} fromCache={cached.fromCache} onRefresh={() => void cached.refresh()} /><button type="button" className="btn btn-small" disabled={!report} onClick={exportReport}>Export report</button></div>
     {loading && <p role="status">Loading website analytics…</p>}
-    {error && <p role="alert">Analytics could not be loaded. Retry, or check that the website analytics database migration has been applied.</p>}
+    {error && report === null && <p role="alert">Analytics could not be loaded. Retry, or check that the website analytics database migration has been applied.</p>}
     {report && <>
       {report.truncated && <p role="status">This period exceeds 20,000 events. Figures below cover the most recent 20,000 events only; choose a shorter period for a complete report.</p>}
       {report.totalEvents === 0 && <p className="website-analytics-note">No events in this period. Measurements start when visitors allow analytics. Earlier visits cannot be recovered.</p>}
       <div className="admin-tiles">{[
-        ["Page views", report.pageViews.toLocaleString()], ["Sessions", report.sessions.toLocaleString()],
-        ["Install intent", report.sessions ? `${(report.installSessions / report.sessions * 100).toFixed(1)}%` : "—"],
-        ["Browser errors", report.errorCount.toLocaleString()],
-      ].map(([label, value]) => <div className="admin-tile" key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
-      <p className="website-analytics-note">Only visitors who allowed analytics are measured; how many declined is deliberately not recorded. Admin pages, administrators&apos; browsers, automated browsers and crawlers are excluded. A session ends after 30 minutes with nobody scrolling, clicking or typing, and is not a unique person; one that resumes later starts a new session with its own page view. Install intent means a session with a copied install command or download click, not a completed installation - website visits are not linked to installs. Events are dated by when they happened, in UTC days; the growth figures above use rolling windows instead (last 24 hours, 7 and 30 days). Traffic sources group the spellings of one place - t.co, x.com and twitter count as x, l.threads.com as threads. Raw events are kept for 90 days.</p>
+        { label: "Page views", value: report.pageViews.toLocaleString(), current: report.pageViews, previous: report.dayComparison?.previous?.pageViews },
+        { label: "Sessions", value: report.sessions.toLocaleString(), current: report.sessions, previous: report.dayComparison?.previous?.sessions },
+        { label: "Install intent", value: report.sessions ? `${(report.installSessions / report.sessions * 100).toFixed(1)}%` : "—", current: report.sessions ? report.installSessions / report.sessions : null,
+          previous: report.dayComparison?.previous?.sessions ? report.dayComparison.previous.installSessions / report.dayComparison.previous.sessions : null },
+        { label: "Browser errors", value: report.errorCount.toLocaleString(), current: report.errorCount, previous: report.dayComparison?.previous?.errorCount },
+      ].map(tile => <div className="admin-tile" key={tile.label}><strong>{tile.value}</strong><span>{tile.label}</span><DailyChange current={tile.current} previous={tile.previous} lowerIsBetter={tile.label === "Browser errors"} unavailableReason={report.dayComparison?.reason === "retention-limit" ? "The previous window reaches beyond the 90-day retention period. Choose 7 or 30 days." : report.dayComparison?.reason === "partial-data" ? "A comparison is unavailable because one window exceeds the event limit." : undefined} /></div>)}</div>
+      <p className="website-analytics-note">Changes compare the selected period so far with the same window shifted one day earlier, ending at the same time of day. Install intent shows relative percentage change, not percentage points. Comparisons are unavailable for partial reports or windows beyond retained history.</p>
+      <details className="adm-method"><summary>How these figures are counted</summary><p className="website-analytics-note">Only visitors who allowed analytics are measured; how many declined is deliberately not recorded. Admin pages, administrators&apos; browsers, automated browsers and crawlers are excluded. A session ends after 30 minutes with nobody scrolling, clicking or typing, and is not a unique person; one that resumes later starts a new session with its own page view. Install intent means a session with a copied install command or download click, not a completed installation - website visits are not linked to installs. Events are dated by when they happened, in UTC days; the growth figures above use rolling windows instead (last 24 hours, 7 and 30 days). Traffic sources group the spellings of one place - t.co, x.com and twitter count as x, l.threads.com as threads. Raw events are kept for 90 days.</p></details>
       <section className="website-analytics-card"><h2>Traffic over time</h2><TimeChart days={report.daily.map(d => d.day)} series={[{ label: "Page views", color: "#78a9ff", values: report.daily.map(d => d.views) }, { label: "Sessions", color: "#55c9a2", values: report.daily.map(d => d.sessions) }]} summary={`Daily traffic: ${report.pageViews} page views and ${report.sessions} sessions in the selected period.`} /></section>
       <div className="website-analytics-grid">{report.funnels.map(funnel => <FunnelCard key={funnel.label} funnel={funnel} />)}</div>
       <div className="website-analytics-grid"><RankingTable title="Top pages" rows={report.pages} /><RankingTable title="Traffic sources" rows={report.sources} /><RankingTable title="Campaigns" rows={report.campaigns} />{report.invitePages !== undefined && <RankingTable title="Invite pages, by loop" rows={report.invitePages} />}<RankingTable title="Devices" rows={report.devices} /><RankingTable title="Actions and conversions" rows={report.events} unit="Events" />{report.placements !== undefined && <RankingTable title="Install buttons" rows={report.placements} unit="Install actions" />}

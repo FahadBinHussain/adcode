@@ -1,4 +1,6 @@
 "use client";
+import { Icon } from "@/components/Icon";
+import { ArrowRight } from "lucide";
 
 import { AppShell, type SideNavGroup } from "@/components/AppShell";
 import { DashboardBody } from "@/components/DashboardBody";
@@ -31,7 +33,7 @@ export default function Dashboard() {
       subtitle="Earnings, activity, and every entry behind them"
       sidebar={DASHBOARD_SIDEBAR}
     >
-      <div className="notice" data-tone="info">Your account is now part of ADCode. <a href={`${WEB_VERSION_URL}/?account=overview`}>Open your workspace →</a></div>
+      <div className="notice" data-tone="info">Your account is now part of ADCode. <a href={`${WEB_VERSION_URL}/?account=overview`}>Open your workspace <Icon node={ArrowRight} /></a></div>
       <DashboardBody />
     </AppShell>
   );

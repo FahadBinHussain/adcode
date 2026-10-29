@@ -13,6 +13,8 @@ import { isWebSurface, openWebAccount } from "../surface.ts";
  */
 import type { ConfirmDialog } from "../dialogs/confirmDialog.ts";
 import type { AccountState, LinkOutcome } from "../../shared/api.ts";
+import { BUY_TOKENS_URL, aiPlanName, percentLeft } from "../../shared/tagflow.ts";
+import { formatTokens as shortTokens } from "../../shared/aiUsage.ts";
 
 export interface AccountMenu {
   isOpen(): boolean;
@@ -113,6 +115,39 @@ export function createAccountMenu(
   signOut.textContent = "Sign out";
   signOut.hidden = true;
 
+  /*
+   * The account's AI plan, where people look for their account (asked for 2026-10-27):
+   * which plan, how much of this week's Heabsy allowance is left, and the way to change it.
+   */
+  const planBox = document.createElement("section");
+  planBox.className = "account-plan";
+  planBox.hidden = true;
+  const planName = document.createElement("strong");
+  planName.className = "account-plan-name";
+  const planDetail = document.createElement("span");
+  planDetail.className = "account-plan-detail";
+  const planAction = document.createElement("button");
+  planAction.type = "button";
+  planAction.className = "account-plan-action";
+  planAction.addEventListener("click", () => void window.open(`${BUY_TOKENS_URL}#plans`, "_blank", "noopener"));
+  planBox.append(planName, planDetail, planAction);
+  let planRequest = 0;
+  async function refreshPlan(): Promise<void> {
+    const mine = ++planRequest;
+    const view = await window.adcode.aiUsage.allowance().catch(() => null);
+    if (mine !== planRequest) return;
+    const tokens = view?.tokens;
+    if (state.state !== "linked" || tokens?.enabled !== true) { planBox.hidden = true; return; }
+    const now = Date.now();
+    const plan = aiPlanName(tokens.plan, now);
+    planBox.hidden = false;
+    planBox.dataset["plan"] = plan === null ? "free" : plan.toLowerCase();
+    planName.textContent = plan === null ? "Free plan" : `${plan} plan`;
+    const ends = plan !== null && tokens.plan ? ` · ${tokens.plan.source === "gift" ? "gift ends" : "renews"} ${new Date(tokens.plan.endsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "";
+    planDetail.textContent = `${percentLeft(tokens.free.remaining, tokens.free.limit)}% of this week's Heabsy tokens left${tokens.purchased > 0 ? `, + ${shortTokens(tokens.purchased)} purchased` : ""}${ends}. Tagflow AI is unlimited.`;
+    planAction.textContent = plan === null ? "Upgrade plan" : "Manage plan";
+  }
+
   const footnote = document.createElement("p");
   footnote.className = "account-panel-foot";
   footnote.textContent = "Opens your browser. We never see your password.";
@@ -125,7 +160,7 @@ export function createAccountMenu(
    * the accent fill separates it from the row of neutral buttons it would otherwise be
    * mistaken for a third member of.
    */
-  panel.append(heading, body, codeBox, signInInstead, actions, cancel, signOut, footnote);
+  panel.append(heading, body, planBox, codeBox, signInInstead, actions, cancel, signOut, footnote);
   host.append(panel);
 
   let state: AccountState = { state: "anonymous" };
@@ -212,6 +247,7 @@ export function createAccountMenu(
 
   function setOpen(next: boolean, why: "free-ai" | null = null): void {
     open = next;
+    if (next) void refreshPlan();
     if (reason !== why) { reason = why; render(); }
     panel.hidden = !next;
     button.setAttribute("aria-expanded", next ? "true" : "false");

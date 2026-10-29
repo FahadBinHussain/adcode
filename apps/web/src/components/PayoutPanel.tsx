@@ -6,6 +6,8 @@ import { SITE_ORIGIN } from "@/lib/site";
 import { money, moneyExact, when } from "./money";
 import { Segmented } from "./ios/Segmented";
 import { CURRENCIES, countryName, dollarsToPayoutMicros, microsToDollarsInput } from "@/lib/payoutOptions";
+import { Icon } from "@/components/Icon";
+import { Check, Circle } from "lucide";
 import {
   apiFetch,
   MESSAGES,
@@ -153,7 +155,7 @@ export function EligibilityCard({ view }: { view: PayoutsView }) {
         {view.rules.map((rule) => (
           <li key={rule.id} data-ok={rule.ok}>
             <span className="checklist-mark" aria-hidden="true">
-              {rule.ok ? "✓" : "○"}
+              <Icon node={rule.ok ? Check : Circle} />
             </span>
             <span>
               <strong>{rule.label}</strong>

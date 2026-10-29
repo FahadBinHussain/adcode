@@ -48,6 +48,45 @@ export interface TagflowAllowanceView {
   pools?: { provider: string; name: string; models: string[]; limits: TagflowAllowanceView["limits"]; usage: TagflowAllowanceView["usage"] }[];
   /** Relays from 2026-10-15 meter free AI in credits; older ones omit it and count tokens per day. */
   credits?: CreditsAllowance;
+  /** Paid tokens (relays from 2026-10-21): the free week on paid models, purchased tokens, and which models draw on them. */
+  tokens?: { enabled: boolean; free: { limit: number; used: number; held: number; remaining: number; resetsAt: number | null }; purchased: number; paidModels?: string[]; plan?: { id: string; endsAt: number; source: string } | null };
+}
+
+/** Where people buy AI tokens for paid models. */
+export const BUY_TOKENS_URL = "https://adcode.bluethenics.com/ai-tokens";
+
+const shortTokens = (tokens: number): string => {
+  const trim = (value: number): string => (value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10));
+  if (tokens >= 1_000_000) return `${trim(tokens / 1_000_000)}M`;
+  if (tokens >= 1_000) return `${trim(tokens / 1_000)}k`;
+  return String(Math.max(0, Math.round(tokens)));
+};
+
+/**
+ * How much of an allowance is left, as a whole percent: what people read in place of "6.3M tokens
+ * left". Rounded down so a nearly empty week never claims 1% it does not have; zero limit is 0.
+ */
+export function percentLeft(remaining: number, limit: number): number {
+  if (!Number.isFinite(remaining) || !Number.isFinite(limit) || limit <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.floor((remaining / limit) * 100)));
+}
+
+/** A current, recognised plan name. Older relays omit plans. */
+export function aiPlanName(plan: NonNullable<TagflowAllowanceView["tokens"]>["plan"], now: number): string | null {
+  if (plan == null || plan.endsAt <= now) return null;
+  return plan.id === "weekly" ? "Weekly" : plan.id === "monthly" ? "Monthly" : plan.id === "pro" ? "Pro" : null;
+}
+
+/** The usage dialog's one line about paid tokens: the weekly allowance on Heabsy's models, then what was bought. */
+export function paidTokensSummary(tokens: NonNullable<TagflowAllowanceView["tokens"]>, now: number): string {
+  const free = tokens.free;
+  const plan = aiPlanName(tokens.plan, now);
+  const kind = plan === null ? "free" : "included";
+  const week = free.resetsAt === null
+    ? `${shortTokens(free.limit)} ${kind} tokens a week, starting with your first request on them`
+    : `${percentLeft(free.remaining, free.limit)}% of your ${kind} tokens left this week (refill in ${untilText(free.resetsAt, now)})`;
+  const bought = tokens.purchased > 0 ? `, then ${shortTokens(tokens.purchased)} purchased tokens` : "";
+  return `Heabsy models: ${plan === null ? "" : `${plan} plan, `}${week}${bought}. Tagflow AI stays unlimited.`;
 }
 
 /** "3 hr 12 min", "45 min", "under a minute": how long until a credit window refills. */

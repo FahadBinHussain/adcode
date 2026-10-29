@@ -5,6 +5,8 @@ import Link from "next/link";
 import { AuthAscii } from "./AuthAscii";
 import { Mark } from "./Mark";
 import { trackWebsiteEvent } from "@/lib/websiteAnalytics";
+import { Icon } from "@/components/Icon";
+import { ArrowRight, ArrowUpRight } from "lucide";
 import {
   authMessage,
   registerEmail,
@@ -14,8 +16,18 @@ import {
 } from "@/lib/firebase";
 
 /** One responsive account surface shared by the dashboard, admin, and campaign flow. */
-export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
-  const [mode, setMode] = useState<"in" | "up">("in");
+/**
+ * Who is arriving decides what the left half says and which tab opens.
+ *
+ * An advertiser from "Advertiser portal" is almost always new, and used to meet "Welcome back"
+ * and a list about earnings - the developer's pitch, and no price. They now land on Create
+ * account with what a campaign costs and what happens after signing up.
+ */
+export type SignInAudience = "developer" | "advertiser";
+
+export function SignInCard({ heading = "Sign in", audience = "developer" }: { heading?: string; audience?: SignInAudience }) {
+  const advertiser = audience === "advertiser";
+  const [mode, setMode] = useState<"in" | "up">(advertiser ? "up" : "in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -78,15 +90,31 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
           <span className="auth-brand-caption">YOUR WORKSPACE</span>
         </div>
         <AuthAscii />
-        <div className="auth-context-copy">
-          <h2>One account.<br /><span>More possibilities.</span></h2>
-          <p>A place for your ideas, your earnings, and what comes next.</p>
-        </div>
-        <ul className="auth-context-list">
-          <li><span aria-hidden="true">&#10003;</span>Earnings stay attached to you</li>
-          <li><span aria-hidden="true">&#10003;</span>Campaigns continue across devices</li>
-          <li><span aria-hidden="true">&#10003;</span>No payment card required</li>
-        </ul>
+        {advertiser ? (
+          <>
+            <div className="auth-context-copy">
+              <h2>Reach developers<br /><span>while they build.</span></h2>
+              <p>Your card appears inside ADCode, beside the code people are writing.</p>
+            </div>
+            <ol className="auth-context-list auth-context-steps">
+              <li><span aria-hidden="true">1</span>Create your account - free, no card to sign up</li>
+              <li><span aria-hidden="true">2</span>Write your ad and set a bid, from $1 per 500 verified impressions</li>
+              <li><span aria-hidden="true">3</span>We review it, then it runs - you pay only for verified views</li>
+            </ol>
+          </>
+        ) : (
+          <>
+            <div className="auth-context-copy">
+              <h2>One account.<br /><span>More possibilities.</span></h2>
+              <p>A place for your ideas, your earnings, and what comes next.</p>
+            </div>
+            <ul className="auth-context-list">
+              <li><span aria-hidden="true">&#10003;</span>Earnings stay attached to you</li>
+              <li><span aria-hidden="true">&#10003;</span>Campaigns continue across devices</li>
+              <li><span aria-hidden="true">&#10003;</span>No payment card required</li>
+            </ul>
+          </>
+        )}
         <p className="auth-context-note">Built for the way you work. Web + desktop.</p>
       </section>
 
@@ -96,7 +124,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
       >
         <header className="auth-form-heading">
           <p className="auth-eyebrow" key={mode}>{mode === "in" ? "WELCOME BACK" : "MAKE YOURSELF AT HOME"}</p>
-          <h1 id={`${panelId}-heading`}>{mode === "in" ? heading : "Create your account"}</h1>
+          <h1 id={`${panelId}-heading`}>{mode === "in" ? heading : advertiser ? "Start advertising" : "Create your account"}</h1>
           <p>Choose how you&apos;d like to {mode === "in" ? "continue." : "get started."}</p>
         </header>
         <div className="auth-mode" data-mode={mode} role="tablist" aria-label="Account action" onKeyDown={onTabKey}>
@@ -141,7 +169,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
           >
             <GithubMark />
             {busy === "github" ? "Opening GitHub..." : "Continue with GitHub"}
-            <span className={busy === "github" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "github" ? "" : "↗"}</span>
+            <span className={busy === "github" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "github" ? null : <Icon node={ArrowUpRight} />}</span>
           </button>
           <button
             type="button"
@@ -151,7 +179,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
           >
             <GoogleMark />
             {busy === "google" ? "Opening Google..." : "Continue with Google"}
-            <span className={busy === "google" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "google" ? "" : "↗"}</span>
+            <span className={busy === "google" ? "auth-spinner" : "auth-provider-arrow"} aria-hidden="true">{busy === "google" ? null : <Icon node={ArrowUpRight} />}</span>
           </button>
         </div>
 
@@ -207,7 +235,7 @@ export function SignInCard({ heading = "Sign in" }: { heading?: string }) {
             {busy === "email"
               ? mode === "in" ? "Signing in..." : "Creating account..."
               : mode === "in" ? "Sign in" : "Create account"}
-            {busy === null && <span className="auth-submit-arrow" aria-hidden="true">→</span>}
+            {busy === null && <span className="auth-submit-arrow" aria-hidden="true"><Icon node={ArrowRight} /></span>}
           </button>
         </form>
         <p className="sr-only" role="status">{busy === "email" ? mode === "in" ? "Signing in…" : "Creating account…" : busy ? `Opening ${busy === "github" ? "GitHub" : "Google"}…` : ""}</p>

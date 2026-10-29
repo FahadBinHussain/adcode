@@ -4,6 +4,7 @@ title: Bring your Claude and OpenAI tools with you
 description: Connect MCP servers, Claude Desktop extensions, Claude Code plugins and OpenAPI actions to ADCode, and bring over what Claude, Cursor, Windsurf or VS Code already have.
 section: The assistant
 published: 2026-10-20
+updated: 2026-10-26
 order: 9
 related: teach-the-assistant-your-project, helpers, whats-new-october-2026
 ---
@@ -14,12 +15,10 @@ The support is format-level, not brand-level: ADCode reads the formats below, no
 
 ## The four badges
 
-| Badge | What it means |
-| --- | --- |
-| MCP | A server that speaks the Model Context Protocol. ADCode starts a local command over stdio, or calls an HTTP or SSE address. |
-| Extension | A Claude Desktop extension: a `.mcpb` file (formerly `.dxt`) or its unpacked folder, containing a manifest and the server's own files. |
-| Plugin | A Claude Code plugin folder or zip. Its skills and MCP servers can be used here; its commands, agents and hooks come along as files only. |
-| Actions | An OpenAPI 3.x or Swagger 2.0 description. Each operation becomes a tool that sends one REST request. ChatGPT plugin manifests are read the same way. |
+- **MCP.** A server that speaks the Model Context Protocol. ADCode starts a local command over stdio, or calls an HTTP or SSE address.
+- **Extension.** A Claude Desktop extension: a `.mcpb` file (formerly `.dxt`) or its unpacked folder, containing a manifest and the server's own files.
+- **Plugin.** A Claude Code plugin folder or zip. Its skills and MCP servers can be used here; its commands, agents and hooks come along as files only.
+- **Actions.** An OpenAPI 3.x or Swagger 2.0 description. Each operation becomes a tool that sends one REST request. ChatGPT plugin manifests are read the same way.
 
 ## Five ways in
 
@@ -33,7 +32,7 @@ The dialog has four tabs and five routes.
 
 **Link or text** takes an HTTPS link (HTTP is allowed for localhost) or the document itself. A link to a ChatGPT plugin manifest fetches the OpenAPI description it points at.
 
-**Custom** is for an MCP server you know by hand: a name, a lowercase ID, a stdio command with a JSON argument list, or an HTTP/SSE address. Values go in as `NAME=value` lines. Save it, then connect it from its card. OpenAPI APIs are not entered by hand; bring their description through a file, link or pasted text.
+**Custom** is for an MCP server you know by hand. Choose Add connector, then Custom connector. In the next desktop build, **Add custom connector** on the Connectors tab opens the same form directly. Give it a name and an MCP server URL, then press Continue: the ID comes from the name, and ADCode saves the server and tries to connect. If the connection fails, the server stays saved with the reason on its card. Choose SSE or a local command, and add credentials as `NAME=value` lines, under Advanced. OpenAPI APIs are not entered by hand; bring their description through a file, link or pasted text.
 
 ## What Add does, and what waits
 
@@ -43,7 +42,7 @@ Add opens a short form for the values the source needs — an API token, a serve
 
 Extensions and plugins also bring files. On the desktop, Add copies them into `~/.adcode/extensions/<name>` or `~/.adcode/plugins/<name>`. Hooks are copied but never run. A plugin's commands and agents are copied but not offered. Its own MCP servers appear as separate connectors, and its skills appear on the Skills tab. Remove deletes the copied folder with the connector; for a plugin, the servers that came with it go too. MCP and OpenAPI connectors have no files to delete, and the config you imported from is never touched.
 
-Adding saves the connector but does not start it; Connect is a separate press, though the catalogue offers it immediately.
+Adding saves the connector. The catalogue and custom connector forms offer to connect immediately; imported connectors wait for Connect on their card.
 
 ## After you connect
 
@@ -86,11 +85,11 @@ Node.js must be installed. The first start downloads the browser, taking about a
 
 ### Connect a custom HTTP MCP server
 
-1. Choose Add connector, then Custom.
-2. Give it a name and a lowercase ID, and choose Remote URL (HTTP).
-3. Enter the HTTPS address, with no credentials, query or fragment. For localhost, HTTP is allowed.
-4. Add a token under Values as `Authorization=Bearer …` if the server needs one, then press Save connector.
-5. Press Connect on its card, approve, and enable its tools.
+1. Choose Add connector, then Custom connector. In the next desktop build, Add custom connector on the Connectors tab opens the same form directly.
+2. Give it a name and its MCP server URL, such as `https://example.com/mcp`. The connector ID comes from the name.
+3. If the server needs a token, open Advanced and add `Authorization=Bearer …` under Headers or environment values.
+4. Press Continue, approve the connection, and enable the tools you want.
+5. For a local program instead, choose Local command under Advanced and enter the command and its JSON argument list.
 
 ### Remove one
 
@@ -102,6 +101,6 @@ Press Remove on the card and confirm. An extension or plugin's copied folder is 
 - A common server that needs no credential, such as Playwright or Context7: use the Catalogue.
 - An MCP config, OpenAPI description, `.mcpb`/`.dxt`, plugin folder or plugin zip: use From a file.
 - A URL, or a document you can paste: use Link or text.
-- A command or HTTP/SSE address and nothing else: use Custom.
+- A name and an HTTP/SSE address, or a local command: use Custom. In the next desktop build, Add custom connector is the shortcut.
 - A ChatGPT `ai-plugin.json` manifest: use From a file, or Link or text.
 - Working on the web: use Import for the cloud workspace, or Link or text with a path inside it.

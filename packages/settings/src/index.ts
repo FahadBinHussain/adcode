@@ -541,6 +541,14 @@ export const SETTINGS_SCHEMA: readonly Setting[] = [
     ],
   },
   bool(
+    "adcode.ai.askBeforeConnectorTools",
+    "ai",
+    "Ask before connector tools",
+    "Show a dialog before each call the assistant makes to a connector's tool (Gmail, Figma, Playwright and other MCP servers). Off runs tools you enabled straight away; starting a local program still asks.",
+    false,
+    true,
+  ),
+  bool(
     "adcode.ai.keepGoing",
     "ai",
     "Keep going until done",

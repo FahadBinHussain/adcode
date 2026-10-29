@@ -6,6 +6,8 @@ import { COMPARE_PREFIX, comparisons, landingPath } from "@/lib/landings";
 import { breadcrumbs } from "@/lib/schema";
 import { pageMetadata } from "@/lib/seo";
 import { SITE, url } from "@/lib/site";
+import { Icon } from "@/components/Icon";
+import { ArrowRight } from "lucide";
 
 export const metadata: Metadata = pageMetadata({
   path: COMPARE_PREFIX,
@@ -98,7 +100,7 @@ export default function CompareIndex() {
                 <Link key={page.slug} href={landingPath(page)} className="landing-index-card">
                   <h2>{page.heading}</h2>
                   <p>{page.description}</p>
-                  <span aria-hidden="true">Read the comparison →</span>
+                  <span aria-hidden="true">Read the comparison <Icon node={ArrowRight} /></span>
                 </Link>
               ))}
             </div>

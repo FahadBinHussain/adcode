@@ -1,6 +1,6 @@
 import type { AiUsageView } from "../../shared/aiUsage.ts";
 import { formatUsageCost } from "../../shared/aiUsage.ts";
-import { allowanceForModel, creditWindowSummary, type CreditsAllowance, type CreditWindowView, type TagflowAllowanceView } from "../../shared/tagflow.ts";
+import { aiPlanName, allowanceForModel, creditWindowSummary, percentLeft, untilText, type CreditsAllowance, type CreditWindowView, type TagflowAllowanceView } from "../../shared/tagflow.ts";
 import { createComposerMeter, type ComposerMeterModel } from "./composerMeter.ts";
 import { formatTokens } from "./contextMeter.ts";
 import { allowanceSummary } from "./allowanceSummary.ts";
@@ -22,7 +22,7 @@ function creditMeter(label: "Session" | "Weekly", window: CreditWindowView, cred
     label,
     percent: summary.percent,
     value: `${summary.percent}%`,
-    detail: summary.remaining === 0 ? (summary.refill === null ? "Used up" : `Back in ${summary.refill.in}`) : `${summary.remaining.toLocaleString()} left`,
+    detail: summary.remaining === 0 ? (summary.refill === null ? "Used up" : `Back in ${summary.refill.in}`) : `${percentLeft(summary.remaining, window.limit)}% left`,
     tone: tone(summary.percent),
     tooltip: `Free AI credits for ${span}: ${summary.remaining.toLocaleString()} of ${window.limit.toLocaleString()} left${window.held > 0 ? `, ${Math.ceil(window.held).toLocaleString()} held by replies in progress` : ""}. ${refill} Every free model draws from this one balance, on all your devices. ${pricing} When it runs out, a running task waits and carries on by itself. Open AI usage for details.`,
   };
@@ -42,6 +42,23 @@ export function composerUsageModels(view: AiUsageView | null, allowance: Tagflow
       const blocked: ComposerMeterModel = { percent: null, value: "!", detail: "Disabled", tone: "full", tooltip: "Included AI is disabled for this account. Open AI usage for details." };
       return [blocked, blocked];
     }
+    // A paid model: its free week first, then the tokens this person bought.
+    const paid = allowance.tokens;
+    if (paid?.enabled === true && modelId !== null && paid.paidModels?.includes(modelId) === true) {
+      const plan = aiPlanName(paid.plan, Date.now());
+      const kind = plan === null ? "free" : "included";
+      const left = paid.free.remaining;
+      const out = left <= 0 && paid.purchased <= 0;
+      const refill = paid.free.resetsAt === null ? "" : ` Free tokens refill in ${untilText(paid.free.resetsAt, Date.now())}.`;
+      const leftPercent = percentLeft(left, paid.free.limit);
+      const free: ComposerMeterModel = {
+        label: plan === null ? "Free this week" : `${plan} this week`, percent: paid.free.limit > 0 ? Math.min(100, Math.round(((paid.free.used + paid.free.held) / paid.free.limit) * 100)) : null,
+        value: `${leftPercent}%`, detail: `${leftPercent}% ${kind} left`, tone: out ? "full" : left <= 0 ? "warn" : "ok",
+        tooltip: `${plan === null ? "" : `${plan} plan: `}${formatTokens(left)} of ${formatTokens(paid.free.limit)} ${kind} tokens left this week on this model, then ${formatTokens(paid.purchased)} purchased.${refill}${out ? " Buy tokens or a plan, or switch to Tagflow AI, which stays free." : ""}`,
+      };
+      const purchased: ComposerMeterModel = { label: "Purchased", percent: null, value: formatTokens(paid.purchased), detail: `${formatTokens(paid.purchased)} purchased`, tone: out ? "full" : "ok", tooltip: "Tokens you bought, used after your free tokens. They never expire. Run AI: Buy AI Tokens to add more." };
+      return [free, purchased];
+    }
     // The server sets no allowance for included AI: say so rather than draw a meter that never fills.
     if (allowance.unlimited === true) {
       const free: ComposerMeterModel = { label: "Included AI", percent: null, value: "∞", detail: "Unlimited", tone: "ok", tooltip: "Included AI has no ADCode usage limit. A busy provider can still ask you to wait a moment. Open AI usage for details." };
@@ -60,7 +77,7 @@ export function composerUsageModels(view: AiUsageView | null, allowance: Tagflow
     const tokenPercent = percent(tokens, limits.dailyTokens);
     const costPercent = percent(cost, limits.dailyCostMicros);
     const summary = allowanceSummary(scoped);
-    const remaining = summary.remainingCost === 0 ? "Budget reached" : `${formatTokens(summary.remainingTokens)} left`;
+    const remaining = summary.remainingCost === 0 ? "Budget reached" : `${percentLeft(summary.remainingTokens, limits.dailyTokens)}% left`;
     const reset = `Resets ${summary.reset}. Shared across devices; active replies temporarily hold ${formatTokens(summary.heldTokens)} tokens.`;
     const requestPercent = percent(usage.requests, limits.dailyRequests);
     return [

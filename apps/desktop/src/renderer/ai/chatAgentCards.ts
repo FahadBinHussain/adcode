@@ -1,3 +1,5 @@
+import { Check } from "lucide";
+import { createIcon } from "../workbench/icons.ts";
 /**
  * Two cards that show the agent's work as it happens: its plan, and what it saw.
  *
@@ -70,7 +72,7 @@ export function createPlanCard(): PlanCard {
       const mark = document.createElement("span");
       mark.className = "chat-plan-mark";
       mark.setAttribute("aria-hidden", "true");
-      mark.textContent = step.status === "done" ? "✓" : "";
+      if (step.status === "done") mark.append(createIcon(Check));
       const text = document.createElement("span");
       text.className = "chat-plan-text";
       text.textContent = step.step;

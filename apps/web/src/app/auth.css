@@ -121,3 +121,13 @@
   .auth-upgrade, .auth-upgrade *, .auth-upgrade *::before, .auth-upgrade *::after { animation: none !important; transition: none !important; }
   .auth-upgrade .btn:hover:not(:disabled), .auth-upgrade button:active, .auth-upgrade .btn-provider:hover .auth-provider-arrow, .auth-upgrade .auth-submit:hover .auth-submit-arrow { transform: none; }
 }
+
+/*
+ * The advertiser's three steps carry the price, so unlike the developer's list they stay on a
+ * phone - in the order a campaign actually goes, numbered rather than ticked.
+ */
+.auth-upgrade .auth-context-steps { padding: 0; list-style: none; }
+.auth-upgrade .auth-context-steps li span { font: 600 11px/1 var(--font-mono), monospace; }
+@media (max-width: 720px) {
+  .auth-upgrade .auth-context-list.auth-context-steps { display: grid; grid-column: 1 / -1; grid-row: 3; margin: 14px 0 0; }
+}
