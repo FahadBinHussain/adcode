@@ -191,18 +191,139 @@ export function formatQuestionAnswers(
   return `The user answered in the question card:\n${lines.join("\n")}\n\nUse these answers; do not ask again.`;
 }
 
-/** Commands that are never worth the risk, whatever the workspace. */
-const BLOCKED_COMMANDS = [
-  "rm -rf /",
-  "rm -rf ~",
-  "rm -rf c:",
-  "format c:",
-  "mkfs",
+/**
+ * Commands that are never worth the risk, whatever the workspace.
+ *
+ * This used to be a substring scan over the whole command line, which caught words instead
+ * of intent: `adb reboot` restarts a phone, `rm -rf /c/tmp/x` deletes a folder on Git Bash,
+ * and `git log --grep shutdown` only reads. Each command is now split into the segments it
+ * actually runs, reduced to the executable each one starts, and only its operands are judged.
+ */
+
+/** Commands that power this machine off. A prefix like `adb` or `ssh` runs elsewhere. */
+const POWER_COMMANDS = new Set([
   "shutdown",
   "reboot",
-  ":(){:|:&};",
-  "del /f /s /q c:",
-];
+  "poweroff",
+  "halt",
+  "restart-computer",
+  "stop-computer",
+]);
+
+/** Commands that delete what they are pointed at, on either platform. */
+const DELETE_COMMANDS = new Set(["rm", "del", "erase", "rd", "rmdir"]);
+
+/** Shells whose inline payload is itself a command line, worth checking in turn. */
+const SHELLS = new Set(["bash", "sh", "zsh", "dash", "cmd", "powershell", "pwsh"]);
+
+/** Wrappers that run the rest of the line, so the real executable comes later. */
+const WRAPPERS = new Set(["sudo", "doas", "env", "nohup", "command", "time", "exec", "builtin", "xargs"]);
+
+/**
+ * Targets where a delete is unrecoverable, however they are spelled. `/c/tmp/x` is not one of
+ * them: on Git Bash that is a folder below the drive root, not the root itself.
+ */
+function isDestructiveRoot(operand: string): boolean {
+  const cleaned = operand
+    .trim()
+    .replace(/^["']+|["']+$/g, "")
+    .replaceAll("\\", "/")
+    .replace(/\/\*[^/]*$/, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+  if (cleaned === "" || cleaned === "/" || cleaned === "~" || cleaned === "$home" || cleaned === "${home}") {
+    return true;
+  }
+  return cleaned === "%userprofile%" || cleaned === "%homedrive%%homepath%" || /^[a-z]:$/.test(cleaned);
+}
+
+/** A command line runs every segment it chains, so each one gets its own look. */
+function splitIntoSegments(command: string): readonly string[] {
+  return command
+    .split(/&&|\|\||[;|\n]/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+}
+
+/** Split a segment into words, keeping quoted runs together so `bash -c "a b"` stays one argument. */
+function tokensOf(segment: string): readonly string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const char of segment) {
+    if (quote !== null) {
+      if (char === quote) quote = null;
+      else current += char;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (current.length > 0) tokens.push(current);
+  return tokens;
+}
+
+/** The executable a segment starts, skipping any wrappers and `FOO=bar` assignments before it. */
+function executableOf(segment: string): { readonly name: string; readonly args: readonly string[] } {
+  const tokens = tokensOf(segment);
+  let index = 0;
+  while (index < tokens.length) {
+    const raw = tokens[index] ?? "";
+    if (WRAPPERS.has(raw.toLowerCase().replace(/\.exe$/, ""))) {
+      index += 1;
+      while (index < tokens.length && (tokens[index] ?? "").startsWith("-")) index += 1;
+      continue;
+    }
+    if (/^[a-z_][a-z0-9_]*=/i.test(raw)) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  const raw = tokens[index] ?? "";
+  return { name: raw.toLowerCase().replace(/\.exe$/, ""), args: tokens.slice(index + 1) };
+}
+
+/** What `bash -c "..."` and friends actually asked for. */
+function shellPayload(args: readonly string[]): string | null {
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = (args[index] ?? "").toLowerCase();
+    if (flag === "-c" || flag === "/c" || flag === "-command") return args[index + 1] ?? null;
+  }
+  return null;
+}
+
+/** Why a command is refused, or null when it is allowed to run. */
+export function blockedCommandReason(command: string, depth = 0): string | null {
+  // The fork bomb has no tokens worth reading; its shape is the danger.
+  if (command.replace(/\s+/g, "").includes(":(){:|:&};")) return "it is a fork bomb";
+  for (const segment of splitIntoSegments(command)) {
+    const { name, args } = executableOf(segment);
+    if (name.length === 0) continue;
+    if (name.startsWith("mkfs")) return "it formats a device";
+    if (POWER_COMMANDS.has(name)) return "it powers this machine off";
+    if (name === "format" && args.some(isDestructiveRoot)) return "it formats a drive";
+    if (DELETE_COMMANDS.has(name) && args.some(isDestructiveRoot)) return "it deletes a filesystem root";
+    if (SHELLS.has(name) && depth < 2) {
+      const payload = shellPayload(args);
+      if (payload !== null) {
+        const inner = blockedCommandReason(payload, depth + 1);
+        if (inner !== null) return inner;
+      }
+    }
+  }
+  return null;
+}
 
 export interface ProposedEdit {
   readonly taskId: string;
@@ -1044,9 +1165,9 @@ export function createAiToolRunner(deps: AiToolDeps): ToolRunner {
           }
           const command = input["command"].trim();
           if (command.length > 2000) return fail("That command is too long. Keep it under 2000 characters.");
-          const lowered = command.toLowerCase();
-          if (BLOCKED_COMMANDS.some((blocked) => lowered.includes(blocked))) {
-            return fail("That command is blocked. Ask the user to run destructive commands themselves.");
+          const blocked = blockedCommandReason(command);
+          if (blocked !== null) {
+            return fail(`That command is blocked: ${blocked}. Ask the user to run destructive commands themselves.`);
           }
           const cwd = await resolveDirOrRoot(workspace, input["cwd"]);
           if (cwd === null) return fail(INVALID_WORKSPACE_PATH);

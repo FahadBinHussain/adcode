@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFileChange, type ToolCallBlock } from "@adcode/ai";
-import { applyReplacements, createAiToolRunner, type ProposedEdit } from "../src/main/aiTools.ts";
+import { applyReplacements, blockedCommandReason, createAiToolRunner, type ProposedEdit } from "../src/main/aiTools.ts";
 
 let human: string;
 let sandbox: string;
@@ -464,6 +464,80 @@ describe("sandboxed built-in AI tools", () => {
     const blocked = await runner.run(call("run_command", { command: "rm -rf /" }), signal);
     expect(blocked.isError).toBe(true);
     expect(blocked.content).toMatch(/blocked/i);
+
+    const rooted = await runner.run(call("run_command", { command: "rm -rf /*" }), signal);
+    expect(rooted.isError).toBe(true);
+    expect(rooted.content).toMatch(/blocked/i);
+  });
+
+  it("separates real danger from words that only look like it", () => {
+    const allowed = [
+      "rm -rf build",
+      "rm -rf ./build",
+      "rm -rf /c/tmp/scratch",
+      "rm -rf /tmp/x",
+      "rm -rf ~/Downloads/tmp/x",
+      "rd /s /q C:\\temp\\x",
+      "adb reboot",
+      "adb shell reboot",
+      "ssh phone reboot",
+      "git log --grep shutdown",
+      "grep -rn mkfs docs/",
+      "Get-Content .\\notes\\reboot-notes.md",
+      "npm run build",
+    ];
+    for (const command of allowed) {
+      expect(blockedCommandReason(command), command).toBeNull();
+    }
+
+    const blocked = [
+      "rm -rf /",
+      "rm -rf /*",
+      "rm -rf ~",
+      "rm -rf $HOME",
+      "rm -rf C:\\",
+      "rm -rf --no-preserve-root /",
+      "del /f /s /q c:",
+      "format c:",
+      "mkfs.ext4 /dev/sda",
+      "shutdown /s /t 0",
+      "reboot",
+      "Restart-Computer -Force",
+      'bash -c "rm -rf /"',
+      'cmd /c "format c:"',
+      "sudo rm -rf /",
+      "echo hi && rm -rf /",
+      ":(){:|:&};:",
+    ];
+    for (const command of blocked) {
+      expect(blockedCommandReason(command), command).not.toBeNull();
+    }
+  });
+
+  it("judges what a command does, not which words it contains", async () => {
+    const runner = createAiToolRunner({
+      workspace: async () => ({ taskId: "task-tools", sandboxRoot: sandbox, humanRoot: human }),
+      memory: () => null,
+      writeSandboxFile: async (path, contents) => createFileChange(path, null, contents),
+      onProposedEdit: () => undefined,
+    });
+    const signal = new AbortController().signal;
+
+    // Words that used to trip the old substring scan now read as the plain echoes they are.
+    for (const command of ["echo reboot", "echo shutdown", "echo mkfs", "echo rm -rf /c/tmp/scratch"]) {
+      const result = await runner.run(call("run_command", { command }), signal);
+      expect(result.isError, command).toBe(false);
+    }
+
+    // A phone reboot is not a host reboot: the guard lets it through, whatever adb then says.
+    const phone = await runner.run(call("run_command", { command: "adb reboot" }), signal);
+    expect(phone.content).not.toMatch(/blocked/i);
+
+    for (const command of ["del /f /s /q c:", 'bash -c "mkfs.ext4 /dev/sda"']) {
+      const result = await runner.run(call("run_command", { command }), signal);
+      expect(result.isError, command).toBe(true);
+      expect(result.content).toMatch(/blocked/i);
+    }
   });
 
   it("says plainly when an edit lands straight in the project", async () => {
